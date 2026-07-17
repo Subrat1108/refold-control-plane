@@ -87,6 +87,7 @@ export interface NamespaceDetail extends Namespace {
   envVars: EnvVar[]
   logs: LogEntry[]
   errorBreakdown: ErrorBreakdownItem[]
+  recentWorkflows: WorkflowRun[]
   uptime: number
 }
 
@@ -155,6 +156,33 @@ export interface CloudDashboard {
   recentWorkflows: WorkflowRun[]
   errorRate: number
   uptime: number
+}
+
+export interface OnPremDashboard {
+  org: OnPremOrg
+  recentWorkflows: WorkflowRun[]
+  totalExecutionsToday: number
+  degradedNamespaces: number
+  errorRate: number
+  uptime: number
+}
+
+export interface AiCredits {
+  orgId: string
+  balance: number
+  used: number
+  limit: number
+  resetDate: string
+  usageTrend: TrendPoint[]
+}
+
+export interface SearchResult {
+  type: 'cloud_org' | 'onprem_org' | 'namespace'
+  id: string
+  orgId?: string
+  label: string
+  sublabel: string
+  href: string
 }
 
 export interface AuthUser {
