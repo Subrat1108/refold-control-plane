@@ -16,6 +16,19 @@ Template:
 
 ---
 
+## Session 5 — 2026-07-17 — housekeeping (no prompt block)
+**Built:** nothing new. Sessions 2–4 (5.2–5.4) had never been committed — all
+814 lines lived only in the working tree, so dev was still at the scaffold.
+Split them into four commits and pushed. Renamed docs/decision.md →
+decisions.md (every reference already said plural) and fixed the clone URL in
+CLAUDE.md, which pointed at refold-admin-panel instead of refold-control-plane.
+**Deviations:** —
+**Decisions:** none
+**Next:** 5.5 — Cloud org detail (5 tabs)
+**Issues:** the end-of-session protocol was added in the same uncommitted batch
+it was meant to govern, so it had never actually run. Worth watching whether
+step 5 (push) sticks from here.
+
 ## Session 4 — 2026-06-09 — 5.4 Customer list pages
 **Built:** /cloud-customers and /onprem-customers list pages; search, status
 filter, sortable DataTable; feature-flag slide-over trigger stubbed; row-click

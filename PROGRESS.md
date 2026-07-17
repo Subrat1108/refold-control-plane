@@ -24,18 +24,18 @@
 
 ## Version control & docs
 
-- [ ] GitHub repo created and URL updated in CLAUDE.md + planning-room instructions
+- [x] GitHub repo created — Subrat1108/refold-control-plane; URL updated in CLAUDE.md (planning-room instructions still need it)
 - [x] dev branch set as default working branch
-- [ ] CLAUDE.md committed on dev
+- [x] CLAUDE.md committed on dev
 - [x] CLAUDE.local.md added to .gitignore
-- [ ] docs/build-spec.md committed (full instruction set, Sections 1–11)
-- [ ] docs/devlog.md committed
-- [ ] docs/decisions.md committed
+- [x] docs/build-spec.md committed (full instruction set, Sections 1–11)
+- [x] docs/devlog.md committed
+- [x] docs/decisions.md committed
 
 ## Last session
 (See docs/devlog.md for full session history — this is just the pointer.)
 
-Date: 2026-06-09
-Completed: 5.3 — God View dashboard; 6 StatCards, 2 trend LineCharts, cloud + on-prem health tables with links, license expiry highlighting
-Decisions made: logged in docs/decisions.md (D-003, D-004)
+Date: 2026-07-17
+Completed: housekeeping only, no prompt block — pushed 5.2–5.4 to dev (they had never left the working tree), fixed doc drift. Last build session was 2026-06-09, completing 5.4.
+Decisions made: none
 Known issues: —

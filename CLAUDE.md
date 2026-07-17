@@ -3,7 +3,7 @@
 ## Current status
 <!-- Canonical state snapshot. The build room updates this block at the end of
      every session. The planning room reads it first. Keep it under ~10 lines. -->
-- Last session: 2026-06-09 — completed 5.4 (customer list pages); 5.3 God View done prior
+- Last session: 2026-07-17 — housekeeping only: pushed 5.2–5.4 to dev, fixed doc drift. Last build session 2026-06-09 completed 5.4 (customer list pages)
 - Next up: 5.5 — Cloud org detail page (5 tabs)
 - Blockers: none
 - Deployed: not yet (vercel.json + SPA routing configured, no deploy)
@@ -12,7 +12,7 @@
 ## Session protocol (build room)
 **Start of every session** — reconstruct context in one command before doing anything:
 ```bash
-git clone -b dev https://github.com/Subrat1108/refold-admin-panel.git && cd refold-admin-panel && sed -n '1,40p' CLAUDE.md && cat PROGRESS.md && head -60 docs/devlog.md && head -80 docs/decisions.md
+git clone -b dev https://github.com/Subrat1108/refold-control-plane.git && cd refold-control-plane && sed -n '1,40p' CLAUDE.md && cat PROGRESS.md && head -60 docs/devlog.md && head -80 docs/decisions.md
 ```
 (If already cloned: `git pull` then the same reads.) To locate code:
 `grep -rin "SearchTerm" src/ --include=*.ts --include=*.tsx`
