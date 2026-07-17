@@ -1,8 +1,36 @@
 # Refold Unified Admin Panel
 
+## Current status
+<!-- Canonical state snapshot. The build room updates this block at the end of
+     every session. The planning room reads it first. Keep it under ~10 lines. -->
+- Last session: 2026-06-09 — completed 5.4 (customer list pages); 5.3 God View done prior
+- Next up: 5.5 — Cloud org detail page (5 tabs)
+- Blockers: none
+- Deployed: not yet (vercel.json + SPA routing configured, no deploy)
+- Known issues: none logged
+
+## Session protocol (build room)
+**Start of every session** — reconstruct context in one command before doing anything:
+```bash
+git clone -b dev https://github.com/Subrat1108/refold-admin-panel.git && cd refold-admin-panel && sed -n '1,40p' CLAUDE.md && cat PROGRESS.md && head -60 docs/devlog.md && head -80 docs/decisions.md
+```
+(If already cloned: `git pull` then the same reads.) To locate code:
+`grep -rin "SearchTerm" src/ --include=*.ts --include=*.tsx`
+
+**End of every session** — before finishing, always:
+1. Update the checklist in `PROGRESS.md`
+2. Prepend a session entry to `docs/devlog.md` (newest first, use the template there)
+3. Log any decisions made to `docs/decisions.md`
+4. Refresh the **Current status** block at the top of this file
+5. Commit per the convention below and **push to `dev`**
+
+A session that doesn't push is invisible to the planning room.
+
 ## Project overview
 Single admin panel replacing two tools: a Cloud Admin Panel and an On-Premise
 Control Plane. Supports three user roles across two customer deployment types.
+Full build spec (prompt blocks 5.1–5.12, IA, data model, permissions matrix):
+`docs/build-spec.md`.
 
 **Deployment types**
 - `cloud` — hosted SaaS customers, no concept of namespaces or clusters
@@ -41,6 +69,10 @@ src/
   types/        all TypeScript interfaces exported from index.ts
   utils/        pure utility functions only (formatDate, formatNumber)
 public/
+docs/
+  build-spec.md   full build instructions (prompt blocks 5.1–5.12)
+  devlog.md       session log, newest entry first
+  decisions.md    decision log + parked ideas
 CLAUDE.md
 CLAUDE.local.md   (gitignored, personal notes only)
 PROGRESS.md
