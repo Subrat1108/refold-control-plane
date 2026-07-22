@@ -14,6 +14,8 @@ import type {
   CloudOrgMetrics,
   WorkflowSummary,
   Connector,
+  OnPremOrgDetail,
+  OnPremNamespaceRow,
 } from '@/types'
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────
@@ -391,6 +393,38 @@ export async function fetchOnPremOrg(id: string): Promise<OnPremOrg> {
   const org = ONPREM_ORGS.find((o) => o.id === id)
   if (!org) throw new Error(`On-prem org ${id} not found`)
   return { ...org }
+}
+
+// Latest Refold release available for on-prem upgrades. Set to the max version
+// present in the dataset so both "upgrade available" and "up to date" (green
+// check) states render across the namespace tables (Prompt 5.6).
+const LATEST_REFOLD_VERSION = '3.12.4'
+
+// Per-namespace creation dates (base Namespace has no createdAt).
+const ONPREM_NS_CREATED: Record<string, string> = {
+  ns_001: '2022-11-10T00:00:00Z',
+  ns_002: '2023-02-01T00:00:00Z',
+  ns_003: '2023-05-19T00:00:00Z',
+  ns_004: '2023-03-22T00:00:00Z',
+  ns_005: '2024-09-04T00:00:00Z',
+  ns_006: '2024-09-04T00:00:00Z',
+}
+
+export async function fetchOnPremOrgDetail(orgId: string): Promise<OnPremOrgDetail> {
+  await delay(); maybeThrow()
+  const org = ONPREM_ORGS.find((o) => o.id === orgId)
+  if (!org) throw new Error(`On-prem org ${orgId} not found`)
+
+  const namespaces: OnPremNamespaceRow[] = org.namespaces.map((ns) => ({
+    ...ns,
+    createdAt: ONPREM_NS_CREATED[ns.id] ?? org.createdAt,
+  }))
+
+  return {
+    org: { ...org },
+    latestVersion: LATEST_REFOLD_VERSION,
+    namespaces,
+  }
 }
 
 export async function fetchNamespaceDetail(nsId: string): Promise<NamespaceDetail> {

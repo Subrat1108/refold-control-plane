@@ -25,6 +25,10 @@ export function useOnPremOrg(id: string) {
   return useQuery({ queryKey: ['onPremOrg', id], queryFn: () => api.fetchOnPremOrg(id), enabled: !!id })
 }
 
+export function useOnPremOrgDetail(id: string) {
+  return useQuery({ queryKey: ['onPremOrgDetail', id], queryFn: () => api.fetchOnPremOrgDetail(id), enabled: !!id })
+}
+
 export function useNamespaceDetail(nsId: string) {
   return useQuery({ queryKey: ['namespaceDetail', nsId], queryFn: () => api.fetchNamespaceDetail(nsId), enabled: !!nsId })
 }

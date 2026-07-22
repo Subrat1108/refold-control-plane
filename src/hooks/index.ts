@@ -6,6 +6,7 @@ export {
   useCloudOrgMetrics,
   useOnPremOrgs,
   useOnPremOrg,
+  useOnPremOrgDetail,
   useNamespaceDetail,
   useFeatureFlags,
   useCloudDashboard,

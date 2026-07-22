@@ -43,6 +43,20 @@ Added a `horizontal` prop to `BarChart` (Workflows errors-by-type), a `paused`
 style to `StatusBadge`, and a new reusable `Tabs` shell component (local state,
 not URL-synced) — the 6-tab namespace detail (5.7) reuses the same shell.
 
+## D-008 — latestVersion = max dataset version (3.12.4) (2026-07-22)
+On-prem upgrade checks need a "latest Refold release." Set `LATEST_REFOLD_VERSION`
+to the highest version already in the dataset (3.12.4) so namespaces at 3.12.4
+render the up-to-date green check while older ones (3.12.3, 3.12.1, 3.11.9) show
+"→ 3.12.4" — both states visible per the 5.6 spec. Comparison is semver-correct
+via `compareSemver` (numeric part-wise), never string compare.
+
+## D-009 — Upgrade / Add-namespace mutate component-local state only (2026-07-22)
+Per the 5.6 spec's "local state" wording, confirming an upgrade or adding a
+namespace updates ephemeral React state seeded from the query, not the mock
+layer. Edits reset on reload/remount by design; keeps the mock data pristine
+across navigation and other blocks. (Contrast updateFeatureFlag, which does
+persist in the mock pool — that was a deliberate exception for the flags panel.)
+
 ---
 
 # Parked

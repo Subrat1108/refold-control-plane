@@ -3,8 +3,8 @@
 ## Current status
 <!-- Canonical state snapshot. The build room updates this block at the end of
      every session. The planning room reads it first. Keep it under ~10 lines. -->
-- Last session: 2026-07-22 — completed 5.5 (Cloud org detail, 5 tabs) + shared /dashboard view. Added CloudOrgMetrics mock layer, reusable Tabs component, BarChart horizontal prop, StatusBadge paused
-- Next up: 5.6 — On-prem org detail + namespace list
+- Last session: 2026-07-22 — completed 5.6 (On-prem org detail + namespace list). Cluster grouping, semver upgrade check, upgrade modal + add-namespace slide-over (local state). Added OnPremOrgDetail mock/fetcher + semver util
+- Next up: 5.7 — Namespace detail (6 tabs inc. env vars)
 - Blockers: none
 - Deployed: not yet (vercel.json + SPA routing configured, no deploy)
 - Known issues: none logged

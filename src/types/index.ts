@@ -197,6 +197,16 @@ export interface OnPremOrg {
   namespaces: Namespace[]
 }
 
+export interface OnPremNamespaceRow extends Namespace {
+  createdAt: string
+}
+
+export interface OnPremOrgDetail {
+  org: OnPremOrg
+  latestVersion: string
+  namespaces: OnPremNamespaceRow[]
+}
+
 export interface OverviewStats {
   totalCloudOrgs: number
   totalOnPremOrgs: number

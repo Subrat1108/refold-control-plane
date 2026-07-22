@@ -7,7 +7,7 @@
 - [x] 5.3 — God View dashboard (super_admin)
 - [x] 5.4 — Customer list pages (cloud + on-prem)
 - [x] 5.5 — Cloud org detail (5 tabs)
-- [ ] 5.6 — On-prem org detail + namespace list
+- [x] 5.6 — On-prem org detail + namespace list
 - [ ] 5.7 — Namespace detail (6 tabs inc. env vars)
 - [ ] 5.8 — On-prem customer admin view
 - [ ] 5.9 — Feature flags slide-over panel
@@ -36,6 +36,6 @@
 (See docs/devlog.md for full session history — this is just the pointer.)
 
 Date: 2026-07-22
-Completed: 5.5 — Cloud org detail (5 tabs) + shared /dashboard view; new CloudOrgMetrics mock data, reusable Tabs component, BarChart horizontal prop, StatusBadge paused. Doc fix to build-spec §10.1.
-Decisions made: D-005, D-006, D-007
+Completed: 5.6 — On-prem org detail + namespace list; cluster grouping, semver upgrade check, upgrade modal + add-namespace slide-over (local state), env-vars slide-over stub. New OnPremOrgDetail mock + fetcher, semver util.
+Decisions made: D-008, D-009
 Known issues: —

@@ -16,6 +16,20 @@ Template:
 
 ---
 
+## Session 7 — 2026-07-22 — 5.6 On-prem org detail + namespace list
+**Built:** `/onprem-customers/:orgId` full page. Header (name/plan/status +
+derived "N namespaces across M clusters" + Add-namespace button). Namespaces
+grouped by cluster into per-cluster DataTables with Upgrade-available (semver
+check → "→ 3.12.4" or green check), Created, and an Actions column (View
+metrics link, Edit-env-vars slide-over stub, Upgrade — disabled when current).
+Upgrade confirmation Modal and Add-namespace SlideOver both mutate component-
+local state. New `OnPremOrgDetail` type + `fetchOnPremOrgDetail` mock and a
+`compareSemver`/`isUpgradeAvailable` util. typecheck/lint/build all green.
+**Deviations:** none — data gap filled per D-005 (createdAt + latestVersion).
+**Decisions:** D-008, D-009
+**Next:** 5.7 — Namespace detail (6 tabs inc. env vars)
+**Issues:** —
+
 ## Session 6 — 2026-07-22 — 5.5 Cloud org detail (5 tabs)
 **Built:** `/cloud-customers/:orgId` full page + `CloudOrgDetailView` reused at
 `/dashboard` for cloud_customer_admin. Header (name/plan/status + Edit-flags
