@@ -13,6 +13,10 @@ export function useCloudOrg(id: string) {
   return useQuery({ queryKey: ['cloudOrg', id], queryFn: () => api.fetchCloudOrg(id), enabled: !!id })
 }
 
+export function useCloudOrgMetrics(id: string) {
+  return useQuery({ queryKey: ['cloudOrgMetrics', id], queryFn: () => api.fetchCloudOrgMetrics(id), enabled: !!id })
+}
+
 export function useOnPremOrgs() {
   return useQuery({ queryKey: ['onPremOrgs'], queryFn: api.fetchOnPremOrgs })
 }

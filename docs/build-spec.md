@@ -702,7 +702,7 @@ Follow this sequence to avoid blockers:
 Create a GitHub repository before writing any code. Use this structure:
 
 ```
-refold-admin-panel/
+refold-control-plane/
 ├── src/
 │   ├── components/       # shared reusable components
 │   ├── pages/            # one file per route

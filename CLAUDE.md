@@ -3,8 +3,8 @@
 ## Current status
 <!-- Canonical state snapshot. The build room updates this block at the end of
      every session. The planning room reads it first. Keep it under ~10 lines. -->
-- Last session: 2026-07-17 — housekeeping only: pushed 5.2–5.4 to dev, fixed doc drift. Last build session 2026-06-09 completed 5.4 (customer list pages)
-- Next up: 5.5 — Cloud org detail page (5 tabs)
+- Last session: 2026-07-22 — completed 5.5 (Cloud org detail, 5 tabs) + shared /dashboard view. Added CloudOrgMetrics mock layer, reusable Tabs component, BarChart horizontal prop, StatusBadge paused
+- Next up: 5.6 — On-prem org detail + namespace list
 - Blockers: none
 - Deployed: not yet (vercel.json + SPA routing configured, no deploy)
 - Known issues: none logged

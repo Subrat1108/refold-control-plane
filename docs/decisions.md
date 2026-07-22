@@ -24,6 +24,25 @@ with independent loading/error states — no page-level loading gate.
 ## D-004 — License expiry thresholds (2026-06-09)
 LicenseExpiry indicator: amber when <60 days remaining, red when expired.
 
+## D-005 — Tab-specific metrics live in a dedicated fetcher, not on CloudOrgDetail (2026-07-22)
+5.5's tabs needed data the mock layer lacked (tenants, storage, success rate,
+executions-today, avg-exec-time, tenant-growth series, workflow table rows,
+connectors). Added a `CloudOrgMetrics` shape + `fetchCloudOrgMetrics(orgId)`
+rather than bloating `CloudOrgDetail` (which billing/other blocks reuse). Header
++ existing trends/errorBreakdown/apiCallsTrend still come from `useCloudOrg`; AI
+credits from `useAiCredits`. Each tab section fetches independently (extends
+D-003).
+
+## D-006 — "Edit feature flags" button hidden for cloud_customer_admin (2026-07-22)
+Feature-flag management is a Refold concern (/feature-flags is super_admin-only
+per the routing table), so the org-detail button renders only for super_admin.
+Customer admins see the same page at /dashboard without the button.
+
+## D-007 — Extended existing components instead of duplicating (2026-07-22)
+Added a `horizontal` prop to `BarChart` (Workflows errors-by-type), a `paused`
+style to `StatusBadge`, and a new reusable `Tabs` shell component (local state,
+not URL-synced) — the 6-tab namespace detail (5.7) reuses the same shell.
+
 ---
 
 # Parked

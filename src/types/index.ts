@@ -114,6 +114,63 @@ export interface CloudOrg {
   contactName: string
 }
 
+export type WorkflowDefStatus = 'active' | 'paused'
+export type ConnectorStatus = 'active' | 'degraded' | 'down'
+
+export interface BarPoint {
+  label: string
+  value: number
+}
+
+export interface TenantStats {
+  total: number
+  active: number
+  newThisMonth: number
+}
+
+export interface WorkflowMetrics {
+  total: number
+  active: number
+  executionsToday: number
+  avgExecutionMs: number
+}
+
+export interface WorkflowSummary {
+  id: string
+  name: string
+  status: WorkflowDefStatus
+  lastRun: string
+  executions7d: number
+  successRate: number
+  avgDurationMs: number
+}
+
+export interface Connector {
+  id: string
+  name: string
+  type: string
+  status: ConnectorStatus
+  callsToday: number
+  errorRate: number
+  lastActivity: string
+}
+
+export interface CloudOrgMetrics {
+  orgId: string
+  activeTenants: number
+  executionsToday: number
+  successRate: number
+  tenants: TenantStats
+  tenantGrowth: BarPoint[]
+  apiCallsThisMonth: number
+  storageUsedGb: number
+  storageLimitGb: number
+  activeUsers: number
+  workflows: WorkflowMetrics
+  workflowList: WorkflowSummary[]
+  connectors: Connector[]
+}
+
 export interface CloudOrgDetail extends CloudOrg {
   billingCycle: 'monthly' | 'annual'
   nextBillingDate: string

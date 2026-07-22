@@ -11,6 +11,9 @@ import type {
   SearchResult,
   TrendPoint,
   WorkflowRun,
+  CloudOrgMetrics,
+  WorkflowSummary,
+  Connector,
 } from '@/types'
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────
@@ -55,7 +58,7 @@ function workflowRuns(count: number, seed: number): WorkflowRun[] {
 
 // ─── Mutable static data (allows updateFeatureFlag to persist in session) ────
 
-let FEATURE_FLAGS_POOL: FeatureFlag[] = [
+const FEATURE_FLAGS_POOL: FeatureFlag[] = [
   { id: 'ff_001', label: 'AI Credits', description: 'Enable AI-powered credit estimation on workflow runs', enabled: true, scope: 'global', updatedAt: '2025-05-20T09:00:00Z' },
   { id: 'ff_002', label: 'Advanced Analytics', description: 'Expose detailed execution metrics in the dashboard', enabled: false, scope: 'org', updatedAt: '2025-04-14T15:30:00Z' },
   { id: 'ff_003', label: 'Webhook Retry UI', description: 'Show retry controls directly in the webhook log view', enabled: true, scope: 'global', updatedAt: '2025-06-01T11:00:00Z' },
@@ -269,6 +272,112 @@ export async function fetchCloudOrg(id: string): Promise<CloudOrgDetail> {
       { type: 'Rate limit', count: 63, color: '#6366F1' },
       { type: 'Parse error', count: 31, color: '#8b5cf6' },
     ],
+  }
+}
+
+// Per-org detail metrics for the 5-tab cloud org detail page (Prompt 5.5).
+// Numbers are intentionally non-round and scaled off each org's size.
+const CLOUD_METRIC_OVERRIDES: Record<
+  string,
+  { tenants: number; activeTenants: number; newTenants: number; storageUsed: number; storageLimit: number; successRate: number; execToday: number }
+> = {
+  org_cloud_001: { tenants: 214, activeTenants: 187, newTenants: 12, storageUsed: 418, storageLimit: 1024, successRate: 98.3, execToday: 24_718 },
+  org_cloud_002: { tenants: 41, activeTenants: 33, newTenants: 3, storageUsed: 74, storageLimit: 256, successRate: 91.6, execToday: 2_143 },
+  org_cloud_003: { tenants: 1_206, activeTenants: 1_094, newTenants: 47, storageUsed: 3_887, storageLimit: 8_192, successRate: 99.1, execToday: 148_902 },
+  org_cloud_004: { tenants: 58, activeTenants: 0, newTenants: 0, storageUsed: 61, storageLimit: 512, successRate: 0, execToday: 0 },
+  org_cloud_005: { tenants: 133, activeTenants: 118, newTenants: 9, storageUsed: 247, storageLimit: 512, successRate: 97.4, execToday: 11_326 },
+  org_cloud_006: { tenants: 12, activeTenants: 0, newTenants: 0, storageUsed: 9, storageLimit: 128, successRate: 0, execToday: 0 },
+}
+
+const WORKFLOW_DEF_NAMES = [
+  'Invoice Sync', 'Lead Enrichment', 'Daily Report Builder', 'Slack Notification Relay',
+  'CRM Backfill', 'Data Export Pipeline', 'User Onboarding Flow', 'Webhook Processor',
+  'Email Drip Sequence', 'Analytics Aggregator',
+]
+
+function workflowSummaries(count: number, seed: number, live: boolean): WorkflowSummary[] {
+  return Array.from({ length: count }, (_, i) => {
+    const paused = !live || (i + seed) % 5 === 4
+    const lastRun = new Date('2025-06-09T11:40:00Z')
+    lastRun.setMinutes(lastRun.getMinutes() - (i * 23 + seed * 7))
+    return {
+      id: `wfd_${seed}_${i}`,
+      name: WORKFLOW_DEF_NAMES[(i + seed) % WORKFLOW_DEF_NAMES.length],
+      status: paused ? 'paused' : 'active',
+      lastRun: lastRun.toISOString(),
+      executions7d: paused ? Math.round(20 + Math.random() * 120) : Math.round(340 + Math.random() * 4_200),
+      successRate: paused ? 0 : Math.round((93 + Math.random() * 6.8) * 10) / 10,
+      avgDurationMs: Math.round(1_200 + Math.random() * 46_000),
+    }
+  })
+}
+
+function connectorsFor(seed: number, live: boolean): Connector[] {
+  const defs: Array<{ name: string; type: string }> = [
+    { name: 'Salesforce', type: 'CRM' },
+    { name: 'Stripe', type: 'Payments' },
+    { name: 'Slack', type: 'Messaging' },
+    { name: 'PostgreSQL', type: 'Database' },
+    { name: 'HubSpot', type: 'Marketing' },
+    { name: 'AWS S3', type: 'Storage' },
+  ]
+  return defs.map((d, i) => {
+    // Ensure at least one connector trips the >5% red error-rate rule.
+    const errorRate =
+      i === 1 ? 7.4 : Math.round(Math.random() * 4.5 * 10) / 10
+    const status: Connector['status'] =
+      !live ? 'down' : i === 1 ? 'degraded' : 'active'
+    const lastActivity = new Date('2025-06-09T11:45:00Z')
+    lastActivity.setMinutes(lastActivity.getMinutes() - (i * 4 + seed))
+    return {
+      id: `conn_${seed}_${i}`,
+      name: d.name,
+      type: d.type,
+      status,
+      callsToday: live ? Math.round(1_400 + Math.random() * 38_000) : 0,
+      errorRate: live ? errorRate : 0,
+      lastActivity: lastActivity.toISOString(),
+    }
+  })
+}
+
+export async function fetchCloudOrgMetrics(orgId: string): Promise<CloudOrgMetrics> {
+  await delay(); maybeThrow()
+  const org = CLOUD_ORGS.find((o) => o.id === orgId)
+  if (!org) throw new Error(`Cloud org ${orgId} not found`)
+
+  const m = CLOUD_METRIC_OVERRIDES[orgId] ?? {
+    tenants: 87, activeTenants: 72, newTenants: 5, storageUsed: 140, storageLimit: 512, successRate: 96.2, execToday: 7_450,
+  }
+  const live = org.status === 'active' || org.status === 'degraded'
+  const seed = orgId.charCodeAt(orgId.length - 1)
+
+  // Tenant growth over the last 6 months, trending toward the current total.
+  const months = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun']
+  const tenantGrowth = months.map((label, i) => ({
+    label,
+    value: Math.round(m.tenants * (0.62 + i * 0.076) * (1 + (Math.random() - 0.5) * 0.06)),
+  }))
+
+  return {
+    orgId,
+    activeTenants: m.activeTenants,
+    executionsToday: m.execToday,
+    successRate: m.successRate,
+    tenants: { total: m.tenants, active: m.activeTenants, newThisMonth: m.newTenants },
+    tenantGrowth,
+    apiCallsThisMonth: org.apiCallsThisMonth,
+    storageUsedGb: m.storageUsed,
+    storageLimitGb: m.storageLimit,
+    activeUsers: org.activeUsers,
+    workflows: {
+      total: org.totalWorkflows,
+      active: live ? Math.round(org.totalWorkflows * 0.71) : 0,
+      executionsToday: m.execToday,
+      avgExecutionMs: live ? Math.round(2_400 + Math.random() * 9_000) : 0,
+    },
+    workflowList: workflowSummaries(10, seed, live),
+    connectors: connectorsFor(seed, live),
   }
 }
 

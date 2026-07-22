@@ -16,6 +16,20 @@ Template:
 
 ---
 
+## Session 6 — 2026-07-22 — 5.5 Cloud org detail (5 tabs)
+**Built:** `/cloud-customers/:orgId` full page + `CloudOrgDetailView` reused at
+`/dashboard` for cloud_customer_admin. Header (name/plan/status + Edit-flags
+stub), 5 tabs (Overview, Tenants, Usage, Workflows, Connectors) each with
+independent skeleton + ErrorState/Retry. New `CloudOrgMetrics` type +
+`fetchCloudOrgMetrics` in the mock layer; new reusable `Tabs` component;
+`BarChart` gained a `horizontal` prop; `StatusBadge` gained `paused`. Doc fix:
+build-spec §10.1 tree root renamed to refold-control-plane. typecheck/lint/build
+all green.
+**Deviations:** none — data gap filled per plan (see D-005).
+**Decisions:** D-005, D-006, D-007
+**Next:** 5.6 — On-prem org detail + namespace list
+**Issues:** —
+
 ## Session 5 — 2026-07-17 — housekeeping (no prompt block)
 **Built:** nothing new. Sessions 2–4 (5.2–5.4) had never been committed — all
 814 lines lived only in the working tree, so dev was still at the scaffold.

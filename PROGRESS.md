@@ -6,7 +6,7 @@
 - [x] 5.2 — Mock data layer
 - [x] 5.3 — God View dashboard (super_admin)
 - [x] 5.4 — Customer list pages (cloud + on-prem)
-- [ ] 5.5 — Cloud org detail (5 tabs)
+- [x] 5.5 — Cloud org detail (5 tabs)
 - [ ] 5.6 — On-prem org detail + namespace list
 - [ ] 5.7 — Namespace detail (6 tabs inc. env vars)
 - [ ] 5.8 — On-prem customer admin view
@@ -35,7 +35,7 @@
 ## Last session
 (See docs/devlog.md for full session history — this is just the pointer.)
 
-Date: 2026-07-17
-Completed: housekeeping only, no prompt block — pushed 5.2–5.4 to dev (they had never left the working tree), fixed doc drift. Last build session was 2026-06-09, completing 5.4.
-Decisions made: none
+Date: 2026-07-22
+Completed: 5.5 — Cloud org detail (5 tabs) + shared /dashboard view; new CloudOrgMetrics mock data, reusable Tabs component, BarChart horizontal prop, StatusBadge paused. Doc fix to build-spec §10.1.
+Decisions made: D-005, D-006, D-007
 Known issues: —

@@ -3,6 +3,7 @@ export {
   useOverviewStats,
   useCloudOrgs,
   useCloudOrg,
+  useCloudOrgMetrics,
   useOnPremOrgs,
   useOnPremOrg,
   useNamespaceDetail,
