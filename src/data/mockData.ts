@@ -11,7 +11,7 @@ import type {
   SearchResult,
   TrendPoint,
   WorkflowRun,
-  CloudOrgMetrics,
+  DetailMetrics,
   WorkflowSummary,
   Connector,
   OnPremOrgDetail,
@@ -343,7 +343,55 @@ function connectorsFor(seed: number, live: boolean): Connector[] {
   })
 }
 
-export async function fetchCloudOrgMetrics(orgId: string): Promise<CloudOrgMetrics> {
+interface DetailMetricsInput {
+  id: string
+  live: boolean
+  seed: number
+  tenants: number
+  activeTenants: number
+  newTenants: number
+  storageUsed: number
+  storageLimit: number
+  successRate: number
+  execToday: number
+  totalWorkflows: number
+  apiCallsThisMonth: number
+  activeUsers: number
+}
+
+// Shared builder for the 5-tab detail metrics, used by both the cloud org
+// (5.5) and namespace (5.7) detail pages so the sections stay identical.
+function buildDetailMetrics(i: DetailMetricsInput): DetailMetrics {
+  // Tenant growth over the last 6 months, trending toward the current total.
+  const months = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun']
+  const tenantGrowth = months.map((label, idx) => ({
+    label,
+    value: Math.round(i.tenants * (0.62 + idx * 0.076) * (1 + (Math.random() - 0.5) * 0.06)),
+  }))
+
+  return {
+    id: i.id,
+    activeTenants: i.activeTenants,
+    executionsToday: i.execToday,
+    successRate: i.successRate,
+    tenants: { total: i.tenants, active: i.activeTenants, newThisMonth: i.newTenants },
+    tenantGrowth,
+    apiCallsThisMonth: i.apiCallsThisMonth,
+    storageUsedGb: i.storageUsed,
+    storageLimitGb: i.storageLimit,
+    activeUsers: i.activeUsers,
+    workflows: {
+      total: i.totalWorkflows,
+      active: i.live ? Math.round(i.totalWorkflows * 0.71) : 0,
+      executionsToday: i.execToday,
+      avgExecutionMs: i.live ? Math.round(2_400 + Math.random() * 9_000) : 0,
+    },
+    workflowList: workflowSummaries(10, i.seed, i.live),
+    connectors: connectorsFor(i.seed, i.live),
+  }
+}
+
+export async function fetchCloudOrgMetrics(orgId: string): Promise<DetailMetrics> {
   await delay(); maybeThrow()
   const org = CLOUD_ORGS.find((o) => o.id === orgId)
   if (!org) throw new Error(`Cloud org ${orgId} not found`)
@@ -352,35 +400,39 @@ export async function fetchCloudOrgMetrics(orgId: string): Promise<CloudOrgMetri
     tenants: 87, activeTenants: 72, newTenants: 5, storageUsed: 140, storageLimit: 512, successRate: 96.2, execToday: 7_450,
   }
   const live = org.status === 'active' || org.status === 'degraded'
-  const seed = orgId.charCodeAt(orgId.length - 1)
-
-  // Tenant growth over the last 6 months, trending toward the current total.
-  const months = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun']
-  const tenantGrowth = months.map((label, i) => ({
-    label,
-    value: Math.round(m.tenants * (0.62 + i * 0.076) * (1 + (Math.random() - 0.5) * 0.06)),
-  }))
-
-  return {
-    orgId,
-    activeTenants: m.activeTenants,
-    executionsToday: m.execToday,
-    successRate: m.successRate,
-    tenants: { total: m.tenants, active: m.activeTenants, newThisMonth: m.newTenants },
-    tenantGrowth,
+  return buildDetailMetrics({
+    id: orgId,
+    live,
+    seed: orgId.charCodeAt(orgId.length - 1),
+    ...m,
+    totalWorkflows: org.totalWorkflows,
     apiCallsThisMonth: org.apiCallsThisMonth,
-    storageUsedGb: m.storageUsed,
-    storageLimitGb: m.storageLimit,
     activeUsers: org.activeUsers,
-    workflows: {
-      total: org.totalWorkflows,
-      active: live ? Math.round(org.totalWorkflows * 0.71) : 0,
-      executionsToday: m.execToday,
-      avgExecutionMs: live ? Math.round(2_400 + Math.random() * 9_000) : 0,
-    },
-    workflowList: workflowSummaries(10, seed, live),
-    connectors: connectorsFor(seed, live),
-  }
+  })
+}
+
+export async function fetchNamespaceMetrics(nsId: string): Promise<DetailMetrics> {
+  await delay(); maybeThrow()
+  const ns = ONPREM_ORGS.flatMap((o) => o.namespaces).find((n) => n.id === nsId)
+  if (!ns) throw new Error(`Namespace ${nsId} not found`)
+
+  const live = ns.status === 'running' || ns.status === 'degraded'
+  const scale = Math.max(ns.executionsToday, 1)
+  return buildDetailMetrics({
+    id: nsId,
+    live,
+    seed: nsId.charCodeAt(nsId.length - 1),
+    tenants: live ? Math.round(18 + (ns.activeWorkflows % 40)) : 6,
+    activeTenants: live ? Math.round(14 + (ns.activeWorkflows % 32)) : 0,
+    newTenants: live ? 2 + (ns.activeWorkflows % 4) : 0,
+    storageUsed: live ? Math.round(40 + (scale % 260)) : 12,
+    storageLimit: 512,
+    successRate: live ? Math.round((94 + (scale % 5) + Math.random() * 1.5) * 10) / 10 : 0,
+    execToday: ns.executionsToday,
+    totalWorkflows: ns.activeWorkflows,
+    apiCallsThisMonth: ns.executionsToday * 31,
+    activeUsers: live ? Math.round(8 + (ns.activeWorkflows % 44)) : 0,
+  })
 }
 
 export async function fetchOnPremOrgs(): Promise<OnPremOrg[]> {
@@ -446,6 +498,8 @@ export async function fetchNamespaceDetail(nsId: string): Promise<NamespaceDetai
     uptime: 99.7,
     ...overrides,
     executionsTrend: trend30(ns.executionsToday || 500, 0.25),
+    apiCallsTrend: trend30((ns.executionsToday || 500) * 3, 0.3),
+    latestVersion: LATEST_REFOLD_VERSION,
     featureFlags: FEATURE_FLAGS_POOL.slice(1, 5),
     envVars: [
       { id: `${nsId}_ev_001`, key: 'N8N_ENCRYPTION_KEY', value: 'enc_xg8vu91kp3mz', isSecret: true, updatedAt: '2025-05-22T00:00:00Z' },

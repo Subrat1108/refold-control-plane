@@ -83,6 +83,8 @@ export interface NamespaceDetail extends Namespace {
   memoryUsage: number
   diskUsage: number
   executionsTrend: TrendPoint[]
+  apiCallsTrend: TrendPoint[]
+  latestVersion: string
   featureFlags: FeatureFlag[]
   envVars: EnvVar[]
   logs: LogEntry[]
@@ -155,8 +157,11 @@ export interface Connector {
   lastActivity: string
 }
 
-export interface CloudOrgMetrics {
-  orgId: string
+// Shared shape for the 5-tab detail sections, reused by both the cloud org
+// detail page (5.5) and the on-prem namespace detail page (5.7). Scoped by
+// whichever id the container's fetcher was called with.
+export interface DetailMetrics {
+  id: string
   activeTenants: number
   executionsToday: number
   successRate: number
@@ -169,6 +174,23 @@ export interface CloudOrgMetrics {
   workflows: WorkflowMetrics
   workflowList: WorkflowSummary[]
   connectors: Connector[]
+}
+
+// Normalized chart series the detail sections consume, selected from either
+// CloudOrgDetail or NamespaceDetail so the sections stay data-source-agnostic.
+export interface DetailCharts {
+  executionsTrend: TrendPoint[]
+  apiCallsTrend: TrendPoint[]
+  errorBreakdown: ErrorBreakdownItem[]
+}
+
+// Minimal structural view of a TanStack Query result, so shared presentational
+// sections can accept a query without importing the query library.
+export interface QueryLike<T> {
+  data: T | undefined
+  isLoading: boolean
+  isError: boolean
+  refetch: () => void
 }
 
 export interface CloudOrgDetail extends CloudOrg {

@@ -8,7 +8,7 @@
 - [x] 5.4 — Customer list pages (cloud + on-prem)
 - [x] 5.5 — Cloud org detail (5 tabs)
 - [x] 5.6 — On-prem org detail + namespace list
-- [ ] 5.7 — Namespace detail (6 tabs inc. env vars)
+- [x] 5.7 — Namespace detail (6 tabs inc. env vars)
 - [ ] 5.8 — On-prem customer admin view
 - [ ] 5.9 — Feature flags slide-over panel
 - [ ] 5.10 — AI Credits card
@@ -36,6 +36,6 @@
 (See docs/devlog.md for full session history — this is just the pointer.)
 
 Date: 2026-07-22
-Completed: 5.6 — On-prem org detail + namespace list; cluster grouping, semver upgrade check, upgrade modal + add-namespace slide-over (local state), env-vars slide-over stub. New OnPremOrgDetail mock + fetcher, semver util.
-Decisions made: D-008, D-009
+Completed: 5.7 — Namespace detail (6 tabs). Extracted 5.5 tab sections into shared DetailTabs (DetailMetrics/DetailCharts), reused for namespace via namespace-scoped fetchers. New Environment Variables tab (local-state CRUD, secret masking). Cross-org access guard.
+Decisions made: D-010, D-011, D-012, D-013
 Known issues: —

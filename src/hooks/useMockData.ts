@@ -25,6 +25,38 @@ export function useOnPremOrg(id: string) {
   return useQuery({ queryKey: ['onPremOrg', id], queryFn: () => api.fetchOnPremOrg(id), enabled: !!id })
 }
 
+// Normalized chart series for the shared detail sections (DetailCharts),
+// selected from the full cloud-org detail so no second fetch is needed.
+export function useCloudDetailCharts(id: string) {
+  return useQuery({
+    queryKey: ['cloudOrg', id],
+    queryFn: () => api.fetchCloudOrg(id),
+    enabled: !!id,
+    select: (d) => ({
+      executionsTrend: d.workflowExecutionsTrend,
+      apiCallsTrend: d.apiCallsTrend,
+      errorBreakdown: d.errorBreakdown,
+    }),
+  })
+}
+
+export function useNamespaceMetrics(nsId: string) {
+  return useQuery({ queryKey: ['namespaceMetrics', nsId], queryFn: () => api.fetchNamespaceMetrics(nsId), enabled: !!nsId })
+}
+
+export function useNamespaceCharts(nsId: string) {
+  return useQuery({
+    queryKey: ['namespaceDetail', nsId],
+    queryFn: () => api.fetchNamespaceDetail(nsId),
+    enabled: !!nsId,
+    select: (d) => ({
+      executionsTrend: d.executionsTrend,
+      apiCallsTrend: d.apiCallsTrend,
+      errorBreakdown: d.errorBreakdown,
+    }),
+  })
+}
+
 export function useOnPremOrgDetail(id: string) {
   return useQuery({ queryKey: ['onPremOrgDetail', id], queryFn: () => api.fetchOnPremOrgDetail(id), enabled: !!id })
 }

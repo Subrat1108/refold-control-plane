@@ -3,8 +3,8 @@
 ## Current status
 <!-- Canonical state snapshot. The build room updates this block at the end of
      every session. The planning room reads it first. Keep it under ~10 lines. -->
-- Last session: 2026-07-22 — completed 5.6 (On-prem org detail + namespace list). Cluster grouping, semver upgrade check, upgrade modal + add-namespace slide-over (local state). Added OnPremOrgDetail mock/fetcher + semver util
-- Next up: 5.7 — Namespace detail (6 tabs inc. env vars)
+- Last session: 2026-07-22 — completed 5.7 (Namespace detail, 6 tabs). Extracted 5.5 tab sections into shared DetailTabs (DetailMetrics/DetailCharts), reused for namespaces; new Environment Variables tab (local-state CRUD, secret masking); cross-org access guard
+- Next up: 5.8 — On-prem customer admin view
 - Blockers: none
 - Deployed: not yet (vercel.json + SPA routing configured, no deploy)
 - Known issues: none logged

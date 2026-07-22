@@ -57,6 +57,35 @@ layer. Edits reset on reload/remount by design; keeps the mock data pristine
 across navigation and other blocks. (Contrast updateFeatureFlag, which does
 persist in the mock pool — that was a deliberate exception for the flags panel.)
 
+## D-010 — Shared DetailTabs; CloudOrgMetrics → DetailMetrics (2026-07-22)
+Extracted the five 5.5 tab sections (Overview/Tenants/Usage/Workflows/Connectors)
+from CloudOrgDetailPage into presentational `components/detail/DetailTabs.tsx`.
+Each section takes `QueryLike` query objects as props (own skeleton + error per
+D-003); containers wire the hooks. Renamed `CloudOrgMetrics → DetailMetrics` and
+added `DetailCharts` as the neutral shapes both pages feed. Cloud page became a
+thin container, behaviour-identical. No forked components.
+
+## D-011 — Namespace tab data via dedicated namespace-scoped fetchers (2026-07-22)
+Per D-005, namespace tab metrics come from `fetchNamespaceMetrics(nsId)` (returns
+DetailMetrics scoped to the namespace). Added `apiCallsTrend` + `latestVersion`
+to `NamespaceDetail`; normalized chart selectors (`useNamespaceCharts`,
+`useCloudDetailCharts`) reshape each source into DetailCharts with no extra fetch
+(shared query keys).
+
+## D-012 — Cross-org namespace access blocked inline (interim) (2026-07-22)
+If an onprem_customer_admin opens a namespace whose `orgId` ≠ their `user.orgId`,
+the page renders Access Denied and fetches nothing further — no data leak. This
+is interim; full role/scope enforcement is 5.8.
+
+## D-013 — Env-var table is bespoke, not DataTable (2026-07-22)
+The Environment Variables table needs inline add/edit form rows (add row at top,
+edit swaps a row for a form) which the generic DataTable can't host. Built a
+bespoke table using DataTable's exact styling (h-[52px], borders, px-4) for
+visual parity; still reuses StatusBadge-style tokens, Tooltip, Modal, EmptyState.
+Secret masking: reveal state is an initially-empty Set, so plaintext is never in
+the DOM on mount (CLAUDE secrets rule); editing a secret pre-fills the input
+(explicit action, consistent with the reveal toggle).
+
 ---
 
 # Parked

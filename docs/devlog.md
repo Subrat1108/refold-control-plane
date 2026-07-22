@@ -16,6 +16,24 @@ Template:
 
 ---
 
+## Session 8 — 2026-07-22 — 5.7 Namespace detail (6 tabs inc. env vars)
+**Built:** `/onprem-customers/:orgId/namespaces/:namespaceId`. Extracted the 5.5
+tab sections into shared, presentational `components/detail/DetailTabs.tsx` —
+each takes `QueryLike` props; renamed `CloudOrgMetrics → DetailMetrics`, added
+`DetailCharts`. Cloud page rewired as a thin container (behaviour-identical);
+namespace page reuses the same 5 sections via namespace-scoped fetchers
+(`fetchNamespaceMetrics`, `apiCallsTrend`/`latestVersion` added to
+NamespaceDetail; normalized chart selector hooks). New Environment Variables tab:
+bespoke table with inline add/edit form rows + delete-confirm Modal, all local
+state (D-009); secrets masked ●●●●●● on mount, reveal only on explicit click.
+Header shows version badge + Upgrade-available modal. Cross-org access guard for
+onprem_customer_admin. typecheck/lint/build all green.
+**Deviations:** env-var table is bespoke, not DataTable (D-013) — DataTable can't
+host inline form rows.
+**Decisions:** D-010, D-011, D-012, D-013
+**Next:** 5.8 — On-prem customer admin view
+**Issues:** —
+
 ## Session 7 — 2026-07-22 — 5.6 On-prem org detail + namespace list
 **Built:** `/onprem-customers/:orgId` full page. Header (name/plan/status +
 derived "N namespaces across M clusters" + Add-namespace button). Namespaces
