@@ -9,7 +9,8 @@ import type {
   OnPremDashboard,
   AiCredits,
   CreditConsumer,
-  SearchResult,
+  SearchResults,
+  SearchResultItem,
   TrendPoint,
   WorkflowRun,
   DetailMetrics,
@@ -315,16 +316,18 @@ function workflowSummaries(count: number, seed: number, live: boolean): Workflow
   })
 }
 
+// Connector catalogue shared by the per-entity generator and global search.
+const CONNECTOR_DEFS: Array<{ name: string; type: string }> = [
+  { name: 'Salesforce', type: 'CRM' },
+  { name: 'Stripe', type: 'Payments' },
+  { name: 'Slack', type: 'Messaging' },
+  { name: 'PostgreSQL', type: 'Database' },
+  { name: 'HubSpot', type: 'Marketing' },
+  { name: 'AWS S3', type: 'Storage' },
+]
+
 function connectorsFor(seed: number, live: boolean): Connector[] {
-  const defs: Array<{ name: string; type: string }> = [
-    { name: 'Salesforce', type: 'CRM' },
-    { name: 'Stripe', type: 'Payments' },
-    { name: 'Slack', type: 'Messaging' },
-    { name: 'PostgreSQL', type: 'Database' },
-    { name: 'HubSpot', type: 'Marketing' },
-    { name: 'AWS S3', type: 'Storage' },
-  ]
-  return defs.map((d, i) => {
+  return CONNECTOR_DEFS.map((d, i) => {
     // Ensure at least one connector trips the >5% red error-rate rule.
     const errorRate =
       i === 1 ? 7.4 : Math.round(Math.random() * 4.5 * 10) / 10
@@ -620,26 +623,77 @@ export async function fetchAiCredits(id: string): Promise<AiCredits> {
   }
 }
 
-export async function searchAll(query: string): Promise<SearchResult[]> {
+export async function searchAll(query: string): Promise<SearchResults> {
   await delay()
-  if (!query.trim()) return []
-  const q = query.toLowerCase()
-  const results: SearchResult[] = []
+  const empty: SearchResults = { organizations: [], namespaces: [], connectors: [] }
+  const q = query.trim().toLowerCase()
+  if (!q) return empty
 
+  const organizations: SearchResultItem[] = []
+  const namespaces: SearchResultItem[] = []
+  const connectors: SearchResultItem[] = []
+
+  // Organizations (cloud + on-prem), matched by name.
   for (const org of CLOUD_ORGS) {
-    if (org.name.toLowerCase().includes(q) || org.contactEmail.toLowerCase().includes(q)) {
-      results.push({ type: 'cloud_org', id: org.id, label: org.name, sublabel: `Cloud · ${org.plan}`, href: `/cloud-customers/${org.id}` })
+    if (org.name.toLowerCase().includes(q)) {
+      organizations.push({ type: 'org', id: org.id, name: org.name, breadcrumb: 'Cloud', href: `/cloud-customers/${org.id}` })
     }
   }
   for (const org of ONPREM_ORGS) {
-    if (org.name.toLowerCase().includes(q) || org.contactEmail.toLowerCase().includes(q)) {
-      results.push({ type: 'onprem_org', id: org.id, label: org.name, sublabel: `On-Prem · ${org.plan}`, href: `/onprem-customers/${org.id}` })
+    if (org.name.toLowerCase().includes(q)) {
+      organizations.push({ type: 'org', id: org.id, name: org.name, breadcrumb: 'On-premise', href: `/onprem-customers/${org.id}` })
     }
+  }
+
+  // Namespaces, matched by namespace name or cluster name.
+  for (const org of ONPREM_ORGS) {
     for (const ns of org.namespaces) {
       if (ns.name.toLowerCase().includes(q) || ns.clusterName.toLowerCase().includes(q)) {
-        results.push({ type: 'namespace', id: ns.id, orgId: org.id, label: ns.name, sublabel: `${org.name} · ${ns.clusterName}`, href: `/onprem-customers/${org.id}/namespaces/${ns.id}` })
+        namespaces.push({
+          type: 'namespace',
+          id: ns.id,
+          name: ns.name,
+          breadcrumb: `${org.name} → ${ns.name} (${ns.clusterName})`,
+          href: `/onprem-customers/${org.id}/namespaces/${ns.id}`,
+        })
       }
     }
   }
-  return results
+
+  // Connectors, matched by name, across the entities that have a Connectors tab:
+  // cloud orgs and on-prem namespaces (their detail pages, D-020).
+  for (const org of CLOUD_ORGS) {
+    for (const def of CONNECTOR_DEFS) {
+      if (def.name.toLowerCase().includes(q)) {
+        connectors.push({
+          type: 'connector',
+          id: `${org.id}_${def.name}`,
+          name: def.name,
+          breadcrumb: `${org.name} · Connectors`,
+          href: `/cloud-customers/${org.id}?tab=connectors`,
+        })
+      }
+    }
+  }
+  for (const org of ONPREM_ORGS) {
+    for (const ns of org.namespaces) {
+      for (const def of CONNECTOR_DEFS) {
+        if (def.name.toLowerCase().includes(q)) {
+          connectors.push({
+            type: 'connector',
+            id: `${ns.id}_${def.name}`,
+            name: def.name,
+            breadcrumb: `${org.name} → ${ns.name} · Connectors`,
+            href: `/onprem-customers/${org.id}/namespaces/${ns.id}?tab=connectors`,
+          })
+        }
+      }
+    }
+  }
+
+  return {
+    organizations: organizations.slice(0, 3),
+    namespaces: namespaces.slice(0, 3),
+    connectors: connectors.slice(0, 3),
+  }
 }

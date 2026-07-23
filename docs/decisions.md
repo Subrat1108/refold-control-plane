@@ -136,6 +136,24 @@ pristine (D-009). The 600ms fill animation reuses ProgressBar via a new optional
 `durationMs` prop (default 300, so existing usages are unchanged); the card seeds
 a 0 display value and bumps it to `used` on mount via requestAnimationFrame.
 
+## D-020 — Connectors indexed from cloud orgs + namespaces (2026-07-23)
+Global search's Connectors group is built from the entities that actually have a
+Connectors tab: cloud orgs (→ /cloud-customers/:id?tab=connectors) and on-prem
+namespaces (→ /onprem-customers/:orgId/namespaces/:nsId?tab=connectors). On-prem
+*org* detail has no Connectors tab (it's the cluster tables), so connectors are
+not indexed there. Connector names come from a shared `CONNECTOR_DEFS` constant
+(also used by connectorsFor), so the same fixed set repeats across orgs — the
+3-per-group cap + owner breadcrumb disambiguate.
+
+## D-021 — Tabbed pages read initial ?tab=; SearchResults reshaped (2026-07-23)
+So connector results land on the Connectors tab, CloudOrgDetailView and
+NamespaceDetailPage now seed their tab state from a `?tab=` query param
+(validated against known tab ids), a minimal read — tabs remain local state, not
+URL-synced (D-007 unchanged). The unused `SearchResult` type was reshaped into
+grouped `SearchResults`/`SearchResultItem`; `searchAll` returns groups capped to
+3. `SearchDropdown` keeps a plain `onSearch` filter-input mode for the customer
+list pages and switches to global-search mode when no `onSearch` is given.
+
 ---
 
 # Parked

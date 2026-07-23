@@ -3,8 +3,8 @@
 ## Current status
 <!-- Canonical state snapshot. The build room updates this block at the end of
      every session. The planning room reads it first. Keep it under ~10 lines. -->
-- Last session: 2026-07-23 — completed 5.10 (AI Credits card). Added once to shared DetailTabs Overview (renders for cloud org + namespace); animated ProgressBar (amber>70/red>90, 600ms), top-5 consumers table, super_admin ephemeral Edit-limit. Extended fetchAiCredits for namespace scoping (D-018/D-019)
-- Next up: 5.11 — Global search
+- Last session: 2026-07-23 — completed 5.11 (Global search). SearchDropdown is now the grouped global search (super_admin topbar): Organizations/Namespaces/Connectors, keyboard nav, breadcrumbs, connector→Connectors-tab deep-link via ?tab=. Reshaped searchAll → SearchResults (D-020/D-021)
+- Next up: 5.12 — Polish pass
 - Blockers: none
 - Deployed: not yet (vercel.json + SPA routing configured, no deploy)
 - Known issues: none logged

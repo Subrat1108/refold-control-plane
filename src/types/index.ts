@@ -272,13 +272,20 @@ export interface AiCredits {
   topConsumers: CreditConsumer[]
 }
 
-export interface SearchResult {
-  type: 'cloud_org' | 'onprem_org' | 'namespace'
+export type SearchResultType = 'org' | 'namespace' | 'connector'
+
+export interface SearchResultItem {
+  type: SearchResultType
   id: string
-  orgId?: string
-  label: string
-  sublabel: string
+  name: string
+  breadcrumb: string
   href: string
+}
+
+export interface SearchResults {
+  organizations: SearchResultItem[]
+  namespaces: SearchResultItem[]
+  connectors: SearchResultItem[]
 }
 
 export interface AuthUser {

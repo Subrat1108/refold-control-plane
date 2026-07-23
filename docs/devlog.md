@@ -16,6 +16,24 @@ Template:
 
 ---
 
+## Session 12 — 2026-07-23 — 5.11 Global search
+**Built:** fleshed out `SearchDropdown` into the real global search (rendered in
+the super_admin topbar per D-016). Debounced query → `useSearch` → grouped
+dropdown: Organizations / Namespaces / Connectors, ≤3 each, with type icon
+(Building2/Layers/Plug), name + breadcrumb. Full keyboard nav (↑/↓ wrap across
+groups, Enter navigates, Escape closes + refocuses), outside-click close,
+"No results"/"Searching…" states. Reshaped `searchAll` to return grouped
+`SearchResults` incl. connectors (new `CONNECTOR_DEFS` constant, indexed across
+cloud orgs + namespaces); connector rows deep-link to the Connectors tab via
+`?tab=connectors`, which the two tabbed detail pages now read as their initial
+tab. Kept the `onSearch` filter-input mode so the customer-list pages still work.
+typecheck/lint/build all green.
+**Deviations:** connectors indexed from cloud orgs + namespaces (on-prem org
+detail has no Connectors tab) — see D-020.
+**Decisions:** D-020, D-021
+**Next:** 5.12 — Polish pass
+**Issues:** —
+
 ## Session 11 — 2026-07-23 — 5.10 AI Credits card
 **Built:** an `AiCreditsCard` added once to the shared DetailTabs Overview, so it
 renders for both the cloud org detail and the on-prem namespace detail, scoped by

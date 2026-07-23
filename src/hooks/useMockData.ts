@@ -85,7 +85,7 @@ export function useSearch(query: string) {
   return useQuery({
     queryKey: ['search', query],
     queryFn: () => api.searchAll(query),
-    enabled: query.trim().length >= 2,
+    enabled: query.trim().length >= 1,
     staleTime: 0,
   })
 }

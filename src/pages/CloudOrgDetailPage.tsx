@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import { Link, useParams } from 'react-router-dom'
+import { Link, useParams, useSearchParams } from 'react-router-dom'
 import { ChevronLeft, Flag } from 'lucide-react'
 import {
   useAuth,
@@ -31,7 +31,9 @@ const TABS: TabItem[] = [
 
 export function CloudOrgDetailView({ orgId, showBack }: { orgId: string; showBack: boolean }) {
   const { role } = useAuth()
-  const [tab, setTab] = useState('overview')
+  const [searchParams] = useSearchParams()
+  const initialTab = TABS.some((t) => t.id === searchParams.get('tab')) ? searchParams.get('tab')! : 'overview'
+  const [tab, setTab] = useState(initialTab)
   const [flagsOpen, setFlagsOpen] = useState(false)
 
   const detail = useCloudOrg(orgId)

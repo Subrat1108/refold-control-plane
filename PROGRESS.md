@@ -12,7 +12,7 @@
 - [x] 5.8 — On-prem customer admin view
 - [x] 5.9 — Feature flags slide-over panel
 - [x] 5.10 — AI Credits card
-- [ ] 5.11 — Global search
+- [x] 5.11 — Global search
 - [ ] 5.12 — Polish pass
 
 ## Deployment
@@ -36,6 +36,6 @@
 (See docs/devlog.md for full session history — this is just the pointer.)
 
 Date: 2026-07-23
-Completed: 5.10 — AI Credits card in shared DetailTabs Overview (renders for both cloud org + namespace). Usage fraction, animated ProgressBar (amber>70/red>90, 600ms fill), resets-on date, top-5 consumers table, super_admin Edit-limit (ephemeral). Extended fetchAiCredits to scope namespace ids; added topConsumers to AiCredits.
-Decisions made: D-018, D-019
+Completed: 5.11 — Global search. Fleshed out SearchDropdown (super_admin topbar) into grouped global search (Organizations/Namespaces/Connectors, 3 per group, icons, breadcrumbs, keyboard nav, outside-click/Escape close). Reshaped searchAll → grouped SearchResults incl. connectors; connector/tab deep-link via ?tab=. Kept onSearch filter-input mode for customer-list pages.
+Decisions made: D-020, D-021
 Known issues: —

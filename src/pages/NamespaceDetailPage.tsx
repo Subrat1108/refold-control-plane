@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react'
-import { Link, useParams } from 'react-router-dom'
+import { Link, useParams, useSearchParams } from 'react-router-dom'
 import { ArrowUpCircle, ChevronLeft, Eye, EyeOff, Lock, Pencil, Plus, Trash2 } from 'lucide-react'
 import {
   useNamespaceDetail,
@@ -37,8 +37,10 @@ const TABS: TabItem[] = [
 export function NamespaceDetailPage() {
   const { orgId, namespaceId } = useParams()
   const nsId = namespaceId ?? ''
+  const [searchParams] = useSearchParams()
+  const initialTab = TABS.some((t) => t.id === searchParams.get('tab')) ? searchParams.get('tab')! : 'overview'
 
-  const [tab, setTab] = useState('overview')
+  const [tab, setTab] = useState(initialTab)
   const [upgradeOpen, setUpgradeOpen] = useState(false)
   // Header version lives in local state so a confirmed upgrade reflects
   // immediately (D-009 — ephemeral, not persisted to the mock layer).
