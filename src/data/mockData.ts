@@ -8,6 +8,7 @@ import type {
   CloudDashboard,
   OnPremDashboard,
   AiCredits,
+  CreditConsumer,
   SearchResult,
   TrendPoint,
   WorkflowRun,
@@ -569,7 +570,32 @@ export async function fetchOnPremDashboard(orgId: string): Promise<OnPremDashboa
   }
 }
 
-export async function fetchAiCredits(orgId: string): Promise<AiCredits> {
+// Top-5 credit consumers summing to `used`, with descending shares. Deterministic
+// enough for a stable-looking breakdown; percents are rounded shares of the total.
+function topCreditConsumers(seed: number, used: number): CreditConsumer[] {
+  const weights = [0.34, 0.26, 0.18, 0.13, 0.09]
+  return weights.map((w, i) => {
+    const credits = Math.round(used * w)
+    return {
+      name: WORKFLOW_DEF_NAMES[(i + seed) % WORKFLOW_DEF_NAMES.length],
+      credits,
+      percent: used > 0 ? Math.round((credits / used) * 100) : 0,
+    }
+  })
+}
+
+// Per-namespace credit usage, chosen so the amber (>70%) and red (>90%) bar
+// states both appear across namespaces.
+const NS_CREDIT_OVERRIDES: Record<string, Pick<AiCredits, 'balance' | 'used' | 'limit'>> = {
+  ns_001: { balance: 5_800, used: 44_200, limit: 50_000 }, // 88% — amber
+  ns_002: { balance: 1_120, used: 8_880, limit: 10_000 },  // 89% — amber
+  ns_003: { balance: 22_400, used: 27_600, limit: 50_000 },// 55% — indigo
+  ns_004: { balance: 940, used: 24_060, limit: 25_000 },   // 96% — red
+  ns_005: { balance: 9_700, used: 300, limit: 10_000 },    // 3%  — indigo
+  ns_006: { balance: 6_150, used: 18_850, limit: 25_000 }, // 75% — amber
+}
+
+export async function fetchAiCredits(id: string): Promise<AiCredits> {
   await delay(); maybeThrow()
   const byOrg: Record<string, Pick<AiCredits, 'balance' | 'used' | 'limit'>> = {
     org_cloud_001: { balance: 42_317, used: 57_683, limit: 100_000 },
@@ -582,12 +608,15 @@ export async function fetchAiCredits(orgId: string): Promise<AiCredits> {
     org_onprem_002: { balance: 12_771, used: 37_229, limit: 50_000 },
     org_onprem_003: { balance: 4_302, used: 5_698, limit: 10_000 },
   }
-  const credits = byOrg[orgId] ?? { balance: 25_000, used: 25_000, limit: 50_000 }
+  // Scope by namespace id too (D-011): the namespace detail Overview reuses this.
+  const credits = byOrg[id] ?? NS_CREDIT_OVERRIDES[id] ?? { balance: 25_000, used: 25_000, limit: 50_000 }
+  const seed = id.charCodeAt(id.length - 1)
   return {
-    orgId,
+    orgId: id,
     ...credits,
     resetDate: '2025-07-01T00:00:00Z',
     usageTrend: trend30(Math.round(credits.used / 30), 0.4),
+    topConsumers: topCreditConsumers(seed, credits.used),
   }
 }
 

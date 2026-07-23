@@ -11,7 +11,7 @@
 - [x] 5.7 — Namespace detail (6 tabs inc. env vars)
 - [x] 5.8 — On-prem customer admin view
 - [x] 5.9 — Feature flags slide-over panel
-- [ ] 5.10 — AI Credits card
+- [x] 5.10 — AI Credits card
 - [ ] 5.11 — Global search
 - [ ] 5.12 — Polish pass
 
@@ -36,6 +36,6 @@
 (See docs/devlog.md for full session history — this is just the pointer.)
 
 Date: 2026-07-23
-Completed: 5.9 — Feature flags slide-over panel. One reusable FeatureFlagsPanel (400px, SlideOver) wired to all three triggers (org detail button, customer-list flag icons, /feature-flags page). Per-org vs global list, scope badges, yellow-until-saved, disabled Save, console-log-only save.
-Decisions made: D-017
+Completed: 5.10 — AI Credits card in shared DetailTabs Overview (renders for both cloud org + namespace). Usage fraction, animated ProgressBar (amber>70/red>90, 600ms fill), resets-on date, top-5 consumers table, super_admin Edit-limit (ephemeral). Extended fetchAiCredits to scope namespace ids; added topConsumers to AiCredits.
+Decisions made: D-018, D-019
 Known issues: —

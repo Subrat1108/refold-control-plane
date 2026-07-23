@@ -121,6 +121,21 @@ across all three triggers. Note: the planning brief referenced a "God View
 feature-flag overview" to keep in sync, but OverviewPage has no flags section, so
 there is nothing to sync. Revisit if/when real per-org flag persistence lands.
 
+## D-018 — AI Credits card lives once in shared DetailTabs Overview (2026-07-23)
+The 5.10 card is added to the shared `OverviewTab` (D-010), so it renders for both
+the cloud org and the namespace detail with no per-page code. Credit data stays on
+the single `fetchAiCredits(id)` — extended to scope namespace ids (D-011) rather
+than adding a parallel fetcher; `topConsumers` added to the AiCredits shape. The
+old mini "AI Credits Used" stat card was removed (stat row is now 3 cards) to
+avoid duplicating the new full card.
+
+## D-019 — Edit-limit ephemeral + super_admin-gated; ProgressBar durationMs (2026-07-23)
+"Edit limit" is super_admin-only (useAuth, D-002; hidden for customers per the
+D-006 pattern) and updates component-local state only — ephemeral, mock stays
+pristine (D-009). The 600ms fill animation reuses ProgressBar via a new optional
+`durationMs` prop (default 300, so existing usages are unchanged); the card seeds
+a 0 display value and bumps it to `used` on mount via requestAnimationFrame.
+
 ---
 
 # Parked

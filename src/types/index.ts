@@ -256,6 +256,12 @@ export interface OnPremDashboard {
   uptime: number
 }
 
+export interface CreditConsumer {
+  name: string
+  credits: number
+  percent: number
+}
+
 export interface AiCredits {
   orgId: string
   balance: number
@@ -263,6 +269,7 @@ export interface AiCredits {
   limit: number
   resetDate: string
   usageTrend: TrendPoint[]
+  topConsumers: CreditConsumer[]
 }
 
 export interface SearchResult {

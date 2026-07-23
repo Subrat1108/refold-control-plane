@@ -1,3 +1,6 @@
+import { useEffect, useState } from 'react'
+import { Pencil } from 'lucide-react'
+import { useAuth } from '@/hooks'
 import { StatCard } from '@/components/StatCard'
 import { LineChart } from '@/components/LineChart'
 import { BarChart } from '@/components/BarChart'
@@ -13,6 +16,7 @@ import { formatNumber, formatPercent } from '@/utils/formatNumber'
 import type {
   AiCredits,
   Connector,
+  CreditConsumer,
   DetailCharts,
   DetailMetrics,
   QueryLike,
@@ -75,24 +79,23 @@ export function OverviewTab({
 }) {
   return (
     <div className="space-y-6">
-      {metrics.isLoading || credits.isLoading ? (
-        <CardsSkeleton count={4} />
-      ) : metrics.isError || !metrics.data || credits.isError || !credits.data ? (
-        <ErrorState message="Failed to load overview metrics" onRetry={() => { metrics.refetch(); credits.refetch() }} />
+      {/* Stat row */}
+      {metrics.isLoading ? (
+        <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+          {Array.from({ length: 3 }).map((_, i) => <CardSkeleton key={i} />)}
+        </div>
+      ) : metrics.isError || !metrics.data ? (
+        <ErrorState message="Failed to load overview metrics" onRetry={metrics.refetch} />
       ) : (
-        <div className="grid grid-cols-2 lg:grid-cols-4 gap-6">
+        <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
           <StatCard label="Active Tenants" value={formatNumber(metrics.data.activeTenants)} />
           <StatCard label="Executions Today" value={formatNumber(metrics.data.executionsToday)} />
           <StatCard label="Success Rate" value={formatPercent(metrics.data.successRate, 1)} />
-          <div className="bg-white rounded-lg shadow-card p-6">
-            <span className="text-sm text-muted-foreground font-medium">AI Credits Used</span>
-            <div className="text-2xl font-semibold text-foreground mt-2">
-              {formatNumber(credits.data.used)} / {formatNumber(credits.data.limit)}
-            </div>
-            <ProgressBar value={credits.data.used} max={credits.data.limit} className="mt-3" />
-          </div>
         </div>
       )}
+
+      {/* AI Credits (its own async section) */}
+      <AiCreditsCard credits={credits} />
 
       <div className="grid grid-cols-1 xl:grid-cols-2 gap-6">
         {charts.isLoading ? (
@@ -112,6 +115,110 @@ export function OverviewTab({
             </ChartCard>
           </>
         )}
+      </div>
+    </div>
+  )
+}
+
+// ─── AI Credits card ─────────────────────────────────────────────────────────
+
+const CONSUMER_COLUMNS: Column<CreditConsumer>[] = [
+  { key: 'name', header: 'Workflow', render: (c) => <span className="font-medium text-foreground">{c.name}</span> },
+  { key: 'credits', header: 'Credits', render: (c) => <span className="text-muted-foreground">{formatNumber(c.credits)}</span> },
+  { key: 'percent', header: '% of Total', render: (c) => <span className="text-muted-foreground">{c.percent}%</span> },
+]
+
+function AiCreditsCard({ credits }: { credits: QueryLike<AiCredits> }) {
+  const { role } = useAuth()
+  const isSuperAdmin = role === 'super_admin'
+
+  const [limit, setLimit] = useState<number | null>(null)
+  const [displayValue, setDisplayValue] = useState(0)
+  const [editing, setEditing] = useState(false)
+  const [draftLimit, setDraftLimit] = useState('')
+
+  // Seed the local (ephemeral) limit and animate the bar from 0 → used once
+  // the data arrives.
+  useEffect(() => {
+    if (credits.data && limit === null) {
+      setLimit(credits.data.limit)
+      const id = requestAnimationFrame(() => setDisplayValue(credits.data!.used))
+      return () => cancelAnimationFrame(id)
+    }
+  }, [credits.data, limit])
+
+  if (credits.isLoading || limit === null) {
+    return (
+      <div className="bg-white rounded-lg shadow-card p-6">
+        <div className="h-4 w-24 bg-gray-200 rounded animate-pulse mb-4" />
+        <div className="h-7 w-56 bg-gray-200 rounded animate-pulse mb-3" />
+        <div className="h-2 w-full bg-gray-100 rounded-full animate-pulse" />
+      </div>
+    )
+  }
+  if (credits.isError || !credits.data) {
+    return (
+      <div className="bg-white rounded-lg shadow-card p-6">
+        <ErrorState message="Failed to load AI credits" onRetry={credits.refetch} />
+      </div>
+    )
+  }
+
+  const { used, resetDate } = credits.data
+
+  function saveLimit() {
+    const parsed = parseInt(draftLimit.replace(/[^0-9]/g, ''), 10)
+    if (!Number.isNaN(parsed) && parsed > 0) setLimit(parsed)
+    setEditing(false)
+  }
+
+  return (
+    <div className="bg-white rounded-lg shadow-card p-6">
+      <div className="flex items-start justify-between gap-4">
+        <div>
+          <h3 className="text-sm font-semibold text-foreground">AI Credits</h3>
+          <div className="text-2xl font-semibold text-foreground mt-2">
+            {formatNumber(used)} / {formatNumber(limit)} <span className="text-base font-normal text-muted-foreground">credits used</span>
+          </div>
+        </div>
+
+        {isSuperAdmin && !editing && (
+          <button
+            onClick={() => { setDraftLimit(String(limit)); setEditing(true) }}
+            className="inline-flex items-center gap-1.5 rounded-md border border-border px-2.5 py-1.5 text-xs font-medium text-foreground hover:bg-gray-50 transition-colors"
+          >
+            <Pencil className="w-3.5 h-3.5" /> Edit limit
+          </button>
+        )}
+      </div>
+
+      {isSuperAdmin && editing && (
+        <div className="flex items-center gap-2 mt-3">
+          <label className="text-xs text-muted-foreground">New limit</label>
+          <input
+            autoFocus
+            value={draftLimit}
+            onChange={(e) => setDraftLimit(e.target.value)}
+            onKeyDown={(e) => e.key === 'Enter' && saveLimit()}
+            className="w-32 rounded-md border border-border px-2 py-1.5 text-sm font-mono focus:outline-none focus:ring-2 focus:ring-primary/40"
+          />
+          <button onClick={saveLimit} className="rounded-md bg-primary px-2.5 py-1.5 text-xs font-medium text-white hover:bg-primary/90 transition-colors">Save</button>
+          <button onClick={() => setEditing(false)} className="rounded-md border border-border px-2.5 py-1.5 text-xs font-medium text-foreground hover:bg-gray-50 transition-colors">Cancel</button>
+        </div>
+      )}
+
+      <ProgressBar value={displayValue} max={limit} durationMs={600} className="mt-4" />
+      <p className="text-xs text-muted-foreground mt-2">Resets on {formatDate(resetDate)}</p>
+
+      <div className="mt-6">
+        <h4 className="text-xs font-semibold text-muted-foreground uppercase tracking-wide mb-2">Top Consumers</h4>
+        <DataTable
+          columns={CONSUMER_COLUMNS}
+          data={credits.data.topConsumers}
+          rowKey={(c) => c.name}
+          emptyTitle="No usage yet"
+          emptyDescription="No credits have been consumed this period."
+        />
       </div>
     </div>
   )

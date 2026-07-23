@@ -3,8 +3,8 @@
 ## Current status
 <!-- Canonical state snapshot. The build room updates this block at the end of
      every session. The planning room reads it first. Keep it under ~10 lines. -->
-- Last session: 2026-07-23 — completed 5.9 (Feature flags slide-over panel). One reusable FeatureFlagsPanel wired to all three triggers (org detail, customer-list icons, /feature-flags page); per-org vs global list, scope badges, yellow-until-saved, console-log-only save (D-017)
-- Next up: 5.10 — AI Credits card
+- Last session: 2026-07-23 — completed 5.10 (AI Credits card). Added once to shared DetailTabs Overview (renders for cloud org + namespace); animated ProgressBar (amber>70/red>90, 600ms), top-5 consumers table, super_admin ephemeral Edit-limit. Extended fetchAiCredits for namespace scoping (D-018/D-019)
+- Next up: 5.11 — Global search
 - Blockers: none
 - Deployed: not yet (vercel.json + SPA routing configured, no deploy)
 - Known issues: none logged

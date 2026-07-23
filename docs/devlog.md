@@ -16,6 +16,23 @@ Template:
 
 ---
 
+## Session 11 — 2026-07-23 — 5.10 AI Credits card
+**Built:** an `AiCreditsCard` added once to the shared DetailTabs Overview, so it
+renders for both the cloud org detail and the on-prem namespace detail, scoped by
+whichever id the container passed to `useAiCredits`. Card: "AI Credits", large
+`used / limit credits used` fraction, reused ProgressBar (amber ≥70 / red ≥90)
+that fills 0→value over 600ms on mount, "Resets on {date}", and a top-5 consumers
+DataTable (workflow + credits + % of total). super_admin-only inline "Edit limit"
+updates ephemeral local state (D-009). Removed the old mini "AI Credits Used" stat
+card (stat row now 3 cards). Extended `fetchAiCredits` to scope namespace ids and
+added `topConsumers` to AiCredits; ProgressBar gained an optional `durationMs`.
+typecheck/lint/build all green.
+**Deviations:** replaced the mini credits stat card rather than keeping both
+(D-018).
+**Decisions:** D-018, D-019
+**Next:** 5.11 — Global search
+**Issues:** —
+
 ## Session 10 — 2026-07-23 — 5.9 Feature flags slide-over panel
 **Built:** one reusable `components/FeatureFlagsPanel.tsx` (wraps SlideOver,
 400px, Escape/outside-click close). Header "Feature Flags — {Org}" or "Global
