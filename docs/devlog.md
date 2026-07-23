@@ -16,6 +16,24 @@ Template:
 
 ---
 
+## Session 9 — 2026-07-23 — 5.8 On-prem customer admin view
+**Built:** onprem_customer_admin experience scoped to their org. Extracted nav
+into `config/navigation.tsx` (+ `homeRoute`); sidebar gains Dashboard/Namespaces.
+Topbar shows the org name for customer roles and hides global search for
+non-super_admin. New reusable `AccessDenied` + route-level `OrgScopeGuard`
+(:orgId vs user.orgId) wrapping the cloud/onprem detail + namespace routes;
+removed the D-012 inline check from NamespaceDetailPage. Extracted
+`components/onprem/NamespaceClusters.tsx` (cluster tables + upgrade/env/add
+interactions) shared by the 5.6 org page (now a thin header) and the new
+customer `NamespacesPage`. On-prem `DashboardPage` renders a namespace summary
+card grid. Settings gains a read-only org-profile card for customer roles.
+typecheck/lint/build all green.
+**Deviations:** 5.6 header summary now uses server namespace count, not the live
+post-add local count (state moved into NamespaceClusters) — see D-015.
+**Decisions:** D-014, D-015, D-016
+**Next:** 5.9 — Feature flags slide-over panel
+**Issues:** —
+
 ## Session 8 — 2026-07-22 — 5.7 Namespace detail (6 tabs inc. env vars)
 **Built:** `/onprem-customers/:orgId/namespaces/:namespaceId`. Extracted the 5.5
 tab sections into shared, presentational `components/detail/DetailTabs.tsx` —

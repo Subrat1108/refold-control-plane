@@ -1,43 +1,15 @@
 import { NavLink, useNavigate } from 'react-router-dom'
-import { LayoutDashboard, Users, Server, Flag, Settings, ChevronDown } from 'lucide-react'
+import { ChevronDown } from 'lucide-react'
 import { useAuth } from '@/hooks/useAuth'
 import type { UserRole } from '@/types'
 import { cn } from '@/lib/utils'
+import { NAV_BY_ROLE, ROLE_LABELS, homeRoute } from '@/config/navigation'
 import {
   DropdownMenu,
   DropdownMenuContent,
   DropdownMenuItem,
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu'
-
-interface NavItem {
-  to: string
-  label: string
-  icon: React.ReactNode
-}
-
-const NAV_BY_ROLE: Record<UserRole, NavItem[]> = {
-  super_admin: [
-    { to: '/overview', label: 'Overview', icon: <LayoutDashboard size={16} /> },
-    { to: '/cloud-customers', label: 'Cloud Customers', icon: <Users size={16} /> },
-    { to: '/onprem-customers', label: 'On-Prem Customers', icon: <Server size={16} /> },
-    { to: '/feature-flags', label: 'Feature Flags', icon: <Flag size={16} /> },
-    { to: '/settings', label: 'Settings', icon: <Settings size={16} /> },
-  ],
-  cloud_customer_admin: [
-    { to: '/dashboard', label: 'Dashboard', icon: <LayoutDashboard size={16} /> },
-    { to: '/settings', label: 'Settings', icon: <Settings size={16} /> },
-  ],
-  onprem_customer_admin: [
-    { to: '/settings', label: 'Settings', icon: <Settings size={16} /> },
-  ],
-}
-
-const ROLE_LABELS: Record<UserRole, string> = {
-  super_admin: 'Super Admin',
-  cloud_customer_admin: 'Cloud Admin',
-  onprem_customer_admin: 'On-Prem Admin',
-}
 
 export function Sidebar() {
   const { user, role, setRole } = useAuth()
@@ -46,8 +18,7 @@ export function Sidebar() {
 
   function handleRoleSwitch(newRole: UserRole) {
     setRole(newRole)
-    const firstRoute = NAV_BY_ROLE[newRole][0].to
-    navigate(firstRoute)
+    navigate(homeRoute(newRole))
   }
 
   const initials = user.name.split(' ').map((n) => n[0]).join('').slice(0, 2).toUpperCase()

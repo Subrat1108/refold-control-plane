@@ -1,8 +1,7 @@
 import { useEffect, useState } from 'react'
-import { Link, useNavigate, useParams } from 'react-router-dom'
+import { Link, useParams } from 'react-router-dom'
 import { ArrowUpCircle, ChevronLeft, Eye, EyeOff, Lock, Pencil, Plus, Trash2 } from 'lucide-react'
 import {
-  useAuth,
   useNamespaceDetail,
   useNamespaceMetrics,
   useNamespaceCharts,
@@ -38,8 +37,6 @@ const TABS: TabItem[] = [
 export function NamespaceDetailPage() {
   const { orgId, namespaceId } = useParams()
   const nsId = namespaceId ?? ''
-  const { role, user } = useAuth()
-  const navigate = useNavigate()
 
   const [tab, setTab] = useState('overview')
   const [upgradeOpen, setUpgradeOpen] = useState(false)
@@ -60,12 +57,7 @@ export function NamespaceDetailPage() {
   if (detail.isError || !detail.data) return <ErrorState message="Failed to load namespace" onRetry={detail.refetch} />
 
   const ns = detail.data
-
-  // Don't leak another org's namespace to a customer admin (interim guard;
-  // full enforcement lands in 5.8).
-  if (role === 'onprem_customer_admin' && ns.orgId !== user.orgId) {
-    return <AccessDenied onBack={() => navigate(-1)} />
-  }
+  // Cross-org access is enforced at the route level by OrgScopeGuard (D-014).
 
   const currentVersion = version ?? ns.version
   const canUpgrade = isUpgradeAvailable(currentVersion, ns.latestVersion)
@@ -366,23 +358,6 @@ function EnvVarFormRow({
         </div>
       </td>
     </tr>
-  )
-}
-
-// ─── Access denied (cross-org guard) ─────────────────────────────────────────
-
-function AccessDenied({ onBack }: { onBack: () => void }) {
-  return (
-    <div className="flex flex-col items-center justify-center min-h-[60vh] text-center px-4">
-      <div className="w-14 h-14 rounded-full bg-red-50 flex items-center justify-center mb-4">
-        <svg className="w-7 h-7 text-destructive" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M12 9v3.75m-9.303 3.376c-.866 1.5.217 3.374 1.948 3.374h14.71c1.73 0 2.813-1.874 1.948-3.374L13.949 3.378c-.866-1.5-3.032-1.5-3.898 0L2.697 16.126zM12 15.75h.007v.008H12v-.008z" />
-        </svg>
-      </div>
-      <h2 className="text-xl font-semibold text-foreground mb-2">Access Denied</h2>
-      <p className="text-sm text-muted-foreground mb-6 max-w-xs">This namespace belongs to another organization.</p>
-      <button onClick={onBack} className="text-sm font-medium text-primary hover:underline">Go back</button>
-    </div>
   )
 }
 

@@ -86,6 +86,30 @@ Secret masking: reveal state is an initially-empty Set, so plaintext is never in
 the DOM on mount (CLAUDE secrets rule); editing a secret pre-fills the input
 (explicit action, consistent with the reveal toggle).
 
+## D-014 — Reusable OrgScopeGuard supersedes D-012's inline check (2026-07-23)
+Replaces the interim inline cross-org check in NamespaceDetailPage (D-012) with
+a route-level `OrgScopeGuard` wrapper: for customer-admin roles the `:orgId`
+route param must equal `user.orgId`, else the shared `AccessDenied` page (back
+button → `homeRoute(role)`). Applied to the cloud/onprem org detail and
+namespace routes. super_admin is unscoped. The guard is URL-param based; the
+contrived case of own-orgId URL + foreign namespace id is out of scope.
+
+## D-015 — Extract NamespaceClusters; 5.6 summary now server-count (2026-07-23)
+The 5.6 cluster tables + interactions (upgrade modal, env-vars slide-over stub,
+add-namespace slide-over, local namespace state) moved into
+`components/onprem/NamespaceClusters.tsx`, shared by the 5.6 org detail page and
+the 5.8 customer Namespaces view (no fork). Consequence: the 5.6 header's
+"N namespaces across M clusters" summary now reflects the server count (from its
+own useOnPremOrgDetail), not the live post-add local count, since that state now
+lives inside NamespaceClusters. Acceptable — adds are ephemeral anyway (D-009).
+
+## D-016 — Role-aware sidebar/topbar via central nav config (2026-07-23)
+Nav moved out of Sidebar into `config/navigation.tsx` (single source of truth,
+`NAV_BY_ROLE` + `homeRoute`). Customer-admin topbar shows the organization name
+(applied to both cloud and on-prem, though the 5.8 spec named only on-prem) and
+hides the global search for non-super_admin so a customer can't surface other
+orgs' data (full search is 5.11).
+
 ---
 
 # Parked
