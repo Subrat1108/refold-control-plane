@@ -524,9 +524,12 @@ export async function fetchNamespaceDetail(nsId: string): Promise<NamespaceDetai
   }
 }
 
-export async function fetchFeatureFlags(): Promise<FeatureFlag[]> {
+export async function fetchFeatureFlags(orgId?: string): Promise<FeatureFlag[]> {
   await delay(); maybeThrow()
-  return [...FEATURE_FLAGS_POOL]
+  if (!orgId) return FEATURE_FLAGS_POOL.map((f) => ({ ...f }))
+  // Cloud orgs have no namespace concept, so hide namespace-scoped flags for them.
+  const isOnPrem = orgId.includes('onprem')
+  return FEATURE_FLAGS_POOL.filter((f) => isOnPrem || f.scope !== 'namespace').map((f) => ({ ...f }))
 }
 
 export async function updateFeatureFlag(id: string, enabled: boolean): Promise<FeatureFlag> {

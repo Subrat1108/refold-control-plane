@@ -16,6 +16,21 @@ Template:
 
 ---
 
+## Session 10 — 2026-07-23 — 5.9 Feature flags slide-over panel
+**Built:** one reusable `components/FeatureFlagsPanel.tsx` (wraps SlideOver,
+400px, Escape/outside-click close). Header "Feature Flags — {Org}" or "Global
+Feature Flags". Rows: label + description + Toggle + scope badge (Global/Org/
+Namespace); changed rows get a yellow background; Save disabled until a change,
+pinned at the bottom. Wired all three triggers: the org-detail Edit-flags button,
+the cloud + on-prem customer-list flag icons, and the /feature-flags page (now a
+real global view). `fetchFeatureFlags(orgId?)` / `useFeatureFlags(orgId?)`:
+global pool with no orgId, cloud orgs hide namespace-scoped flags. Independent
+skeleton + error/Retry. typecheck/lint/build all green.
+**Deviations:** Save console-logs the diff only, no persistence (see D-017).
+**Decisions:** D-017
+**Next:** 5.10 — AI Credits card
+**Issues:** —
+
 ## Session 9 — 2026-07-23 — 5.8 On-prem customer admin view
 **Built:** onprem_customer_admin experience scoped to their org. Extracted nav
 into `config/navigation.tsx` (+ `homeRoute`); sidebar gains Dashboard/Namespaces.

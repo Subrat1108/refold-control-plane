@@ -65,8 +65,8 @@ export function useNamespaceDetail(nsId: string) {
   return useQuery({ queryKey: ['namespaceDetail', nsId], queryFn: () => api.fetchNamespaceDetail(nsId), enabled: !!nsId })
 }
 
-export function useFeatureFlags() {
-  return useQuery({ queryKey: ['featureFlags'], queryFn: api.fetchFeatureFlags })
+export function useFeatureFlags(orgId?: string) {
+  return useQuery({ queryKey: ['featureFlags', orgId ?? 'global'], queryFn: () => api.fetchFeatureFlags(orgId) })
 }
 
 export function useCloudDashboard(orgId: string) {

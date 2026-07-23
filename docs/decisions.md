@@ -110,6 +110,17 @@ Nav moved out of Sidebar into `config/navigation.tsx` (single source of truth,
 hides the global search for non-super_admin so a customer can't surface other
 orgs' data (full search is 5.11).
 
+## D-017 — Feature-flags Save console-logs only, no persistence (2026-07-23)
+The 5.9 panel's Save logs the changed flags to console and resets the panel's
+baseline (yellow clears, Save re-disables); it does NOT call the persisting
+`updateFeatureFlag`. Two reasons: (1) the spec says "logs the changes to console
+(no API call needed yet)"; (2) `FEATURE_FLAGS_POOL` is a single global list, so
+`updateFeatureFlag(id, enabled)` would flip a flag for every org, not scope it to
+the org whose panel is open — wrong semantics for a per-org panel. Consistent
+across all three triggers. Note: the planning brief referenced a "God View
+feature-flag overview" to keep in sync, but OverviewPage has no flags section, so
+there is nothing to sync. Revisit if/when real per-org flag persistence lands.
+
 ---
 
 # Parked

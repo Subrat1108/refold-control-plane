@@ -3,8 +3,8 @@
 ## Current status
 <!-- Canonical state snapshot. The build room updates this block at the end of
      every session. The planning room reads it first. Keep it under ~10 lines. -->
-- Last session: 2026-07-23 — completed 5.8 (On-prem customer admin view). Role-aware sidebar/topbar via central nav config, reusable OrgScopeGuard (supersedes D-012), extracted NamespaceClusters shared by 5.6 + customer Namespaces view, on-prem Dashboard cards, read-only org profile in Settings
-- Next up: 5.9 — Feature flags slide-over panel
+- Last session: 2026-07-23 — completed 5.9 (Feature flags slide-over panel). One reusable FeatureFlagsPanel wired to all three triggers (org detail, customer-list icons, /feature-flags page); per-org vs global list, scope badges, yellow-until-saved, console-log-only save (D-017)
+- Next up: 5.10 — AI Credits card
 - Blockers: none
 - Deployed: not yet (vercel.json + SPA routing configured, no deploy)
 - Known issues: none logged

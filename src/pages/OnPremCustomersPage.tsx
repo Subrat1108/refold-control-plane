@@ -8,6 +8,7 @@ import { ErrorState } from '@/components/ErrorState'
 import { EmptyState } from '@/components/EmptyState'
 import { SearchDropdown } from '@/components/SearchDropdown'
 import { Tooltip } from '@/components/Tooltip'
+import { FeatureFlagsPanel } from '@/components/FeatureFlagsPanel'
 import { formatDate } from '@/utils/formatDate'
 import type { OnPremOrg, OrgStatus, NamespaceStatus } from '@/types'
 
@@ -172,14 +173,13 @@ export function OnPremCustomersPage() {
         </div>
       )}
 
-      {/* Feature flags slide-over placeholder — wired up in 5.9 */}
-      {flagOrgId && (
-        <div className="fixed inset-0 bg-black/30 z-40 flex justify-end" onClick={() => setFlagOrgId(null)}>
-          <div className="w-[400px] bg-white h-full shadow-xl p-6" onClick={(e) => e.stopPropagation()}>
-            <p className="text-sm text-muted-foreground">Feature flags panel — coming in 5.9</p>
-          </div>
-        </div>
-      )}
+      {/* Feature flags slide-over */}
+      <FeatureFlagsPanel
+        open={!!flagOrgId}
+        onClose={() => setFlagOrgId(null)}
+        orgId={flagOrgId ?? undefined}
+        orgName={data?.find((o) => o.id === flagOrgId)?.name}
+      />
     </div>
   )
 }

@@ -9,6 +9,7 @@ import {
   useAiCredits,
 } from '@/hooks'
 import { StatusBadge } from '@/components/StatusBadge'
+import { FeatureFlagsPanel } from '@/components/FeatureFlagsPanel'
 import { Tabs, type TabItem } from '@/components/Tabs'
 import {
   OverviewTab,
@@ -86,14 +87,13 @@ export function CloudOrgDetailView({ orgId, showBack }: { orgId: string; showBac
       {tab === 'workflows' && <WorkflowsTab metrics={metrics} charts={charts} />}
       {tab === 'connectors' && <ConnectorsTab metrics={metrics} />}
 
-      {/* Feature flags slide-over placeholder — wired up in 5.9 */}
-      {flagsOpen && (
-        <div className="fixed inset-0 bg-black/30 z-40 flex justify-end" onClick={() => setFlagsOpen(false)}>
-          <div className="w-[400px] bg-white h-full shadow-xl p-6" onClick={(e) => e.stopPropagation()}>
-            <p className="text-sm text-muted-foreground">Feature flags panel — coming in 5.9</p>
-          </div>
-        </div>
-      )}
+      {/* Feature flags slide-over */}
+      <FeatureFlagsPanel
+        open={flagsOpen}
+        onClose={() => setFlagsOpen(false)}
+        orgId={orgId}
+        orgName={detail.data?.name}
+      />
     </div>
   )
 }
