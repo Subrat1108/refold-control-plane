@@ -154,6 +154,25 @@ grouped `SearchResults`/`SearchResultItem`; `searchAll` returns groups capped to
 3. `SearchDropdown` keeps a plain `onSearch` filter-input mode for the customer
 list pages and switches to global-search mode when no `onSearch` is given.
 
+## D-022 — God View feature-flag overview card closes the 5.3 gap (2026-07-23)
+build-spec § 5.3 specified a global feature-flag overview on the God View that
+was never built (noted in D-017). Added `FeatureFlagOverviewCard` to OverviewPage,
+reusing `useFeatureFlags()` (global) + the `Toggle` primitive and the exact D-017
+Save semantics (local draft, Save console-logs the diff, no persistence) so the
+two flag surfaces (this card + the 5.9 panel) stay consistent. Kept it as an
+inline card reusing primitives rather than extracting a shared list component —
+a lighter touch for a secondary item.
+
+## D-023 — Placeholder password gate; /login repurposed (2026-07-23)
+Implemented the § 11.4 password gate as a separate concern from the mock role
+system: `AuthGateContext` (localStorage `refold_admin_authed`, password
+`refold-demo-2025`) + `useAuthGate` + `RequireAuth` wrapping the AppLayout route;
+sidebar gains "Sign out". `/login` was repurposed from the old dev role-picker
+into the password gate — dev role-switching remains in the sidebar switcher
+(D-002), so nothing is lost. Clearly marked placeholder auth; replace with real
+auth (JWT/OAuth) when a backend exists. Vercel deploy itself is the user's manual
+dashboard step and is intentionally not automated.
+
 ---
 
 # Parked

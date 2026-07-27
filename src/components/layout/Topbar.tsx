@@ -1,3 +1,4 @@
+import { useEffect } from 'react'
 import { useLocation } from 'react-router-dom'
 import { SearchDropdown } from '@/components/SearchDropdown'
 import { useAuth, useCloudOrg, useOnPremOrg } from '@/hooks'
@@ -35,6 +36,11 @@ export function Topbar() {
     : undefined
 
   const title = orgName ?? getTitle(pathname)
+
+  // Keep the browser tab title in sync with the current page.
+  useEffect(() => {
+    document.title = `${title} · Refold Admin`
+  }, [title])
 
   return (
     <header className="h-16 flex items-center justify-between px-8 bg-white border-b border-border flex-shrink-0">

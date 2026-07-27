@@ -13,14 +13,14 @@
 - [x] 5.9 — Feature flags slide-over panel
 - [x] 5.10 — AI Credits card
 - [x] 5.11 — Global search
-- [ ] 5.12 — Polish pass
+- [x] 5.12 — Polish pass
 
 ## Deployment
 
 - [x] vercel.json + SPA routing configured
-- [ ] Password gate added (placeholder auth)
+- [x] Password gate added (placeholder auth)
 - [ ] Deployed to Vercel free tier
-- [ ] .env.example committed
+- [x] .env.example committed
 
 ## Version control & docs
 
@@ -36,6 +36,6 @@
 (See docs/devlog.md for full session history — this is just the pointer.)
 
 Date: 2026-07-23
-Completed: 5.11 — Global search. Fleshed out SearchDropdown (super_admin topbar) into grouped global search (Organizations/Namespaces/Connectors, 3 per group, icons, breadcrumbs, keyboard nav, outside-click/Escape close). Reshaped searchAll → grouped SearchResults incl. connectors; connector/tab deep-link via ?tab=. Kept onSearch filter-input mode for customer-list pages.
-Decisions made: D-020, D-021
-Known issues: —
+Completed: 5.12 — Polish pass (all 3 phases). P1: responsive icon-only sidebar ≤1200px w/ tooltips, document.title sync, empty-state + audit fixes. P2: God View feature-flag overview card (closes 5.3 gap, D-017 semantics). P3: placeholder password gate (§11.4, AuthGate + RequireAuth + /login), .env.example, README deploy section.
+Decisions made: D-022, D-023
+Known issues: — (Vercel deploy is the user's manual step; not done)

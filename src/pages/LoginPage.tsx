@@ -1,25 +1,23 @@
-import { useNavigate } from 'react-router-dom'
-import { useAuth } from '@/hooks/useAuth'
-import type { UserRole } from '@/types'
+import { useState } from 'react'
+import { Navigate, useNavigate } from 'react-router-dom'
+import { useAuthGate } from '@/hooks/useAuthGate'
 
-const ROLES: Array<{ role: UserRole; label: string; description: string }> = [
-  { role: 'super_admin', label: 'Super Admin', description: 'God view: all orgs, namespaces, and clusters' },
-  { role: 'cloud_customer_admin', label: 'Cloud Admin', description: 'Prism Analytics — cloud customer view' },
-  { role: 'onprem_customer_admin', label: 'On-Prem Admin', description: 'Meridian Laboratories — on-prem customer view' },
-]
-
+// PLACEHOLDER AUTH (build-spec § 11.4) — a single hardcoded password gate for the
+// public free-tier deployment. Replace with real auth when a backend exists.
 export function LoginPage() {
-  const { setRole } = useAuth()
+  const { authed, signIn } = useAuthGate()
   const navigate = useNavigate()
+  const [password, setPassword] = useState('')
+  const [error, setError] = useState(false)
 
-  function login(role: UserRole) {
-    setRole(role)
-    if (role === 'cloud_customer_admin') {
-      navigate('/dashboard')
-    } else if (role === 'onprem_customer_admin') {
-      navigate('/settings')
+  if (authed) return <Navigate to="/overview" replace />
+
+  function handleSubmit(e: React.FormEvent) {
+    e.preventDefault()
+    if (signIn(password)) {
+      navigate('/overview', { replace: true })
     } else {
-      navigate('/overview')
+      setError(true)
     }
   }
 
@@ -27,25 +25,33 @@ export function LoginPage() {
     <div className="min-h-screen bg-[#F8F9FC] flex items-center justify-center px-4">
       <div className="w-full max-w-sm">
         <div className="flex items-center gap-3 justify-center mb-8">
-          <div className="w-9 h-9 rounded-lg bg-[#6366F1] flex items-center justify-center font-bold text-white text-lg">
-            R
-          </div>
+          <div className="w-9 h-9 rounded-lg bg-[#6366F1] flex items-center justify-center font-bold text-white text-lg">R</div>
           <span className="font-semibold text-xl text-foreground">Refold Admin</span>
         </div>
-        <div className="bg-white rounded-xl shadow-card p-6 space-y-3">
-          <h2 className="text-sm font-semibold text-muted-foreground uppercase tracking-wider mb-4">Sign in as</h2>
-          {ROLES.map(({ role, label, description }) => (
-            <button
-              key={role}
-              onClick={() => login(role)}
-              className="w-full text-left px-4 py-3 rounded-lg border border-border hover:border-[#6366F1] hover:bg-[#6366F1]/5 transition-colors group"
-            >
-              <div className="text-sm font-semibold text-foreground group-hover:text-[#6366F1]">{label}</div>
-              <div className="text-xs text-muted-foreground mt-0.5">{description}</div>
-            </button>
-          ))}
-        </div>
-        <p className="text-xs text-muted-foreground text-center mt-4">Development mode — no credentials required</p>
+
+        <form onSubmit={handleSubmit} className="bg-white rounded-xl shadow-card p-6 space-y-4">
+          <div>
+            <label htmlFor="password" className="block text-sm font-medium text-foreground mb-1.5">Password</label>
+            <input
+              id="password"
+              type="password"
+              autoFocus
+              value={password}
+              onChange={(e) => { setPassword(e.target.value); setError(false) }}
+              placeholder="Enter password"
+              className="w-full rounded-md border border-border px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary/40"
+            />
+            {error && <p className="text-xs text-red-600 mt-1.5">Incorrect password</p>}
+          </div>
+          <button
+            type="submit"
+            className="w-full rounded-md bg-primary px-3 py-2.5 text-sm font-medium text-white hover:bg-primary/90 transition-colors"
+          >
+            Sign in
+          </button>
+        </form>
+
+        <p className="text-xs text-muted-foreground text-center mt-4">Placeholder auth — demo access only</p>
       </div>
     </div>
   )

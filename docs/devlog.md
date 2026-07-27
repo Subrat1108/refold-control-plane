@@ -16,6 +16,28 @@ Template:
 
 ---
 
+## Session 13 — 2026-07-23 — 5.12 Polish pass (all 3 phases landed)
+**Built:**
+- **P1 Polish:** `useMediaQuery` hook; sidebar collapses to icon-only at ≤1200px
+  with Tooltip labels, AppLayout margin follows suit (works to 1024px). Topbar
+  now syncs `document.title` per route. Added EmptyState fallbacks to the God
+  View cloud/on-prem tables. Audited empty/skeleton/error/tooltip/date coverage —
+  already conformant from prior blocks (search intentionally has no error sim).
+- **P2 (5.3 gap):** `FeatureFlagOverviewCard` on the God View — global flags with
+  Toggles, reusing `useFeatureFlags()` + Toggle and D-017 Save semantics
+  (console-log, no persistence).
+- **P3 Deploy prep:** placeholder password gate (§11.4) — `AuthGateContext` +
+  `useAuthGate` + `RequireAuth` wrapping AppLayout; `/login` rewritten from the
+  role-picker into a password gate (demo `refold-demo-2025`); sidebar "Sign out".
+  Orthogonal to the mock role system (AuthContext). Added `.env.example` and a
+  README with the §11.2 deploy steps. Verified vercel.json rewrite + vite outDir.
+  typecheck/lint/build all green.
+**Deviations:** `/login` repurposed from role-picker → password gate (D-023);
+role-switching stays in the sidebar. Vercel deploy left to the user (manual).
+**Decisions:** D-022, D-023
+**Next:** deploy to Vercel (user's manual step) — build blocks 5.1–5.12 complete.
+**Issues:** —
+
 ## Session 12 — 2026-07-23 — 5.11 Global search
 **Built:** fleshed out `SearchDropdown` into the real global search (rendered in
 the super_admin topbar per D-016). Debounced query → `useSearch` → grouped

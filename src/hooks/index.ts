@@ -1,4 +1,6 @@
 export { useAuth } from './useAuth'
+export { useMediaQuery } from './useMediaQuery'
+export { useAuthGate } from './useAuthGate'
 export {
   useOverviewStats,
   useCloudOrgs,

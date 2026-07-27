@@ -9,6 +9,8 @@ import { LineChart } from '@/components/LineChart'
 import { StatusBadge } from '@/components/StatusBadge'
 import { CardSkeleton } from '@/components/SkeletonLoader'
 import { ErrorState } from '@/components/ErrorState'
+import { EmptyState } from '@/components/EmptyState'
+import { FeatureFlagOverviewCard } from '@/components/FeatureFlagOverviewCard'
 import { formatNumber, formatCurrency } from '@/utils/formatNumber'
 import { formatDate } from '@/utils/formatDate'
 import type { CloudOrg, OnPremOrg } from '@/types'
@@ -97,7 +99,8 @@ function CloudOrgsTable() {
         </div>
       )}
       {isError && <ErrorState message="Failed to load cloud orgs" onRetry={refetch} />}
-      {data && (
+      {data && data.length === 0 && <EmptyState title="No cloud customers" description="No cloud organizations to display yet." />}
+      {data && data.length > 0 && (
         <table className="w-full text-sm">
           <thead>
             <tr className="border-b border-border">
@@ -147,7 +150,8 @@ function OnPremOrgsTable() {
         </div>
       )}
       {isError && <ErrorState message="Failed to load on-prem orgs" onRetry={refetch} />}
-      {data && (
+      {data && data.length === 0 && <EmptyState title="No on-prem customers" description="No on-premise organizations to display yet." />}
+      {data && data.length > 0 && (
         <table className="w-full text-sm">
           <thead>
             <tr className="border-b border-border">
@@ -212,6 +216,8 @@ export function OverviewPage() {
         <CloudOrgsTable />
         <OnPremOrgsTable />
       </div>
+
+      <FeatureFlagOverviewCard />
     </div>
   )
 }

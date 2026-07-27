@@ -3,10 +3,10 @@
 ## Current status
 <!-- Canonical state snapshot. The build room updates this block at the end of
      every session. The planning room reads it first. Keep it under ~10 lines. -->
-- Last session: 2026-07-23 — completed 5.11 (Global search). SearchDropdown is now the grouped global search (super_admin topbar): Organizations/Namespaces/Connectors, keyboard nav, breadcrumbs, connector→Connectors-tab deep-link via ?tab=. Reshaped searchAll → SearchResults (D-020/D-021)
-- Next up: 5.12 — Polish pass
+- Last session: 2026-07-23 — completed 5.12 (Polish pass, all 3 phases). Responsive icon-only sidebar ≤1200px + document.title sync; God View feature-flag overview card (closes 5.3 gap, D-022); placeholder password gate §11.4 (AuthGate + RequireAuth + /login, D-023); .env.example + README deploy section
+- Next up: nothing — build blocks 5.1–5.12 all complete. Remaining: user's manual Vercel deploy
 - Blockers: none
-- Deployed: not yet (vercel.json + SPA routing configured, no deploy)
+- Deployed: not yet — vercel.json + SPA routing configured, password gate + README ready; live deploy is the user's manual Vercel step
 - Known issues: none logged
 
 ## Session protocol (build room)
