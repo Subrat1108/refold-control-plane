@@ -2,6 +2,7 @@ import { createBrowserRouter, Navigate } from 'react-router-dom'
 import { AppLayout } from '@/components/layout/AppLayout'
 import { RouteGuard } from '@/components/RouteGuard'
 import { RequireAuth } from '@/components/RequireAuth'
+import { RouteError } from '@/components/RouteError'
 import { OrgScopeGuard } from '@/components/OrgScopeGuard'
 import { LoginPage } from '@/pages/LoginPage'
 import { OverviewPage } from '@/pages/OverviewPage'
@@ -19,6 +20,7 @@ export const router = createBrowserRouter([
   {
     path: '/login',
     element: <LoginPage />,
+    errorElement: <RouteError />,
   },
   {
     path: '/',
@@ -27,6 +29,7 @@ export const router = createBrowserRouter([
         <AppLayout />
       </RequireAuth>
     ),
+    errorElement: <RouteError />,
     children: [
       {
         index: true,

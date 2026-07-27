@@ -16,6 +16,24 @@ Template:
 
 ---
 
+## Session 14 — 2026-07-23 — Hotfix: global search crash + route ErrorBoundary
+**Built:** fixed a full-page crash regression from 5.11/5.12. `GlobalSearch`
+rendered the dropdown body with `data!.organizations` (non-null assertion), but
+on the first keystroke the debounced query is still empty so `useSearch` returns
+`data: undefined` → "Cannot read properties of undefined (reading
+'organizations')". Reworked the body to key on `!data` ("Searching…") → empty
+("No results") → groups, dropping the fragile `noResults`/`isFetching` logic and
+every `data!` deref. FilterInput mode (customer-list pages) was already a
+separate component that never touches `data` — confirmed both modes. Added a
+route-level `errorElement` (`RouteError`) on the app + login routes so a render
+throw shows a friendly page with Back/Reload instead of a dev stack trace
+(closes the Phase-1 gap: 5.12 item 3 covered data-fetch errors, not render
+throws). typecheck/lint/build green.
+**Deviations:** —
+**Decisions:** D-024
+**Next:** deploy to Vercel (user's manual step) — build blocks 5.1–5.12 complete.
+**Issues:** —
+
 ## Session 13 — 2026-07-23 — 5.12 Polish pass (all 3 phases landed)
 **Built:**
 - **P1 Polish:** `useMediaQuery` hook; sidebar collapses to icon-only at ≤1200px

@@ -14,6 +14,7 @@
 - [x] 5.10 — AI Credits card
 - [x] 5.11 — Global search
 - [x] 5.12 — Polish pass
+- [x] Hotfix — global search crash on first keystroke (Session 14) + route ErrorBoundary
 
 ## Deployment
 
@@ -36,6 +37,6 @@
 (See docs/devlog.md for full session history — this is just the pointer.)
 
 Date: 2026-07-23
-Completed: 5.12 — Polish pass (all 3 phases). P1: responsive icon-only sidebar ≤1200px w/ tooltips, document.title sync, empty-state + audit fixes. P2: God View feature-flag overview card (closes 5.3 gap, D-017 semantics). P3: placeholder password gate (§11.4, AuthGate + RequireAuth + /login), .env.example, README deploy section.
-Decisions made: D-022, D-023
+Completed: Hotfix (Session 14) — global search crashed on the first keystroke (GlobalSearch dereferenced `data!` while the query was still undefined). Guarded on `!data`; removed the fragile noResults/isFetching branches. Added a route-level errorElement (RouteError) so render throws show a friendly page, not a stack trace. Prior: 5.12 Polish pass (all 3 phases).
+Decisions made: D-024
 Known issues: — (Vercel deploy is the user's manual step; not done)

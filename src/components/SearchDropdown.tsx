@@ -55,7 +55,7 @@ function GlobalSearch({ placeholder }: { placeholder: string }) {
     return () => clearTimeout(t)
   }, [query])
 
-  const { data, isFetching } = useSearch(debounced)
+  const { data } = useSearch(debounced)
 
   const flat = useMemo<SearchResultItem[]>(
     () => (data ? [...data.organizations, ...data.namespaces, ...data.connectors] : []),
@@ -104,7 +104,6 @@ function GlobalSearch({ placeholder }: { placeholder: string }) {
     }
   }
 
-  const noResults = hasQuery && !isFetching && data != null && flat.length === 0
 
   return (
     <div ref={containerRef} className="relative">
@@ -129,15 +128,15 @@ function GlobalSearch({ placeholder }: { placeholder: string }) {
           role="listbox"
           className="absolute right-0 top-full mt-2 w-[24rem] max-h-[26rem] overflow-y-auto bg-white rounded-lg shadow-lg border border-border py-2 z-50"
         >
-          {noResults ? (
-            <div className="px-4 py-6 text-center text-sm text-muted-foreground">No results</div>
-          ) : flat.length === 0 && isFetching ? (
+          {!data ? (
             <div className="px-4 py-6 text-center text-sm text-muted-foreground">Searching…</div>
+          ) : flat.length === 0 ? (
+            <div className="px-4 py-6 text-center text-sm text-muted-foreground">No results</div>
           ) : (
             <>
-              <ResultGroup title="Organizations" items={data!.organizations} startIndex={0} activeIndex={activeIndex} onHover={setActiveIndex} onSelect={select} />
-              <ResultGroup title="Namespaces" items={data!.namespaces} startIndex={data!.organizations.length} activeIndex={activeIndex} onHover={setActiveIndex} onSelect={select} />
-              <ResultGroup title="Connectors" items={data!.connectors} startIndex={data!.organizations.length + data!.namespaces.length} activeIndex={activeIndex} onHover={setActiveIndex} onSelect={select} />
+              <ResultGroup title="Organizations" items={data.organizations} startIndex={0} activeIndex={activeIndex} onHover={setActiveIndex} onSelect={select} />
+              <ResultGroup title="Namespaces" items={data.namespaces} startIndex={data.organizations.length} activeIndex={activeIndex} onHover={setActiveIndex} onSelect={select} />
+              <ResultGroup title="Connectors" items={data.connectors} startIndex={data.organizations.length + data.namespaces.length} activeIndex={activeIndex} onHover={setActiveIndex} onSelect={select} />
             </>
           )}
         </div>

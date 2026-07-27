@@ -173,6 +173,15 @@ into the password gate — dev role-switching remains in the sidebar switcher
 auth (JWT/OAuth) when a backend exists. Vercel deploy itself is the user's manual
 dashboard step and is intentionally not automated.
 
+## D-024 — Route-level ErrorBoundary for render throws (2026-07-23)
+Added a React Router `errorElement` (`RouteError`) on the app and login routes so
+a component that throws during render shows a friendly page (Back to overview /
+Reload) instead of a full-page dev stack trace. D-003's error handling (skeleton +
+Retry, 10% sim) only covers async data-fetch failures inside sections; a render
+throw (e.g. the SearchDropdown `data!` bug) bypassed all of it. This is the
+render-throw safety net. Prefer fixing the throw at its source (done for search);
+the boundary is defence-in-depth.
+
 ---
 
 # Parked
