@@ -182,6 +182,49 @@ throw (e.g. the SearchDropdown `data!` bug) bypassed all of it. This is the
 render-throw safety net. Prefer fixing the throw at its source (done for search);
 the boundary is defence-in-depth.
 
+# ── Phase 6 (re-architecture; see docs/build-spec-v2.md § 13) ──────────────────
+
+## D-025 — Auth + DB = Supabase (2026-07-29)
+Phase 6 uses Supabase (Postgres + Auth + Edge Functions) for auth, database, and
+the server layer. Supersedes the earlier Mongo Atlas idea and closes the
+managed-provider question. RLS-scoped Postgres is the system of record for
+identity/app data; Edge Functions hold secrets and call Refold/Facets.
+
+## D-026 — Three portals from one repo via VITE_PORTAL (2026-07-29)
+Separate admin / cloud / onprem portals selected at build time by `VITE_PORTAL`,
+deployed as three Netlify sites from one repo. Supersedes D-002 (the dev
+role-switcher is removed) and the D-016 topbar role logic. Real auth + the
+portal↔account_type guard replace in-app role toggling.
+
+## D-027 — Data split; mock RETAINED as fallback provider (2026-07-29)
+Postgres holds identity/app data; Refold+Facets provide live metrics. Metrics go
+through a provider switch (`VITE_DATA_SOURCE` = mock | live, + optional
+per-endpoint override) with **mock as the default fallback** so dashboards never
+render blank. Endpoints flip to live individually; the mock is removed only once
+all are live and verified. D-005/D-009/D-011 live on as the mock provider — not
+retired.
+
+## D-028 — Tenant isolation via Postgres RLS (2026-07-29)
+Org scoping is enforced at the database layer by RLS (the `is_super_admin()` /
+`current_org_id()` helpers + per-table policies), so a customer can never read
+another org's rows regardless of client behaviour. This demotes the app-layer
+OrgScopeGuard (D-014) to defense-in-depth rather than the primary guarantee.
+
+## D-029 — MFA/AAL2 required for privileged writes (2026-07-29)
+Super-admin write actions and all provisioning require AAL2 (`auth.jwt()->>'aal'
+= 'aal2'`), enforced in RLS via `is_aal2()`. Self-profile edits do not require
+AAL2. Verified locally (aal1 super-admin insert blocked, aal2 allowed).
+
+## D-030 — Exports are .xlsx only, generated server-side (2026-07-29)
+QBR/data exports are `.xlsx` only, built inside the `export-xlsx` Edge Function
+(SheetJS/exceljs) — never client-side, and distinct from the doc-authoring xlsx
+skill. Lands in 6.6.
+
+## D-031 — Remove placeholder password gate once 6.2 lands (2026-07-29)
+The § 11.4 placeholder password gate (D-023) is removed when real Supabase auth
++ MFA ships in 6.2. Until then it stays. (Not removed this session — 6.1 is
+backend only.)
+
 ---
 
 # Parked

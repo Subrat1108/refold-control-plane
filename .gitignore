@@ -2,6 +2,11 @@ node_modules/
 dist/
 .env
 .env.local
+.env.*.local
 CLAUDE.local.md
 .DS_Store
 *.tsbuildinfo
+
+# Supabase local dev state (config.toml + migrations/seed ARE committed)
+supabase/.branches
+supabase/.temp

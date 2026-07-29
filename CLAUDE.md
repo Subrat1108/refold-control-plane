@@ -3,11 +3,12 @@
 ## Current status
 <!-- Canonical state snapshot. The build room updates this block at the end of
      every session. The planning room reads it first. Keep it under ~10 lines. -->
-- Last session: 2026-07-23 — Hotfix (Session 14): fixed global-search crash on first keystroke (GlobalSearch dereferenced `data!` while undefined; now guards on `!data`) and added a route-level errorElement (RouteError, D-024) for render throws. Prior session shipped 5.12 Polish pass (all 3 phases)
-- Next up: nothing — build blocks 5.1–5.12 all complete. Remaining: user's manual Vercel deploy
-- Blockers: none
-- Deployed: not yet — vercel.json + SPA routing configured, password gate + README ready; live deploy is the user's manual Vercel step
+- Last session: 2026-07-29 — 6.1 Supabase schema + RLS (Phase 6 kickoff, backend only). Migrations for all § 4 tables/enums, is_super_admin/current_org_id/is_owner/is_aal2 helpers, RLS on every table (§ 5), system seed + demo fixtures. Verified on fresh local db: migrations apply, RLS cross-org isolation + AAL2 write gate pass. Logged D-025–D-031. Committed docs/build-spec-v2.md
+- Next up: 6.2 — Auth + MFA (Supabase client in src/lib, email+password + TOTP/AAL2, remove dev role-switcher + placeholder password gate)
+- Blockers: cloud Supabase project (URL/keys) to be created by user; Refold/Facets API docs needed for 6.5
+- Deployed: not yet — Phase 6 targets Netlify (3 portals) + Supabase; local stack only so far
 - Known issues: none logged
+- Phase 6 note: dev role-switcher (D-002) + placeholder password gate (D-023) are superseded but NOT yet removed (that's 6.2/6.3)
 
 ## Session protocol (build room)
 **Start of every session** — reconstruct context in one command before doing anything:

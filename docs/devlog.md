@@ -16,6 +16,30 @@ Template:
 
 ---
 
+## Session 15 — 2026-07-29 — 6.1 Supabase project + schema + RLS
+**Built:** kicked off Phase 6 (re-architecture per docs/build-spec-v2.md, which
+was missing from the repo and is now committed). Backend only, no UI.
+`supabase init` + local dev stack. Migrations: § 4 enums; the 6 tables
+(organizations, sub_roles, profiles [1:1 auth.users], invitations, audit_log,
+saved_report_configs) with FKs/indexes + authenticated grants; helper functions
+`is_super_admin` / `current_org_id` / `is_owner` / `is_aal2` (SECURITY DEFINER,
+fixed search_path — no RLS recursion); RLS enabled on every table with § 5
+policies (super_admin full; customers scoped by org_id; owners provision within
+org, AAL2-gated; members read-only + own-profile self-edit; audit append-only);
+system seed (internal Refold org + is_system sub-role sets). Local demo fixtures
+in seed.sql (2 orgs + 4 users). `.env.example` gains Supabase key names +
+VITE_PORTAL/VITE_DATA_SOURCE; README gains a Supabase/RLS-test section;
+.gitignore covers supabase local state.
+**Verified (fresh local db, Docker):** all 5 migrations apply cleanly + seed
+runs; `supabase/tests/rls_test.sql` → "ALL RLS TESTS PASSED" (Prism owner sees
+only their org, Meridian owner sees 0 Prism rows, super_admin sees all); AAL2
+write gate confirmed (aal1 super-admin insert blocked, aal2 allowed).
+**Decisions:** D-025–D-031 (numbering shifted from the brief's D-024–D-030 since
+D-024 = ErrorBoundary was already taken).
+**Next:** 6.2 — Auth + MFA.
+**Issues:** cloud Supabase project (URL/keys) still to be created by the user;
+Refold/Facets API docs needed for 6.5.
+
 ## Session 14 — 2026-07-23 — Hotfix: global search crash + route ErrorBoundary
 **Built:** fixed a full-page crash regression from 5.11/5.12. `GlobalSearch`
 rendered the dropdown body with `data!.organizations` (non-null assertion), but
