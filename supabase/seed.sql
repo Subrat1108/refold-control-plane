@@ -1,0 +1,55 @@
+-- Phase 6.1 — LOCAL demo fixtures (build-spec-v2 § 12)
+-- Runs on `supabase db reset` for local dev ONLY (never shipped to prod). Gives
+-- later blocks a couple of orgs + users to render. Passwords are demo-only.
+--
+-- Note: we insert auth.users directly (a standard local-seed shortcut) so the
+-- profiles FK is satisfied and the RLS test can impersonate real user ids.
+-- Proper user creation (via the auth admin API + identities) lands in 6.2.
+
+create extension if not exists pgcrypto with schema extensions;
+
+-- ── demo organizations ───────────────────────────────────────────────────────
+insert into public.organizations (id, name, deployment_type, plan, status, external_ref) values
+  ('00000000-0000-0000-0000-000000000002', 'Prism Analytics',       'cloud',       'growth',                 'active', 'refold_prism'),
+  ('00000000-0000-0000-0000-000000000003', 'Meridian Laboratories', 'on_premise',  'self_hosted_enterprise', 'active', 'refold_meridian')
+on conflict (id) do nothing;
+
+-- ── demo auth users ──────────────────────────────────────────────────────────
+insert into auth.users
+  (instance_id, id, aud, role, email, encrypted_password, email_confirmed_at,
+   created_at, updated_at, raw_app_meta_data, raw_user_meta_data,
+   is_super_admin, confirmation_token, recovery_token, email_change_token_new, email_change)
+values
+  ('00000000-0000-0000-0000-000000000000', '00000000-0000-0000-0000-000000001001', 'authenticated', 'authenticated',
+   'super@refold.internal',   extensions.crypt('demo-super-2026',   extensions.gen_salt('bf')), now(), now(), now(),
+   '{"provider":"email","providers":["email"]}', '{}', false, '', '', '', ''),
+  ('00000000-0000-0000-0000-000000000000', '00000000-0000-0000-0000-000000001002', 'authenticated', 'authenticated',
+   'owner@prismanalytics.io', extensions.crypt('demo-owner-2026',   extensions.gen_salt('bf')), now(), now(), now(),
+   '{"provider":"email","providers":["email"]}', '{}', false, '', '', '', ''),
+  ('00000000-0000-0000-0000-000000000000', '00000000-0000-0000-0000-000000001003', 'authenticated', 'authenticated',
+   'owner@meridian-labs.jp',  extensions.crypt('demo-owner-2026',   extensions.gen_salt('bf')), now(), now(), now(),
+   '{"provider":"email","providers":["email"]}', '{}', false, '', '', '', ''),
+  ('00000000-0000-0000-0000-000000000000', '00000000-0000-0000-0000-000000001004', 'authenticated', 'authenticated',
+   'analyst@prismanalytics.io', extensions.crypt('demo-analyst-2026', extensions.gen_salt('bf')), now(), now(), now(),
+   '{"provider":"email","providers":["email"]}', '{}', false, '', '', '', '')
+on conflict (id) do nothing;
+
+-- ── demo profiles ────────────────────────────────────────────────────────────
+-- super-admin (internal org)
+insert into public.profiles (id, email, full_name, org_id, account_type, role, sub_role_id, status, created_by) values
+  ('00000000-0000-0000-0000-000000001001', 'super@refold.internal', 'Priya Sharma',
+   '00000000-0000-0000-0000-000000000001', 'super_admin', 'owner',
+   '00000000-0000-0000-0000-000000000101', 'active', null),
+-- Prism cloud owner
+  ('00000000-0000-0000-0000-000000001002', 'owner@prismanalytics.io', 'Marcus Chen',
+   '00000000-0000-0000-0000-000000000002', 'cloud_customer', 'owner',
+   '00000000-0000-0000-0000-000000000201', 'active', '00000000-0000-0000-0000-000000001001'),
+-- Meridian on-prem owner
+  ('00000000-0000-0000-0000-000000001003', 'owner@meridian-labs.jp', 'Yuki Tanaka',
+   '00000000-0000-0000-0000-000000000003', 'onprem_customer', 'owner',
+   '00000000-0000-0000-0000-000000000301', 'active', '00000000-0000-0000-0000-000000001001'),
+-- Prism member (analyst)
+  ('00000000-0000-0000-0000-000000001004', 'analyst@prismanalytics.io', 'Amara Osei',
+   '00000000-0000-0000-0000-000000000002', 'cloud_customer', 'member',
+   '00000000-0000-0000-0000-000000000202', 'active', '00000000-0000-0000-0000-000000001002')
+on conflict (id) do nothing;
