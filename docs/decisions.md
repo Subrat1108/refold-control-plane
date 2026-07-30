@@ -225,6 +225,33 @@ The § 11.4 placeholder password gate (D-023) is removed when real Supabase auth
 + MFA ships in 6.2. Until then it stays. (Not removed this session — 6.1 is
 backend only.)
 
+## D-032 — sub_roles & audit_log carry nullable org_id (2026-07-30)
+Amends the 6.1 schema (approved in the 6.1 go-ahead, missed in the shipped
+migrations). Adds a nullable `org_id` FK to `sub_roles` and `audit_log` via a new
+append-only migration (existing ones untouched). `sub_roles.org_id` NULL =
+system/global sub-role, non-null = org-defined; RLS `sub_roles SELECT` becomes
+`org_id IS NULL OR org_id = current_org_id() OR is_super_admin()` and `audit_log
+SELECT` becomes `is_super_admin() OR org_id = current_org_id()` (INSERT stays
+append-only). 6.1 seeds/writes system-level only; owner-defined org sub-roles and
+owner-visible audit land in 6.4. Verified by extended rls_test.
+
+## D-033 — Compat useAuth mapping + external_ref orgId bridge (2026-07-30)
+6.2 replaces the mock role system with Supabase identity, but the 5.x pages keep
+consuming `useAuth() -> { role, user }`. A shim maps `account_type ->
+UserRole` (super_admin→super_admin, cloud_customer→cloud_customer_admin,
+onprem_customer→onprem_customer_admin) and exposes `user.orgId = org.external_ref`,
+which holds the MOCK org id (org_cloud_001 …) so the still-mock metrics hooks
+(D-027) render for real users. This bridge is transitional and goes away when 6.5
+wires live metrics. Supersedes the mock AuthContext.
+
+## D-034 — AAL2 enforced for super_admin in 6.2 (2026-07-30)
+super_admin must reach AAL2 (TOTP) before the app renders (RequireAuth →
+MfaStepUp), matching the RLS is_aal2() gate (D-029). Customer owners enter at
+aal1 in 6.2 (no write actions until provisioning in 6.4) — their AAL2 step-up
+lands with 6.4. Required enabling TOTP in supabase/config.toml
+(`[auth.mfa.totp] enroll_enabled/verify_enabled = true`). Verified end-to-end
+locally: super_admin aal1 → enroll → verify → aal2.
+
 ---
 
 # Parked

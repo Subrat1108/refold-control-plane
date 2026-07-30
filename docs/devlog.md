@@ -16,6 +16,34 @@ Template:
 
 ---
 
+## Session 16 — 2026-07-30 — Phase-0 org_id amendment + 6.2 Auth + MFA
+**Built:**
+- **Phase 0 (D-032):** new append-only migration adds nullable `org_id` to
+  `sub_roles` + `audit_log`; drops/recreates the affected SELECT policies
+  (sub_roles: system rows global + org rows scoped; audit_log: super_admin OR own
+  org). Extended `rls_test.sql` (owner sees system + own-org sub-roles, not
+  another org's). Confirmed the columns were absent first.
+- **6.2 Auth + MFA:** `@supabase/supabase-js` + `src/lib/supabase.ts` browser
+  client; `SupabaseAuthProvider` loads session + profile(+org) + AAL and
+  re-implements `useAuth()` as a compat shim (`account_type→UserRole`,
+  `user.orgId = org.external_ref` mock bridge — D-033), so all 12 useAuth
+  consumers work unchanged. `/login` is now real email+password. TOTP MFA:
+  `MfaStepUp` (enroll with QR/secret, else challenge); `RequireAuth` requires a
+  Supabase session and forces AAL2 for super_admin (D-034). Removed the dev
+  role-switcher (D-026/D-002) and placeholder password gate (D-031/D-023);
+  deleted AuthContext, AuthGateContext, useAuthGate; sign-out now calls Supabase.
+  Enabled TOTP in config.toml; added `src/vite-env.d.ts`; eslint ignores
+  `supabase/`.
+**Verified (local stack, honest):** rls_test green; a node script driving the
+anon client proved cloud-owner sign-in + profile/org load + external_ref bridge
++ aal1 + RLS cross-org isolation, and super_admin aal1 → TOTP enroll → verify →
+**aal2** → sees all orgs. typecheck/lint/build green.
+**Deviations:** metrics still served by the mock provider via the external_ref
+bridge (by design until 6.5).
+**Decisions:** D-032, D-033, D-034
+**Next:** 6.3 — Portal split (VITE_PORTAL).
+**Issues:** cloud Supabase project (URL/keys) still to be created by the user.
+
 ## Session 15 — 2026-07-29 — 6.1 Supabase project + schema + RLS
 **Built:** kicked off Phase 6 (re-architecture per docs/build-spec-v2.md, which
 was missing from the repo and is now committed). Backend only, no UI.
