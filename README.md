@@ -20,13 +20,32 @@ npm run lint       # ESLint
 npm run typecheck  # tsc --noEmit
 ```
 
-## Access
+## Portals (Phase 6)
 
-The public deployment is protected by a placeholder password gate
-(build-spec § 11.4): the demo password is `refold-demo-2025`. This is **not** real
-authentication — it is a stopgap for the free-tier public URL and should be
-replaced with proper auth (JWT/OAuth) once a backend exists. Once signed in, use
-the role switcher in the sidebar to preview each role.
+One codebase builds three portals, selected at build time by `VITE_PORTAL`
+(`admin` | `cloud` | `onprem`). Each build ships only its own routes/nav; a
+portal↔account_type guard signs out and blocks a user of the wrong type.
+
+```bash
+VITE_PORTAL=admin  npm run dev     # super-admin portal
+VITE_PORTAL=cloud  npm run dev     # cloud-customer portal
+VITE_PORTAL=onprem npm run dev     # on-prem-customer portal
+# build a specific portal:
+VITE_PORTAL=cloud  npm run build
+```
+
+Auth is Supabase email+password (super-admins additionally complete TOTP MFA to
+reach AAL2). Sign in with the matching demo user for the portal (local seed):
+
+| Portal | Demo user | Password |
+|---|---|---|
+| admin  | `super@refold.internal`     | `demo-super-2026` (then TOTP enrollment) |
+| cloud  | `owner@prismanalytics.io`   | `demo-owner-2026` |
+| onprem | `owner@meridian-labs.jp`    | `demo-owner-2026` |
+
+Signing in as the wrong type for a portal shows a "wrong portal" screen.
+Requires the local Supabase stack running and a `.env` with
+`VITE_SUPABASE_URL` / `VITE_SUPABASE_ANON_KEY` (see below).
 
 ## Deployment (Vercel)
 

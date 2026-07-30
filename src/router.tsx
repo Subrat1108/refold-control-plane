@@ -1,20 +1,18 @@
-import { createBrowserRouter, Navigate } from 'react-router-dom'
+import { createBrowserRouter, Navigate, type RouteObject } from 'react-router-dom'
 import { AppLayout } from '@/components/layout/AppLayout'
-import { RouteGuard } from '@/components/RouteGuard'
 import { RequireAuth } from '@/components/RequireAuth'
 import { RouteError } from '@/components/RouteError'
-import { OrgScopeGuard } from '@/components/OrgScopeGuard'
 import { LoginPage } from '@/pages/LoginPage'
-import { OverviewPage } from '@/pages/OverviewPage'
-import { CloudCustomersPage } from '@/pages/CloudCustomersPage'
-import { CloudOrgDetailPage } from '@/pages/CloudOrgDetailPage'
-import { OnPremCustomersPage } from '@/pages/OnPremCustomersPage'
-import { OnPremOrgDetailPage } from '@/pages/OnPremOrgDetailPage'
-import { NamespaceDetailPage } from '@/pages/NamespaceDetailPage'
-import { FeatureFlagsPage } from '@/pages/FeatureFlagsPage'
-import { SettingsPage } from '@/pages/SettingsPage'
-import { DashboardPage } from '@/pages/DashboardPage'
-import { NamespacesPage } from '@/pages/NamespacesPage'
+import { adminRoutes } from '@/portals/admin/routes'
+import { cloudRoutes } from '@/portals/cloud/routes'
+import { onpremRoutes } from '@/portals/onprem/routes'
+
+// Select this build's routes off the inlined VITE_PORTAL literal so Rollup
+// dead-code-eliminates the other portals' route modules + their pages
+// (build-spec-v2 § 3). /login is present in every portal.
+const portal = import.meta.env.VITE_PORTAL
+const portalChildren: RouteObject[] =
+  portal === 'cloud' ? cloudRoutes : portal === 'onprem' ? onpremRoutes : adminRoutes
 
 export const router = createBrowserRouter([
   {
@@ -30,101 +28,10 @@ export const router = createBrowserRouter([
       </RequireAuth>
     ),
     errorElement: <RouteError />,
-    children: [
-      {
-        index: true,
-        element: <Navigate to="/overview" replace />,
-      },
-      {
-        path: 'overview',
-        element: (
-          <RouteGuard allowedRoles={['super_admin']}>
-            <OverviewPage />
-          </RouteGuard>
-        ),
-      },
-      {
-        path: 'cloud-customers',
-        element: (
-          <RouteGuard allowedRoles={['super_admin']}>
-            <CloudCustomersPage />
-          </RouteGuard>
-        ),
-      },
-      {
-        path: 'cloud-customers/:orgId',
-        element: (
-          <RouteGuard allowedRoles={['super_admin', 'cloud_customer_admin']}>
-            <OrgScopeGuard>
-              <CloudOrgDetailPage />
-            </OrgScopeGuard>
-          </RouteGuard>
-        ),
-      },
-      {
-        path: 'onprem-customers',
-        element: (
-          <RouteGuard allowedRoles={['super_admin']}>
-            <OnPremCustomersPage />
-          </RouteGuard>
-        ),
-      },
-      {
-        path: 'onprem-customers/:orgId',
-        element: (
-          <RouteGuard allowedRoles={['super_admin', 'onprem_customer_admin']}>
-            <OrgScopeGuard>
-              <OnPremOrgDetailPage />
-            </OrgScopeGuard>
-          </RouteGuard>
-        ),
-      },
-      {
-        path: 'onprem-customers/:orgId/namespaces/:namespaceId',
-        element: (
-          <RouteGuard allowedRoles={['super_admin', 'onprem_customer_admin']}>
-            <OrgScopeGuard>
-              <NamespaceDetailPage />
-            </OrgScopeGuard>
-          </RouteGuard>
-        ),
-      },
-      {
-        path: 'feature-flags',
-        element: (
-          <RouteGuard allowedRoles={['super_admin']}>
-            <FeatureFlagsPage />
-          </RouteGuard>
-        ),
-      },
-      {
-        path: 'settings',
-        element: (
-          <RouteGuard allowedRoles={['super_admin', 'cloud_customer_admin', 'onprem_customer_admin']}>
-            <SettingsPage />
-          </RouteGuard>
-        ),
-      },
-      {
-        path: 'dashboard',
-        element: (
-          <RouteGuard allowedRoles={['cloud_customer_admin', 'onprem_customer_admin']}>
-            <DashboardPage />
-          </RouteGuard>
-        ),
-      },
-      {
-        path: 'namespaces',
-        element: (
-          <RouteGuard allowedRoles={['onprem_customer_admin']}>
-            <NamespacesPage />
-          </RouteGuard>
-        ),
-      },
-    ],
+    children: portalChildren,
   },
   {
     path: '*',
-    element: <Navigate to="/overview" replace />,
+    element: <Navigate to="/" replace />,
   },
 ])

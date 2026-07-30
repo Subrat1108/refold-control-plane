@@ -5,6 +5,7 @@ import { useSupabaseAuth } from '@/lib/auth/AuthProvider'
 import { useMediaQuery } from '@/hooks/useMediaQuery'
 import { cn } from '@/lib/utils'
 import { NAV_BY_ROLE, ROLE_LABELS } from '@/config/navigation'
+import { PORTAL_NAME } from '@/config/portal'
 import { Tooltip } from '@/components/Tooltip'
 
 export function Sidebar() {
@@ -31,7 +32,12 @@ export function Sidebar() {
       {/* Logo */}
       <div className={cn('flex items-center h-16 border-b border-white/10 flex-shrink-0', collapsed ? 'justify-center px-0' : 'gap-2.5 px-5')}>
         <div className="w-7 h-7 rounded-md bg-[#6366F1] flex items-center justify-center font-bold text-sm flex-shrink-0">R</div>
-        {!collapsed && <span className="font-semibold text-base tracking-tight">Refold</span>}
+        {!collapsed && (
+          <div className="min-w-0">
+            <div className="font-semibold text-base tracking-tight leading-none">Refold</div>
+            <div className="text-[11px] text-white/50 leading-none mt-0.5">{PORTAL_NAME}</div>
+          </div>
+        )}
       </div>
 
       {/* Nav */}
