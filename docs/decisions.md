@@ -252,6 +252,28 @@ lands with 6.4. Required enabling TOTP in supabase/config.toml
 (`[auth.mfa.totp] enroll_enabled/verify_enabled = true`). Verified end-to-end
 locally: super_admin aal1 → enroll → verify → aal2.
 
+## D-035 — Portal split via VITE_PORTAL; match guard in RequireAuth (2026-07-30)
+One repo builds three portals selected by `VITE_PORTAL` (src/config/portal.ts —
+validates, defaults to admin when unset, throws on an invalid value). Per-portal
+route modules (src/portals/{admin,cloud,onprem}/routes.tsx) import only their own
+pages; the router picks children off the inlined `import.meta.env.VITE_PORTAL`
+literal so Rollup dead-code-eliminates the other portals (verified: Overview only
+in the admin bundle, Namespaces only in onprem). The portal↔account_type match is
+layered into RequireAuth (not a parallel guard): a wrong-type user gets the
+WrongPortal screen naming the correct portal + a Sign out button (no auto-signout,
+so the message doesn't flash). Nav reuses D-016 (`NAV_BY_ROLE[role]`) — role↔portal
+are 1:1 post-guard. The per-route role `RouteGuard` is removed as superseded by
+the portal guard; `OrgScopeGuard` stays on :orgId routes (defense-in-depth, D-028).
+
+## D-036 — onprem portal includes org/namespace detail routes (2026-07-30)
+Beyond the literal "dashboard/namespaces/settings," the onprem portal also
+registers `/onprem-customers/:orgId/namespaces/:namespaceId` (Dashboard/Namespaces
+"View" target) and `/onprem-customers/:orgId` (namespace-detail "back to
+organization" target) — both OrgScopeGuard-scoped to the user's own org, matching
+the CLAUDE routing table's grants to onprem_customer_admin. Without them those
+links 404. The cloud portal stays minimal (`/dashboard` + `/settings`) since the
+cloud dashboard renders the org detail inline.
+
 ---
 
 # Parked

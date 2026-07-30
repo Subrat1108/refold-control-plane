@@ -21,7 +21,7 @@
 - [x] 6.1 — Supabase project + schema + RLS
 - [x] Phase-0 amendment — nullable org_id on sub_roles + audit_log (D-032)
 - [x] 6.2 — Auth + MFA
-- [ ] 6.3 — Portal split (VITE_PORTAL)
+- [x] 6.3 — Portal split (VITE_PORTAL)
 - [ ] 6.4 — RBAC + provisioning UI
 - [ ] 6.5 — Live data layer (provider switch; metrics-proxy)
 - [ ] 6.6 — QBR export (export-xlsx)
@@ -48,6 +48,6 @@
 (See docs/devlog.md for full session history — this is just the pointer.)
 
 Date: 2026-07-30
-Completed: Phase-0 amendment (D-032, nullable org_id on sub_roles+audit_log, new migration + RLS + extended rls_test) and 6.2 — Auth + MFA. Supabase browser client (src/lib/supabase.ts); SupabaseAuthProvider loads session+profile+AAL and re-implements useAuth() compat shape (D-033); real email+password /login; TOTP MFA enroll/challenge with AAL2 step-up enforced for super_admin (D-034, RequireAuth→MfaStepUp). Removed dev role-switcher (D-002/D-026) + placeholder password gate (D-023/D-031); deleted AuthContext/AuthGateContext/useAuthGate. Verified end-to-end on local stack (cloud owner aal1 + RLS isolation; super_admin aal1→TOTP→aal2). typecheck/lint/build green.
-Decisions made: D-032, D-033, D-034
+Completed: 6.3 — Portal split. VITE_PORTAL config (src/config/portal.ts) with validate/fail-loud; per-portal route modules (src/portals/{admin,cloud,onprem}/routes.tsx) importing only their own pages; router selects children off the inlined env literal so Rollup DCEs the other portals. Portal↔account_type guard layered into RequireAuth (WrongPortal screen). Removed superseded RouteGuard. Sidebar shows the portal name. Verified: typecheck/lint green; all three VITE_PORTAL builds green; per-bundle grep confirms Overview only in admin, Namespaces only in onprem (no cross-portal leakage).
+Decisions made: D-035, D-036
 Known issues: — (cloud Supabase project URL/keys still to be created by user; metrics still mock via external_ref bridge until 6.5)

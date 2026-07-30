@@ -3,8 +3,8 @@
 ## Current status
 <!-- Canonical state snapshot. The build room updates this block at the end of
      every session. The planning room reads it first. Keep it under ~10 lines. -->
-- Last session: 2026-07-30 — Phase-0 org_id amendment (D-032) + 6.2 Auth + MFA. Supabase client + SupabaseAuthProvider (session/profile/AAL) with compat useAuth shim (D-033); real /login; TOTP MFA + AAL2 step-up for super_admin (D-034). Removed dev role-switcher + placeholder password gate. Verified end-to-end on local stack. Logged D-032–D-034
-- Next up: 6.3 — Portal split (VITE_PORTAL: admin/cloud/onprem shells; portal↔account_type match guard)
+- Last session: 2026-07-30 — 6.3 Portal split. VITE_PORTAL config + per-portal route modules (src/portals/{admin,cloud,onprem}); router DCEs other portals via env literal; portal↔account_type guard in RequireAuth (WrongPortal); removed superseded RouteGuard. Verified: 3 portal builds green + no cross-portal bundle leakage. Logged D-035–D-036
+- Next up: 6.4 — RBAC + provisioning UI (super-admin user mgmt + sub-role assignment; customer-owner provisioning; audit logging)
 - Blockers: cloud Supabase project (URL/keys) to be created by user; Refold/Facets API docs needed for 6.5
 - Deployed: not yet — Phase 6 targets Netlify (3 portals) + Supabase; local stack only so far
 - Known issues: none logged

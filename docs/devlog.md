@@ -16,6 +16,28 @@ Template:
 
 ---
 
+## Session 17 — 2026-07-30 — 6.3 Portal split (VITE_PORTAL)
+**Built:** one repo → three portals. `src/config/portal.ts` resolves/validates
+`VITE_PORTAL` (default admin, throw on invalid) and maps portal↔account_type↔role
++ display names. Per-portal route modules `src/portals/{admin,cloud,onprem}/
+routes.tsx` import only their own pages; `router.tsx` selects children off the
+inlined env literal so Rollup DCEs the other portals. Portal↔account_type guard
+layered into `RequireAuth` (order: session → profile → portal match → AAL2):
+wrong-type users get a `WrongPortal` screen naming the correct portal + Sign out.
+Removed the now-superseded `RouteGuard` (only the portal guard gates role now;
+`OrgScopeGuard` stays on :orgId routes). Sidebar logo shows the portal name.
+README rewritten (portals + demo creds + per-portal run), replacing the stale
+password-gate/role-switcher text.
+**Verified (honest):** typecheck + lint green; all three `VITE_PORTAL` builds
+green; per-bundle grep confirms no cross-portal leakage — Overview page only in
+the admin bundle, Namespaces page only in onprem. (Wrong-portal guard verified by
+code/build; not browser-automated.)
+**Deviations:** onprem portal includes the org/namespace detail routes (D-036);
+metrics still mock via the external_ref bridge (unchanged).
+**Decisions:** D-035, D-036
+**Next:** 6.4 — RBAC + provisioning UI.
+**Issues:** cloud Supabase project (URL/keys) still to be created by the user.
+
 ## Session 16 — 2026-07-30 — Phase-0 org_id amendment + 6.2 Auth + MFA
 **Built:**
 - **Phase 0 (D-032):** new append-only migration adds nullable `org_id` to
