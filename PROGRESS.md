@@ -22,6 +22,7 @@
 - [x] Phase-0 amendment — nullable org_id on sub_roles + audit_log (D-032)
 - [x] 6.2 — Auth + MFA
 - [x] 6.3 — Portal split (VITE_PORTAL)
+- [x] Seed/login fix — demo logins require `supabase db reset`; seed adds auth.identities (D-037)
 - [ ] 6.4 — RBAC + provisioning UI
 - [ ] 6.5 — Live data layer (provider switch; metrics-proxy)
 - [ ] 6.6 — QBR export (export-xlsx)
@@ -48,6 +49,6 @@
 (See docs/devlog.md for full session history — this is just the pointer.)
 
 Date: 2026-07-30
-Completed: 6.3 — Portal split. VITE_PORTAL config (src/config/portal.ts) with validate/fail-loud; per-portal route modules (src/portals/{admin,cloud,onprem}/routes.tsx) importing only their own pages; router selects children off the inlined env literal so Rollup DCEs the other portals. Portal↔account_type guard layered into RequireAuth (WrongPortal screen). Removed superseded RouteGuard. Sidebar shows the portal name. Verified: typecheck/lint green; all three VITE_PORTAL builds green; per-bundle grep confirms Overview only in admin, Namespaces only in onprem (no cross-portal leakage).
-Decisions made: D-035, D-036
+Completed: Seed/login fix. Diagnosed the admin-portal "Incorrect email or password": the seed is correct (live sign-in for super + cloud returns tokens; users confirmed, aud/role=authenticated) — the real cause is that `supabase start` does NOT re-run seed.sql on a persisted volume, so a stale local db lacks the current demo users. Fix = `supabase db reset` (documented prominently in README). Also hardened the seed with auth.identities rows (robustness/future-proofing; GoTrue v2.193 password login worked without them, but real users always have them). Verified after db reset: super + cloud sign-in via anon client return AAL1 sessions; rls_test green. Prior session: 6.3 portal split.
+Decisions made: D-037
 Known issues: — (cloud Supabase project URL/keys still to be created by user; metrics still mock via external_ref bridge until 6.5)

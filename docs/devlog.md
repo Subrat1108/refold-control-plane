@@ -16,6 +16,27 @@ Template:
 
 ---
 
+## Session 18 — 2026-07-30 — Fix: demo login / seed robustness
+**Diagnosed** the admin-portal "Incorrect email or password". Step-1 query
+showed all 4 demo users present, `email_confirmed_at` set, `has_pw` true,
+`aud`/`role`=authenticated — but `auth.identities` had 0 rows. A live GoTrue
+password request for super@refold.internal (and owner@prismanalytics.io)
+nonetheless **returned tokens**, so the seed is functionally correct and the
+missing identities are not the blocker in GoTrue v2.193.
+**Root cause:** `supabase start` re-runs `seed.sql` only on a fresh db init; on a
+persisted/older volume it does not reseed, so a stale local db lacks the current
+demo users → GoTrue rejects the login. Fix is `supabase db reset`.
+**Fix:** documented `db reset` prominently in the README Supabase section (the
+actual remedy for the user); and hardened the seed with a matching
+`auth.identities` row per demo user (robustness / GoTrue-version future-proofing).
+**Verified (honest):** after `db reset`, 4 email identities seeded; a throwaway
+anon-client script signed in super + cloud (both AAL1 sessions); rls_test green.
+Login now works after a reset; a plain `start` on a stale volume still needs a
+reset (documented).
+**Decisions:** D-037
+**Next:** 6.4 — RBAC + provisioning UI.
+**Issues:** —
+
 ## Session 17 — 2026-07-30 — 6.3 Portal split (VITE_PORTAL)
 **Built:** one repo → three portals. `src/config/portal.ts` resolves/validates
 `VITE_PORTAL` (default admin, throw on invalid) and maps portal↔account_type↔role

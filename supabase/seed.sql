@@ -2,9 +2,11 @@
 -- Runs on `supabase db reset` for local dev ONLY (never shipped to prod). Gives
 -- later blocks a couple of orgs + users to render. Passwords are demo-only.
 --
--- Note: we insert auth.users directly (a standard local-seed shortcut) so the
--- profiles FK is satisfied and the RLS test can impersonate real user ids.
--- Proper user creation (via the auth admin API + identities) lands in 6.2.
+-- Note: we insert auth.users + a matching auth.identities row directly (a
+-- standard local-seed shortcut) so the demo logins work and the profiles FK is
+-- satisfied. This runs only on a FRESH db init or `supabase db reset` — a plain
+-- `supabase start` on an existing volume does NOT re-run it, so after pulling
+-- seed changes you must `supabase db reset` for the new logins to exist.
 
 create extension if not exists pgcrypto with schema extensions;
 
@@ -36,6 +38,22 @@ values
    'analyst@prismanalytics.io', extensions.crypt('demo-analyst-2026', extensions.gen_salt('bf')), now(), now(), now(),
    '{"provider":"email","providers":["email"]}', '{}', false, '', '', '', '')
 on conflict (id) do nothing;
+
+-- ── matching identities ──────────────────────────────────────────────────────
+-- GoTrue-created users always have an auth.identities row; we add one per demo
+-- user so the seed matches real structure and stays correct across GoTrue
+-- versions (some flows/versions expect it). provider_id = user id for email.
+insert into auth.identities (provider_id, user_id, identity_data, provider, last_sign_in_at, created_at, updated_at)
+values
+  ('00000000-0000-0000-0000-000000001001', '00000000-0000-0000-0000-000000001001',
+   '{"sub":"00000000-0000-0000-0000-000000001001","email":"super@refold.internal","email_verified":true,"phone_verified":false}', 'email', now(), now(), now()),
+  ('00000000-0000-0000-0000-000000001002', '00000000-0000-0000-0000-000000001002',
+   '{"sub":"00000000-0000-0000-0000-000000001002","email":"owner@prismanalytics.io","email_verified":true,"phone_verified":false}', 'email', now(), now(), now()),
+  ('00000000-0000-0000-0000-000000001003', '00000000-0000-0000-0000-000000001003',
+   '{"sub":"00000000-0000-0000-0000-000000001003","email":"owner@meridian-labs.jp","email_verified":true,"phone_verified":false}', 'email', now(), now(), now()),
+  ('00000000-0000-0000-0000-000000001004', '00000000-0000-0000-0000-000000001004',
+   '{"sub":"00000000-0000-0000-0000-000000001004","email":"analyst@prismanalytics.io","email_verified":true,"phone_verified":false}', 'email', now(), now(), now())
+on conflict (provider_id, provider) do nothing;
 
 -- ── demo org-defined sub-role (Prism only) — exercises the D-032 org_id scoping ─
 insert into public.sub_roles (id, account_type, org_id, name, permissions, is_system) values

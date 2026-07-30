@@ -3,7 +3,7 @@
 ## Current status
 <!-- Canonical state snapshot. The build room updates this block at the end of
      every session. The planning room reads it first. Keep it under ~10 lines. -->
-- Last session: 2026-07-30 — 6.3 Portal split. VITE_PORTAL config + per-portal route modules (src/portals/{admin,cloud,onprem}); router DCEs other portals via env literal; portal↔account_type guard in RequireAuth (WrongPortal); removed superseded RouteGuard. Verified: 3 portal builds green + no cross-portal bundle leakage. Logged D-035–D-036
+- Last session: 2026-07-30 — Seed/login fix (D-037). Demo-login failure root cause: `supabase start` doesn't reseed a persisted volume → run `supabase db reset` (documented in README). Seed hardened with auth.identities rows. Verified: super+cloud sign-in (AAL1) + rls_test green after reset. Prior: 6.3 portal split
 - Next up: 6.4 — RBAC + provisioning UI (super-admin user mgmt + sub-role assignment; customer-owner provisioning; audit logging)
 - Blockers: cloud Supabase project (URL/keys) to be created by user; Refold/Facets API docs needed for 6.5
 - Deployed: not yet — Phase 6 targets Netlify (3 portals) + Supabase; local stack only so far

@@ -274,6 +274,18 @@ the CLAUDE routing table's grants to onprem_customer_admin. Without them those
 links 404. The cloud portal stays minimal (`/dashboard` + `/settings`) since the
 cloud dashboard renders the org detail inline.
 
+## D-037 — Demo seed adds auth.identities; reseed requires db reset (2026-07-30)
+Investigating an admin-portal "Incorrect email or password": the seed itself is
+correct (live sign-in for super/cloud returns tokens; users are confirmed with
+aud/role=authenticated). Root cause is operational — `supabase start` runs
+seed.sql only on a fresh db init, so a persisted/older local volume never gets
+the current demo users; the fix is `supabase db reset` (now called out
+prominently in the README). Separately hardened the seed to insert a matching
+`auth.identities` row per demo user (email provider, identity_data with
+sub+email) so the fixtures match how GoTrue creates real users and stay valid
+across GoTrue versions — password login worked without them on v2.193, but this
+future-proofs it. No app/schema change; seed.sql + docs only.
+
 ---
 
 # Parked

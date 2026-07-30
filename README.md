@@ -68,9 +68,16 @@ still come from the mock provider until the live data layer lands (build-spec-v2
 
 ```bash
 npx supabase start          # boot the local stack (needs Docker running)
-npx supabase db reset        # re-apply all migrations + seed on a fresh db
+npx supabase db reset        # re-apply all migrations + seed.sql
 npx supabase stop            # tear down
 ```
+
+> **Demo logins not working ("Incorrect email or password")?** Run
+> **`npx supabase db reset`**. `supabase start` runs `seed.sql` **only on a fresh
+> database** — on an existing/older volume it does *not* re-seed, so the demo
+> users (super/cloud/onprem) won't exist or won't match. `db reset` re-applies
+> migrations + seed and fixes it. Do this after a fresh clone and after pulling
+> any migration/seed changes.
 
 `supabase start`/`db reset` print local dev URLs and keys (well-known, not
 secret). Real cloud keys go in `.env` (gitignored); only the variable **names**
