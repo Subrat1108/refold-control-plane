@@ -1,6 +1,6 @@
 export { useAuth } from './useAuth'
 export { useMediaQuery } from './useMediaQuery'
-export { useAuthGate } from './useAuthGate'
+export { useSupabaseAuth } from '@/lib/auth/AuthProvider'
 export {
   useOverviewStats,
   useCloudOrgs,

@@ -1,33 +1,21 @@
 import { NavLink, useNavigate } from 'react-router-dom'
-import { ChevronDown, UserCog, LogOut } from 'lucide-react'
+import { LogOut } from 'lucide-react'
 import { useAuth } from '@/hooks/useAuth'
-import { useAuthGate } from '@/hooks/useAuthGate'
+import { useSupabaseAuth } from '@/lib/auth/AuthProvider'
 import { useMediaQuery } from '@/hooks/useMediaQuery'
-import type { UserRole } from '@/types'
 import { cn } from '@/lib/utils'
-import { NAV_BY_ROLE, ROLE_LABELS, homeRoute } from '@/config/navigation'
+import { NAV_BY_ROLE, ROLE_LABELS } from '@/config/navigation'
 import { Tooltip } from '@/components/Tooltip'
-import {
-  DropdownMenu,
-  DropdownMenuContent,
-  DropdownMenuItem,
-  DropdownMenuTrigger,
-} from '@/components/ui/dropdown-menu'
 
 export function Sidebar() {
-  const { user, role, setRole } = useAuth()
-  const { signOut } = useAuthGate()
+  const { user, role } = useAuth()
+  const { signOut } = useSupabaseAuth()
   const navigate = useNavigate()
   const collapsed = useMediaQuery('(max-width: 1200px)')
   const navItems = NAV_BY_ROLE[role]
 
-  function handleRoleSwitch(newRole: UserRole) {
-    setRole(newRole)
-    navigate(homeRoute(newRole))
-  }
-
-  function handleSignOut() {
-    signOut()
+  async function handleSignOut() {
+    await signOut()
     navigate('/login', { replace: true })
   }
 
@@ -73,7 +61,7 @@ export function Sidebar() {
         })}
       </nav>
 
-      {/* User profile + role switcher */}
+      {/* User profile */}
       <div className={cn('flex-shrink-0 border-t border-white/10 pt-3 pb-4', collapsed ? 'px-2' : 'px-3')}>
         {!collapsed && (
           <div className="flex items-center gap-3 px-2 py-2 mb-2">
@@ -82,37 +70,12 @@ export function Sidebar() {
             </div>
             <div className="min-w-0">
               <div className="text-sm font-medium text-white truncate">{user.name}</div>
-              <div className="text-xs text-white/50 truncate">{user.email}</div>
+              <div className="text-xs text-white/50 truncate">{ROLE_LABELS[role]}</div>
             </div>
           </div>
         )}
 
-        {/* Dev role switcher */}
-        <DropdownMenu>
-          <DropdownMenuTrigger asChild>
-            {collapsed ? (
-              <Tooltip content={`Role: ${ROLE_LABELS[role]}`}>
-                <button className="flex items-center justify-center h-10 w-10 mx-auto rounded-md text-white/60 hover:text-white hover:bg-white/8 transition-colors" aria-label="Switch role">
-                  <UserCog size={18} />
-                </button>
-              </Tooltip>
-            ) : (
-              <button className="w-full flex items-center justify-between px-3 py-2 rounded-md text-xs font-medium text-white/60 hover:text-white hover:bg-white/8 transition-colors">
-                <span>{ROLE_LABELS[role]}</span>
-                <ChevronDown size={12} />
-              </button>
-            )}
-          </DropdownMenuTrigger>
-          <DropdownMenuContent side="top" align="start" className="w-48">
-            {(Object.keys(ROLE_LABELS) as UserRole[]).map((r) => (
-              <DropdownMenuItem key={r} onClick={() => handleRoleSwitch(r)} className={cn('text-sm', r === role && 'font-semibold')}>
-                {ROLE_LABELS[r]}
-              </DropdownMenuItem>
-            ))}
-          </DropdownMenuContent>
-        </DropdownMenu>
-
-        {/* Sign out (placeholder auth, § 11.4) */}
+        {/* Sign out */}
         {collapsed ? (
           <Tooltip content="Sign out">
             <button onClick={handleSignOut} className="flex items-center justify-center h-10 w-10 mx-auto mt-1 rounded-md text-white/60 hover:text-white hover:bg-white/8 transition-colors" aria-label="Sign out">

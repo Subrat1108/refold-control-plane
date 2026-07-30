@@ -296,8 +296,32 @@ export interface AuthUser {
   orgId?: string
 }
 
+// Compat shape consumed by the existing 5.x pages/guards (Phase 6 — D-033).
 export interface AuthContextValue {
   user: AuthUser
   role: UserRole
-  setRole: (role: UserRole) => void
+}
+
+// ── Supabase-backed identity (Phase 6 — matches the Postgres schema § 4) ──────
+export type AccountType = 'super_admin' | 'cloud_customer' | 'onprem_customer'
+export type MemberRole = 'owner' | 'member'
+export type UserStatus = 'invited' | 'active' | 'disabled'
+export type DeploymentType = 'cloud' | 'on_premise' | 'internal'
+
+export interface ProfileOrg {
+  name: string
+  deploymentType: DeploymentType
+  externalRef: string | null
+}
+
+export interface Profile {
+  id: string
+  email: string
+  fullName: string | null
+  orgId: string
+  accountType: AccountType
+  role: MemberRole
+  subRoleId: string | null
+  status: UserStatus
+  org: ProfileOrg | null
 }
