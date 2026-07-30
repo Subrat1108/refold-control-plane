@@ -41,6 +41,12 @@ begin
   select count(*) into n from public.profiles;
   assert n = 2, format('Prism owner should see 2 org profiles, saw %s', n);
 
+  -- sub_roles (D-032): sees system (org_id null) rows + their own org's
+  select count(*) into n from public.sub_roles where org_id is null;
+  assert n >= 9, format('Prism owner should see the 9 system sub-roles, saw %s', n);
+  select count(*) into n from public.sub_roles where org_id = '00000000-0000-0000-0000-000000000002';
+  assert n = 1, format('Prism owner should see their own org sub-role, saw %s', n);
+
   reset role;
 
   -- ── Meridian owner: cannot see any Prism rows (cross-org isolation) ─────────
@@ -55,6 +61,13 @@ begin
 
   select count(*) into n from public.organizations;
   assert n = 1, format('Meridian owner should see only their org, saw %s', n);
+
+  -- sub_roles (D-032): must NOT see Prism's org-defined sub-role
+  select count(*) into n from public.sub_roles where org_id = '00000000-0000-0000-0000-000000000002';
+  assert n = 0, format('Meridian owner must not see Prism org sub-role, saw %s', n);
+  -- but still sees the system sub-roles
+  select count(*) into n from public.sub_roles where org_id is null;
+  assert n >= 9, 'Meridian owner should still see system sub-roles';
 
   reset role;
 

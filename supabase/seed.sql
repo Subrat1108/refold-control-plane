@@ -9,9 +9,12 @@
 create extension if not exists pgcrypto with schema extensions;
 
 -- ── demo organizations ───────────────────────────────────────────────────────
+-- external_ref doubles as the metrics-provider key. Until 6.5 wires live
+-- metrics, it holds the MOCK org id so the 5.x pages render for these users
+-- against the mock data provider (D-027/D-033).
 insert into public.organizations (id, name, deployment_type, plan, status, external_ref) values
-  ('00000000-0000-0000-0000-000000000002', 'Prism Analytics',       'cloud',       'growth',                 'active', 'refold_prism'),
-  ('00000000-0000-0000-0000-000000000003', 'Meridian Laboratories', 'on_premise',  'self_hosted_enterprise', 'active', 'refold_meridian')
+  ('00000000-0000-0000-0000-000000000002', 'Prism Analytics',       'cloud',       'growth',                 'active', 'org_cloud_001'),
+  ('00000000-0000-0000-0000-000000000003', 'Meridian Laboratories', 'on_premise',  'self_hosted_enterprise', 'active', 'org_onprem_001')
 on conflict (id) do nothing;
 
 -- ── demo auth users ──────────────────────────────────────────────────────────
@@ -32,6 +35,12 @@ values
   ('00000000-0000-0000-0000-000000000000', '00000000-0000-0000-0000-000000001004', 'authenticated', 'authenticated',
    'analyst@prismanalytics.io', extensions.crypt('demo-analyst-2026', extensions.gen_salt('bf')), now(), now(), now(),
    '{"provider":"email","providers":["email"]}', '{}', false, '', '', '', '')
+on conflict (id) do nothing;
+
+-- ── demo org-defined sub-role (Prism only) — exercises the D-032 org_id scoping ─
+insert into public.sub_roles (id, account_type, org_id, name, permissions, is_system) values
+  ('00000000-0000-0000-0000-000000000210', 'cloud_customer',
+   '00000000-0000-0000-0000-000000000002', 'Prism Finance', '{"read": true, "export": true}', false)
 on conflict (id) do nothing;
 
 -- ── demo profiles ────────────────────────────────────────────────────────────
