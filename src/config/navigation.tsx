@@ -24,9 +24,10 @@ export const NAV_BY_ROLE: Record<UserRole, NavItem[]> = {
     { to: '/users', label: 'Users', icon: <UsersRound size={16} />, ownerOnly: true },
     { to: '/settings', label: 'Settings', icon: <Settings size={16} /> },
   ],
+  // Namespaces is first so homeRoute(onprem) → /namespaces (R1 landing target).
   onprem_customer_admin: [
-    { to: '/dashboard', label: 'Dashboard', icon: <LayoutDashboard size={16} /> },
     { to: '/namespaces', label: 'Namespaces', icon: <Layers size={16} /> },
+    { to: '/dashboard', label: 'Dashboard', icon: <LayoutDashboard size={16} /> },
     { to: '/users', label: 'Users', icon: <UsersRound size={16} />, ownerOnly: true },
     { to: '/settings', label: 'Settings', icon: <Settings size={16} /> },
   ],

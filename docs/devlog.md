@@ -16,6 +16,32 @@ Template:
 
 ---
 
+## Session 22 — 2026-07-31 — R1: unify portals into one app + single login
+**Built:** reversed the three-portal split (D-026/D-035). One app, one `/login`.
+- `src/router.tsx` rewritten as a single merged route tree; deleted
+  `src/portals/{admin,cloud,onprem}/routes.tsx`, `src/config/portal.ts`,
+  `src/lib/auth/WrongPortal.tsx`; retired `VITE_PORTAL` (vite-env/.env/.env.example).
+- Per-route role protection back via restored `RouteGuard` → shared AccessDenied
+  (no silent redirect); `OrgScopeGuard` stays on :orgId routes.
+- `RequireAuth` simplified to session → (super_admin/owner AAL2) → render (portal
+  match removed). New `IndexRedirect` sends `/` to `homeRoute(role)`; LoginPage
+  already redirected post-auth; catch-all → `/`.
+- onprem nav reordered (Namespaces first) so `homeRoute(onprem)` → /namespaces,
+  keeping the "home = first nav item" invariant (D-016). Sidebar drops PORTAL_NAME.
+- README rewritten (single app / one login / role redirect; removed VITE_PORTAL).
+**Verified (honest, local):** signed in all three demo users via the SAME /login
+(real Supabase auth + profile) → each resolves to the correct role and landing
+route (super→/overview, cloud→/dashboard, onprem→/namespaces). AccessDenied for a
+role hitting a route it can't access is enforced by RouteGuard's explicit
+allowedRoles (verified by inspection — deterministic). ONE build (no VITE_PORTAL);
+typecheck/lint/build green; no portal/WrongPortal imports remain in src.
+**Deviations:** onprem nav reorder (Namespaces first) — needed so onprem lands on
+/namespaces per the requirement without breaking homeRoute; approved in plan.
+**Decisions:** D-048 (supersedes D-026/D-035)
+**Next:** 6.5 — live data layer (provider switch; metrics-proxy). Netlify single-
+site deploy is a later change.
+**Issues:** —
+
 ## Session 21 — 2026-07-31 — Hotfix: MFA enrollment stuck (422)
 **Fixed** a stuck "Preparing MFA…" screen (422 on `POST /auth/v1/factors`) hit
 while manually testing 6.4b. React StrictMode double-invoked MfaStepUp's prepare

@@ -20,32 +20,44 @@ npm run lint       # ESLint
 npm run typecheck  # tsc --noEmit
 ```
 
-## Portals (Phase 6)
+## One app, one login (Phase 6 / R1)
 
-One codebase builds three portals, selected at build time by `VITE_PORTAL`
-(`admin` | `cloud` | `onprem`). Each build ships only its own routes/nav; a
-portal↔account_type guard signs out and blocks a user of the wrong type.
+This is a **single unified app** with **one `/login`** for everyone (the earlier
+three-portal `VITE_PORTAL` split was retired in R1, D-048). After signing in, the
+app reads the user's `account_type` and redirects them to their own home view via
+`homeRoute(role)`:
+
+| Role | Lands on |
+|---|---|
+| super_admin           | `/overview`   |
+| cloud_customer_admin  | `/dashboard`  |
+| onprem_customer_admin | `/namespaces` |
+
+All routes coexist in one build and are role-protected per route: a user who
+navigates to a route their role can't access sees the shared **Access Denied**
+page (never a silent redirect). Org-scoped `:orgId` routes additionally pass
+through `OrgScopeGuard`, with Postgres RLS as the real isolation guarantee.
 
 ```bash
-VITE_PORTAL=admin  npm run dev     # super-admin portal
-VITE_PORTAL=cloud  npm run dev     # cloud-customer portal
-VITE_PORTAL=onprem npm run dev     # on-prem-customer portal
-# build a specific portal:
-VITE_PORTAL=cloud  npm run build
+npm run dev        # one app — no VITE_PORTAL
+npm run build      # one build
 ```
 
-Auth is Supabase email+password (super-admins additionally complete TOTP MFA to
-reach AAL2). Sign in with the matching demo user for the portal (local seed):
+Auth is Supabase email+password; **super-admins and customer owners** complete
+TOTP MFA to reach AAL2 on first login. Demo users (local seed):
 
-| Portal | Demo user | Password |
+| Role | Demo user | Password |
 |---|---|---|
-| admin  | `super@refold.internal`     | `demo-super-2026` (then TOTP enrollment) |
-| cloud  | `owner@prismanalytics.io`   | `demo-owner-2026` |
-| onprem | `owner@meridian-labs.jp`    | `demo-owner-2026` |
+| super_admin  | `super@refold.internal`     | `demo-super-2026` (then TOTP enrollment) |
+| cloud owner  | `owner@prismanalytics.io`   | `demo-owner-2026` (then TOTP enrollment) |
+| onprem owner | `owner@meridian-labs.jp`    | `demo-owner-2026` (then TOTP enrollment) |
+| cloud member | `analyst@prismanalytics.io` | `demo-analyst-2026` |
 
-Signing in as the wrong type for a portal shows a "wrong portal" screen.
 Requires the local Supabase stack running and a `.env` with
 `VITE_SUPABASE_URL` / `VITE_SUPABASE_ANON_KEY` (see below).
+
+> **Deployment implication:** this is now **one site**, not three. The Netlify
+> deploy (single site) is a later change.
 
 ## Deployment (Vercel)
 

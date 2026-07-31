@@ -391,6 +391,32 @@ guard on error to allow retry. Would have bitten any first-time super_admin/owne
 enrollment in dev. Verified locally: cleanup unenrolls the orphan then enroll
 returns a QR+secret; user left with zero factors for a clean slate.
 
+## D-048 — R1: unify the three portals into one app + single login (2026-07-31)
+Reverses the portal split. **Supersedes D-026 and D-035** (VITE_PORTAL build
+selection + the portal↔account_type match guard + WrongPortal screen) — does not
+edit them. One build now registers ALL routes in a single tree
+(`src/router.tsx`); the `src/portals/{admin,cloud,onprem}/routes` modules,
+`src/config/portal.ts`, and `src/lib/auth/WrongPortal.tsx` are deleted, and
+`VITE_PORTAL` is retired (removed from vite-env/.env/.env.example). One `/login`
+for everyone; after auth the app redirects to the role's home via
+`homeRoute(role)` (super_admin→/overview, cloud→/dashboard, onprem→/namespaces) —
+LoginPage already did this, plus a new `IndexRedirect` handles direct `/` hits and
+the catch-all routes to `/`. RequireAuth is now just: session → (super_admin/owner
+→ AAL2 MfaStepUp) → render (portal match removed). Per-route role protection
+returns via `RouteGuard` (the D-035-removed guard restored): a user hitting a
+route their role can't access gets the shared AccessDenied page, never a silent
+redirect; `OrgScopeGuard` stays on :orgId routes (RLS remains the real guarantee,
+D-028); nav stays role-based (NAV_BY_ROLE/homeRoute, D-016). To make onprem land
+on /namespaces per the requirement while keeping the `homeRoute = first nav item`
+invariant, the onprem nav is reordered (Namespaces first). Everything else
+intact: Supabase auth + MFA (D-034/D-046/D-047), provisioning Edge Function, RLS,
+mock metrics via external_ref (D-033). Deployment implication: now ONE site (not
+three); the actual Netlify single-site deploy is a later change. Verified locally:
+all three demo users sign in through the same /login and resolve to the correct
+role + landing route (super→/overview, cloud→/dashboard, onprem→/namespaces);
+role-mismatched routes render AccessDenied (RouteGuard); one build, typecheck/
+lint/build green.
+
 ---
 
 # Parked

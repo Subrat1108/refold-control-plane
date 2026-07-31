@@ -21,14 +21,15 @@
 - [x] 6.1 — Supabase project + schema + RLS
 - [x] Phase-0 amendment — nullable org_id on sub_roles + audit_log (D-032)
 - [x] 6.2 — Auth + MFA
-- [x] 6.3 — Portal split (VITE_PORTAL)
+- [x] 6.3 — Portal split (VITE_PORTAL) — later REVERSED by R1 (D-048)
 - [x] Seed/login fix — demo logins require `supabase db reset`; seed adds auth.identities (D-037)
 - [x] 6.4 — RBAC + provisioning UI (complete: 6.4a + 6.4b)
 - [x] 6.4a — Provisioning engine + super-admin user mgmt (Edge Function, invite-accept, admin UI; D-038–D-042)
 - [x] 6.4b — Customer-owner user mgmt + owner-defined sub-roles (+RLS) + owner AAL2 + Phase-0 self-edit lockdown (D-043–D-046)
+- [x] R1 — Unify the three portals into one app + single login (reverses 6.3; D-048)
 - [ ] 6.5 — Live data layer (provider switch; metrics-proxy)
 - [ ] 6.6 — QBR export (export-xlsx)
-- [ ] 6.7 — Netlify deploy + polish
+- [ ] 6.7 — Netlify deploy + polish (now ONE site, not three — per R1)
 
 ## Deployment
 
@@ -51,7 +52,6 @@
 (See docs/devlog.md for full session history — this is just the pointer.)
 
 Date: 2026-07-31
-Completed: 6.4b — customer-owner user management + owner-defined sub-roles + owner AAL2, plus a Phase-0 security fix. Phase 0 (D-043): profiles self-edit locked down via column-level UPDATE grant (only full_name), closing the self-escalation path. Edge Function owner lane (D-044, no fork): owner_invite_user/owner_assign_sub_role/owner_set_user_status — own-org + own-type + AAL2, audit w/ org_id. Owner sub-role RLS (D-045): current_account_type() helper + sub_roles_owner_insert/update policies; owners write via direct RLS-gated client. Owner AAL2 (D-046): needsMfa now covers owners. OrgUsersPage (`/users`, owner-gated) in cloud+onprem portals. Verified: rls_test ALL PASSED (self-escalation denied, owner sub-role org-scoping); owner-lane suite 14/14 (AAL1/member/cross-org/wrong-type/self-disable rejections; own-org actions + accept→active); typecheck/lint/build green ×3; no service-role key in bundles.
-Also (same day) hotfix D-047: MFA enrollment stuck at "Preparing MFA…" (422) — StrictMode double-enroll orphaned an unverified TOTP factor; enrollTotp() now cleans up stale unverified factors + MfaStepUp prepare runs once per mount.
-Decisions made: D-043, D-044, D-045, D-046, D-047
+Completed: R1 — unify the three portals into ONE app with a single /login (reverses 6.3; supersedes D-026/D-035; D-048). Merged all routes into one router with per-route RouteGuard → AccessDenied; deleted the portals/ route modules, config/portal.ts, WrongPortal.tsx; retired VITE_PORTAL. RequireAuth simplified (session → super_admin/owner AAL2 → render); IndexRedirect + LoginPage send each user to homeRoute(role) (super→/overview, cloud→/dashboard, onprem→/namespaces). onprem nav reordered (Namespaces first) to keep the home=first-nav invariant. README rewritten for the single app. Verified locally: all three demo users sign in via the same /login and resolve to the right role + landing route; ONE build; typecheck/lint/build green; no portal imports remain.
+Decisions made: D-048
 Known issues: — (cloud Supabase project URL/keys still user-provided; provisioned orgs shown via pending-invites panel until 6.5; metrics still mock via external_ref bridge)
