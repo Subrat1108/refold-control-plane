@@ -3,12 +3,12 @@
 ## Current status
 <!-- Canonical state snapshot. The build room updates this block at the end of
      every session. The planning room reads it first. Keep it under ~10 lines. -->
-- Last session: 2026-07-30 — Seed/login fix (D-037). Demo-login failure root cause: `supabase start` doesn't reseed a persisted volume → run `supabase db reset` (documented in README). Seed hardened with auth.identities rows. Verified: super+cloud sign-in (AAL1) + rls_test green after reset. Prior: 6.3 portal split
-- Next up: 6.4 — RBAC + provisioning UI (super-admin user mgmt + sub-role assignment; customer-owner provisioning; audit logging)
+- Last session: 2026-07-31 — 6.4a Provisioning engine + super-admin user mgmt (D-038–D-042). `provisioning` Edge Function (sole service-role holder; self-verifies super_admin+AAL2; actions provision_org/invite_super_admin/assign_sub_role/set_user_status/accept_invite; audit_log each). service_role GRANTs migration (D-039). `/accept-invite` page + admin SuperAdminsPage (`/admin-users`) + AddCustomer/PendingInvites. Verified local (authz 401/403, AAL2 success, Mailpit invite, full accept flow, disable/enable/assign, typecheck/lint/build ×3, no service key in bundles, rls_test green after reset)
+- Next up: 6.4b — customer-owner user mgmt + owner-defined org sub-roles (+RLS migration) + customer-owner AAL2 step-up
 - Blockers: cloud Supabase project (URL/keys) to be created by user; Refold/Facets API docs needed for 6.5
 - Deployed: not yet — Phase 6 targets Netlify (3 portals) + Supabase; local stack only so far
-- Known issues: none logged
-- Phase 6 note: dev role-switcher (D-002) + password gate (D-023) NOW REMOVED (6.2). Metrics still mock via external_ref→mock-id bridge (D-033) until 6.5. TOTP enabled in supabase/config.toml. Local dev needs a gitignored .env (VITE_SUPABASE_URL/ANON_KEY from `npx supabase start`)
+- Known issues: provisioned orgs don't appear in the mock-backed customer lists yet (shown via a Pending-invites panel until 6.5)
+- Phase 6 note: dev role-switcher (D-002) + password gate (D-023) NOW REMOVED (6.2). Metrics still mock via external_ref→mock-id bridge (D-033) until 6.5. TOTP enabled in supabase/config.toml. Local dev needs a gitignored .env (VITE_SUPABASE_URL/ANON_KEY from `npx supabase start`). Edge Functions: `npx supabase functions serve` (auto-injects the service-role key; invite emails land in Mailpit http://127.0.0.1:54324)
 
 ## Session protocol (build room)
 **Start of every session** — reconstruct context in one command before doing anything:

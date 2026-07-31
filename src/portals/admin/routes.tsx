@@ -7,6 +7,7 @@ import { OnPremCustomersPage } from '@/pages/OnPremCustomersPage'
 import { OnPremOrgDetailPage } from '@/pages/OnPremOrgDetailPage'
 import { NamespaceDetailPage } from '@/pages/NamespaceDetailPage'
 import { FeatureFlagsPage } from '@/pages/FeatureFlagsPage'
+import { SuperAdminsPage } from '@/pages/SuperAdminsPage'
 import { SettingsPage } from '@/pages/SettingsPage'
 
 // super_admin portal. Role gating is handled by the portal↔account_type guard in
@@ -20,5 +21,6 @@ export const adminRoutes: RouteObject[] = [
   { path: 'onprem-customers/:orgId', element: <OrgScopeGuard><OnPremOrgDetailPage /></OrgScopeGuard> },
   { path: 'onprem-customers/:orgId/namespaces/:namespaceId', element: <OrgScopeGuard><NamespaceDetailPage /></OrgScopeGuard> },
   { path: 'feature-flags', element: <FeatureFlagsPage /> },
+  { path: 'admin-users', element: <SuperAdminsPage /> },
   { path: 'settings', element: <SettingsPage /> },
 ]

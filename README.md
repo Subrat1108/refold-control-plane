@@ -97,6 +97,22 @@ Demo local users (seed only): `super@refold.internal` / `demo-super-2026`,
 `owner@prismanalytics.io` / `demo-owner-2026`, `owner@meridian-labs.jp` /
 `demo-owner-2026`.
 
+**Provisioning Edge Function** (Phase 6.4a — super-admin user mgmt + customer
+provisioning). All privileged writes go through `supabase/functions/provisioning`,
+the only holder of the service-role key; it self-verifies the caller is a
+super_admin at AAL2 before acting (never relies on RLS, which the service-role
+key bypasses). Serve it locally alongside the stack:
+
+```bash
+npx supabase functions serve   # auto-injects SUPABASE_SERVICE_ROLE_KEY et al.
+```
+
+Invite emails (owner + super-admin invites) are captured by **Mailpit** at
+http://127.0.0.1:54324 — open the newest message and follow its link to the
+`/accept-invite` page to set a password. Because the customer-list pages still
+render mock data, a newly provisioned org appears in the admin **Pending owner
+invites** panel (not the table) until the live data layer (6.5).
+
 ## Documentation
 
 - `docs/build-spec.md` — full build spec (prompt blocks 5.1–5.12, IA, data model).

@@ -325,3 +325,41 @@ export interface Profile {
   status: UserStatus
   org: ProfileOrg | null
 }
+
+// ── RBAC / provisioning (Phase 6.4 — matches the Postgres schema § 4) ──────────
+export type InvitationStatus = 'pending' | 'accepted' | 'revoked' | 'expired'
+
+export interface SubRole {
+  id: string
+  accountType: AccountType
+  orgId: string | null // null = system/global sub-role (D-032)
+  name: string
+  permissions: Record<string, boolean>
+  isSystem: boolean
+}
+
+// A super-admin profile row rendered in the admin management table. Joins the
+// sub-role name for display.
+export interface ManagedUser {
+  id: string
+  email: string
+  fullName: string | null
+  accountType: AccountType
+  role: MemberRole
+  status: UserStatus
+  subRoleId: string | null
+  subRoleName: string | null
+  createdAt: string
+}
+
+export interface Invitation {
+  id: string
+  email: string
+  orgId: string
+  accountType: AccountType
+  role: MemberRole
+  status: InvitationStatus
+  createdAt: string
+  expiresAt: string
+  orgName: string | null
+}

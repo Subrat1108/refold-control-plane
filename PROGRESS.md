@@ -23,7 +23,8 @@
 - [x] 6.2 — Auth + MFA
 - [x] 6.3 — Portal split (VITE_PORTAL)
 - [x] Seed/login fix — demo logins require `supabase db reset`; seed adds auth.identities (D-037)
-- [ ] 6.4 — RBAC + provisioning UI
+- [x] 6.4a — Provisioning engine + super-admin user mgmt (Edge Function, invite-accept, admin UI; D-038–D-042)
+- [ ] 6.4b — Customer-owner user mgmt + owner-defined sub-roles (+RLS) + owner AAL2 step-up
 - [ ] 6.5 — Live data layer (provider switch; metrics-proxy)
 - [ ] 6.6 — QBR export (export-xlsx)
 - [ ] 6.7 — Netlify deploy + polish
@@ -48,7 +49,7 @@
 ## Last session
 (See docs/devlog.md for full session history — this is just the pointer.)
 
-Date: 2026-07-30
-Completed: Seed/login fix. Diagnosed the admin-portal "Incorrect email or password": the seed is correct (live sign-in for super + cloud returns tokens; users confirmed, aud/role=authenticated) — the real cause is that `supabase start` does NOT re-run seed.sql on a persisted volume, so a stale local db lacks the current demo users. Fix = `supabase db reset` (documented prominently in README). Also hardened the seed with auth.identities rows (robustness/future-proofing; GoTrue v2.193 password login worked without them, but real users always have them). Verified after db reset: super + cloud sign-in via anon client return AAL1 sessions; rls_test green. Prior session: 6.3 portal split.
-Decisions made: D-037
-Known issues: — (cloud Supabase project URL/keys still to be created by user; metrics still mock via external_ref bridge until 6.5)
+Date: 2026-07-31
+Completed: 6.4a — Provisioning engine + super-admin user management. Built the `provisioning` Edge Function (sole service-role holder; self-verifies super_admin + AAL2 before every action: provision_org, invite_super_admin, assign_sub_role, set_user_status, accept_invite; audit_log on each). Added a service_role GRANTs migration (D-039). Invite-accept flow (`/accept-invite` top-level page). Admin UI: SuperAdminsPage (`/admin-users`) + AddCustomer/PendingInvites on the customer pages. Verified locally: authz rejections (401/403), AAL2 success paths, Mailpit invite, full accept→active→sign-in, disable/enable/assign; typecheck/lint/build green ×3, no service-role key in bundles, rls_test green after reset.
+Decisions made: D-038, D-039, D-040, D-041, D-042
+Known issues: — (cloud Supabase project URL/keys still user-provided; provisioned orgs not yet in mock customer lists — shown via pending-invites panel until 6.5; metrics still mock via external_ref bridge)

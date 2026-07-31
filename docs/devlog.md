@@ -16,6 +16,40 @@ Template:
 
 ---
 
+## Session 19 — 2026-07-31 — 6.4a Provisioning engine + super-admin user mgmt
+**Built:** the super-admin half of RBAC/provisioning.
+- **Edge Function** `supabase/functions/provisioning` (Deno, action router) — the
+  sole service-role holder; self-authorizes (super_admin + AAL2 from the JWT)
+  before every action: `provision_org`, `invite_super_admin`, `assign_sub_role`,
+  `set_user_status`, `accept_invite`. Every action writes audit_log w/ org_id.
+- **Migration** `20260731000001_service_role_grants.sql` — grants DML to
+  `service_role` (6.1 granted only `authenticated`; service-role writes were
+  permission-denied).
+- **Invite-accept**: `/accept-invite` top-level route + `AcceptInvitePage`
+  (outside RequireAuth); set password → `accept_invite` flips invited→active.
+- **Admin UI**: `SuperAdminsPage` (`/admin-users`, nav item) — list/invite/change
+  sub-role (SlideOver)/disable-enable, reusing DataTable/Modal/SlideOver/
+  StatusBadge/Tooltip. `AddCustomerButton` + `PendingInvitesPanel` on both
+  customer-list pages. Client wrapper `src/lib/provisioning.ts`; Postgres reads
+  in `src/hooks/useProvisioning.ts`.
+- config.toml: added `/accept-invite` redirect URLs.
+**Verified (honest, local `functions serve --no-verify-jwt`):** no-token→401,
+non-super→403, AAL1 super→403, AAL2 super→200 for provision_org +
+invite_super_admin; invite email lands in Mailpit; full accept flow (verifyOtp →
+set password → accept_invite → status=active → sign-in with new pw); disable/
+enable/assign_sub_role green; audit rows present with org_id. typecheck/lint/
+build green ×3 portals; admin-only pages DCE'd from cloud/onprem bundles; grep
+dist → no service-role key value (only supabase-js's `startsWith("sb_secret_")`
+format check). rls_test assertions pass after `db reset` (Wstat 0).
+**Deviations:** added D-039 grants migration (unplanned but required). Provisioned
+orgs don't show in the mock-backed customer table yet (6.5) — surfaced via the
+pending-invites panel instead.
+**Decisions:** D-038–D-042
+**Next:** 6.4b — customer-owner-facing user mgmt + owner-defined sub-roles (+RLS)
++ customer-owner AAL2 step-up.
+**Issues:** — (cloud Supabase project URL/keys still user-provided; metrics still
+mock via external_ref bridge until 6.5)
+
 ## Session 18 — 2026-07-30 — Fix: demo login / seed robustness
 **Diagnosed** the admin-portal "Incorrect email or password". Step-1 query
 showed all 4 demo users present, `email_confirmed_at` set, `has_pw` true,

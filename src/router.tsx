@@ -3,6 +3,7 @@ import { AppLayout } from '@/components/layout/AppLayout'
 import { RequireAuth } from '@/components/RequireAuth'
 import { RouteError } from '@/components/RouteError'
 import { LoginPage } from '@/pages/LoginPage'
+import { AcceptInvitePage } from '@/pages/AcceptInvitePage'
 import { adminRoutes } from '@/portals/admin/routes'
 import { cloudRoutes } from '@/portals/cloud/routes'
 import { onpremRoutes } from '@/portals/onprem/routes'
@@ -18,6 +19,14 @@ export const router = createBrowserRouter([
   {
     path: '/login',
     element: <LoginPage />,
+    errorElement: <RouteError />,
+  },
+  {
+    // Invite-accept / set-password. Present in every portal, outside RequireAuth
+    // so the newly-invited (still `invited`, possibly wrong-portal, pre-MFA) user
+    // can set a password without being bounced (Phase 6.4a).
+    path: '/accept-invite',
+    element: <AcceptInvitePage />,
     errorElement: <RouteError />,
   },
   {

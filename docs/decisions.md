@@ -286,6 +286,48 @@ sub+email) so the fixtures match how GoTrue creates real users and stay valid
 across GoTrue versions — password login worked without them on v2.193, but this
 future-proofs it. No app/schema change; seed.sql + docs only.
 
+## D-038 — Provisioning via a single service-role Edge Function it self-authorizes (2026-07-31)
+All 6.4a privileged writes go through one `supabase/functions/provisioning`
+Edge Function (action router: `provision_org`, `invite_super_admin`,
+`assign_sub_role`, `set_user_status`, `accept_invite`). It is the only holder of
+the service-role key (D-025/§10). Because the service-role client BYPASSES RLS,
+the function verifies the caller ITSELF before every action: builds a caller
+client from the bearer, requires `account_type='super_admin'`, and requires the
+JWT `aal` claim = `aal2` (decoded from the token, no round-trip) — matching the
+RLS is_aal2() gate (D-029). `accept_invite` is the one self-service action
+(bypasses the super_admin gate; instead verifies the caller is flipping their own
+still-`invited` profile). Every action writes an audit_log row with org_id
+(D-032). Verified locally: no-token→401, non-super→403, AAL1 super→403, AAL2
+super→200 for all actions.
+
+## D-039 — service_role needs explicit table GRANTs (2026-07-31)
+The 6.1 tables migration granted DML only to `authenticated`, so the Edge
+Function's service-role writes hit "permission denied for table …" (service_role
+bypasses RLS but still needs table privileges). Added append-only migration
+`20260731000001_service_role_grants.sql` granting select/insert/update/delete on
+all six public tables to `service_role`. Earlier migrations untouched.
+
+## D-040 — Invited super-admins are role=member + a sub-role (2026-07-31)
+`invite_super_admin` creates the profile with `role='member'` (the seeded
+internal super stays `owner`); the assigned is_system sub-role (Support / Billing
+/ Read-only) carries their permissions. Only existing (is_system) admin sub-roles
+are assigned in 6.4a; defining new org sub-roles is owner-scoped 6.4b work.
+
+## D-041 — Disable = profile status + auth ban (reversible) (2026-07-31)
+`set_user_status('disabled')` sets `profiles.status='disabled'` AND bans the auth
+user (`admin.updateUserById ban_duration`), so a disabled account can't sign in;
+enabling clears both. Verified locally.
+
+## D-042 — accept-invite is a top-level route; provisioned orgs shown via pending-invites (2026-07-31)
+Invite-accept lives at `/accept-invite`, a top-level route outside RequireAuth
+(present in every portal) so a still-`invited`, possibly wrong-portal, pre-MFA
+user can set a password without being bounced. detectSessionInUrl consumes the
+emailed tokens → set password → `accept_invite` flips status→active + audit.
+Because the customer-list pages still render from MOCK data (D-027), a
+Postgres-provisioned org won't appear in the table until 6.5 — so the admin
+customer pages surface a Postgres-backed "Pending owner invites" panel instead,
+making the action visible and honest.
+
 ---
 
 # Parked

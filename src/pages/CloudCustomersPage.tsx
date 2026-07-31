@@ -9,6 +9,7 @@ import { EmptyState } from '@/components/EmptyState'
 import { SearchDropdown } from '@/components/SearchDropdown'
 import { Tooltip } from '@/components/Tooltip'
 import { FeatureFlagsPanel } from '@/components/FeatureFlagsPanel'
+import { AddCustomerButton, PendingInvitesPanel } from '@/components/provisioning/AddCustomer'
 import { formatNumber, formatCurrency } from '@/utils/formatNumber'
 import { formatDate } from '@/utils/formatDate'
 import type { CloudOrg, OrgStatus } from '@/types'
@@ -41,12 +42,17 @@ export function CloudCustomersPage() {
 
   return (
     <div className="space-y-6">
-      <div>
-        <h1 className="text-xl font-semibold text-foreground">Cloud Customers</h1>
-        <p className="text-sm text-muted-foreground mt-0.5">
-          {data ? `${data.length} organisations` : 'Loading…'}
-        </p>
+      <div className="flex items-start justify-between gap-4">
+        <div>
+          <h1 className="text-xl font-semibold text-foreground">Cloud Customers</h1>
+          <p className="text-sm text-muted-foreground mt-0.5">
+            {data ? `${data.length} organisations` : 'Loading…'}
+          </p>
+        </div>
+        <AddCustomerButton deployment="cloud" />
       </div>
+
+      <PendingInvitesPanel deployment="cloud" />
 
       {/* Toolbar */}
       <div className="flex flex-wrap items-center gap-3">
