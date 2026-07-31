@@ -124,6 +124,16 @@ export function SupabaseAuthProvider({ children }: { children: ReactNode }) {
   }, [])
 
   const enrollTotp = useCallback(async (): Promise<EnrollResult> => {
+    // Remove any stale UNVERIFIED TOTP factors first: enrolling a new factor
+    // while an unverified one is pending returns 422, and a prior factor's
+    // secret/QR can't be recovered — so we discard and re-enroll cleanly. (These
+    // pile up from interrupted enrolls, incl. React StrictMode's double-invoke.)
+    const { data: existing } = await supabase.auth.mfa.listFactors()
+    for (const f of existing?.all ?? []) {
+      if (f.factor_type === 'totp' && f.status === 'unverified') {
+        await supabase.auth.mfa.unenroll({ factorId: f.id })
+      }
+    }
     const { data, error } = await supabase.auth.mfa.enroll({ factorType: 'totp' })
     if (error || !data) throw new Error(error?.message ?? 'Enrollment failed')
     return { factorId: data.id, qrCode: data.totp.qr_code, secret: data.totp.secret }

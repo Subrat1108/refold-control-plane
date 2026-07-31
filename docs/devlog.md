@@ -16,6 +16,18 @@ Template:
 
 ---
 
+## Session 21 — 2026-07-31 — Hotfix: MFA enrollment stuck (422)
+**Fixed** a stuck "Preparing MFA…" screen (422 on `POST /auth/v1/factors`) hit
+while manually testing 6.4b. React StrictMode double-invoked MfaStepUp's prepare
+effect in dev → two `mfa.enroll` calls; the second 422'd and orphaned an
+unverified factor, which `hasVerifiedTotp()` then ignored, so every reload
+re-enrolled and re-422'd. `enrollTotp()` now unenrolls stale `totp/unverified`
+factors before enrolling; MfaStepUp guards its prepare with a `useRef` (runs once
+per mount, StrictMode-safe). Verified: cleanup + enroll returns a QR/secret.
+**Decisions:** D-047
+**Next:** 6.5 — live data layer.
+**Issues:** —
+
 ## Session 20 — 2026-07-31 — 6.4b Owner user-mgmt + owner sub-roles + Phase-0 sec fix
 **Built:**
 - **Phase 0 (security, D-043)** — migration `20260731000002` locks down profiles

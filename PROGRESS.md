@@ -52,5 +52,6 @@
 
 Date: 2026-07-31
 Completed: 6.4b — customer-owner user management + owner-defined sub-roles + owner AAL2, plus a Phase-0 security fix. Phase 0 (D-043): profiles self-edit locked down via column-level UPDATE grant (only full_name), closing the self-escalation path. Edge Function owner lane (D-044, no fork): owner_invite_user/owner_assign_sub_role/owner_set_user_status — own-org + own-type + AAL2, audit w/ org_id. Owner sub-role RLS (D-045): current_account_type() helper + sub_roles_owner_insert/update policies; owners write via direct RLS-gated client. Owner AAL2 (D-046): needsMfa now covers owners. OrgUsersPage (`/users`, owner-gated) in cloud+onprem portals. Verified: rls_test ALL PASSED (self-escalation denied, owner sub-role org-scoping); owner-lane suite 14/14 (AAL1/member/cross-org/wrong-type/self-disable rejections; own-org actions + accept→active); typecheck/lint/build green ×3; no service-role key in bundles.
-Decisions made: D-043, D-044, D-045, D-046
+Also (same day) hotfix D-047: MFA enrollment stuck at "Preparing MFA…" (422) — StrictMode double-enroll orphaned an unverified TOTP factor; enrollTotp() now cleans up stale unverified factors + MfaStepUp prepare runs once per mount.
+Decisions made: D-043, D-044, D-045, D-046, D-047
 Known issues: — (cloud Supabase project URL/keys still user-provided; provisioned orgs shown via pending-invites panel until 6.5; metrics still mock via external_ref bridge)

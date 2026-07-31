@@ -377,6 +377,20 @@ Completes D-034. The owner user-management UI (`OrgUsersPage`, `/users`) is
 owner-gated (nav filtered by profile.role + in-page AccessDenied for members) and
 mounted in the cloud + onprem portals.
 
+## D-047 — MFA enroll cleans up stale unverified factors; step-up runs once (2026-07-31)
+Testing 6.4b surfaced a stuck "Preparing MFA…" screen with `POST /auth/v1/factors`
+422. Root cause: React 18 StrictMode double-invokes the MfaStepUp prepare effect
+in dev → two concurrent `mfa.enroll` calls; the second 422s (a second enroll
+while one is pending is rejected) and orphans an unverified TOTP factor.
+`hasVerifiedTotp()` ignores unverified factors, so every reload re-enrolled and
+re-422'd. Fix: (1) `enrollTotp()` now lists factors and unenrolls any
+`totp/unverified` ones before enrolling (a prior factor's secret/QR can't be
+recovered, so discard-and-re-enroll is correct); (2) MfaStepUp guards its prepare
+with a `useRef` so it runs exactly once per mount (StrictMode-safe), resetting the
+guard on error to allow retry. Would have bitten any first-time super_admin/owner
+enrollment in dev. Verified locally: cleanup unenrolls the orphan then enroll
+returns a QR+secret; user left with zero factors for a clean slate.
+
 ---
 
 # Parked

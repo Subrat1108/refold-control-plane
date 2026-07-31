@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { useSupabaseAuth } from '@/lib/auth/AuthProvider'
 
 // Full-screen MFA step-up shown when a privileged (super_admin) session is not
@@ -14,27 +14,29 @@ export function MfaStepUp() {
   const [error, setError] = useState('')
   const [busy, setBusy] = useState(false)
 
+  // Run the prepare exactly once per mount. A plain `active` cleanup flag isn't
+  // enough here: React 18 StrictMode double-invokes effects in dev, and a second
+  // enroll while the first is pending 422s (and orphans an unverified factor).
+  const prepared = useRef(false)
   useEffect(() => {
-    let active = true
+    if (prepared.current) return
+    prepared.current = true
     ;(async () => {
       try {
-        const hasFactor = await hasVerifiedTotp()
-        if (!active) return
-        if (hasFactor) {
+        if (await hasVerifiedTotp()) {
           setMode('challenge')
-        } else {
-          const enrollment = await enrollTotp()
-          if (!active) return
-          setFactorId(enrollment.factorId)
-          setQrCode(enrollment.qrCode)
-          setSecret(enrollment.secret)
-          setMode('enroll')
+          return
         }
+        const enrollment = await enrollTotp()
+        setFactorId(enrollment.factorId)
+        setQrCode(enrollment.qrCode)
+        setSecret(enrollment.secret)
+        setMode('enroll')
       } catch (e) {
-        if (active) setError(e instanceof Error ? e.message : 'MFA setup failed')
+        prepared.current = false // allow a retry
+        setError(e instanceof Error ? e.message : 'MFA setup failed')
       }
     })()
-    return () => { active = false }
   }, [enrollTotp, hasVerifiedTotp])
 
   async function submit(e: React.FormEvent) {
