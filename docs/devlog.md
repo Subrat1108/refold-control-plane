@@ -16,6 +16,38 @@ Template:
 
 ---
 
+## Session 23 — 2026-07-31 — R2a: cluster→namespace→org→tenant hierarchy
+**Built:** corrected the on-prem model so tenants/metrics belong to the org WITHIN
+a namespace, not the namespace (build-spec §4 amend). Mock-only (D-027).
+- **Types:** `Cluster` (first-class, decommissionable), `NamespaceOrg` +
+  `NamespaceOrgDetail`, `ClusterStatus`, `NamespaceStatus += decommissioned`;
+  `OnPremOrgDetail` now returns `clusters:[{cluster,namespaces}]`; `NamespaceDetail`
+  slimmed to header + env vars.
+- **Mock:** ONPREM_CLUSTERS (5) + NAMESPACE_ORGS (10, ≥1 degraded + ≥1 down);
+  new fetchers `fetchNamespaceOrgs/fetchNamespaceOrg/fetchNamespaceOrgMetrics`
+  (re-scoped from the old namespace metrics, reusing buildDetailMetrics);
+  `fetchOnPremOrgDetail` groups namespaces under clusters.
+- **Hooks:** useNamespaceOrgs/useNamespaceOrg/useNamespaceOrgMetrics/…Charts
+  (replaced useNamespaceMetrics/Charts); useAiCredits now nsOrg-scoped.
+- **UI:** `NamespaceClusters` reworked (per-cluster groups; cluster + namespace
+  decommission via confirm Modal → ephemeral status; namespace name links to
+  detail). `NamespaceDetailPage` = header + Upgrade/Decommission + Organizations
+  list (shared DataTable, Cloud-Customers style) + Env Vars; metric tabs removed.
+  NEW `NamespaceOrgDetailPage` = the 5 DetailTabs scoped to `:nsOrgId` (new nested
+  route). StatusBadge gained a gray `decommissioned` style. Owner /namespaces
+  mirrors the nest (same NamespaceClusters).
+**Verified (honest):** nest verified end-to-end via a `tsx` script (customer→2
+clusters→namespaces w/ statuses→orgs→org metrics tenants=148/workflows/connectors;
+health = 2 degraded/down namespaces + 2 degraded/churned orgs; NamespaceDetail
+slimmed, envVars present). typecheck/lint/build green; dev server serves 200. The
+interactive drill-down + decommission modals + org metric tabs are code-complete
+and HMR-loaded on the dev server for manual click-test — not headlessly asserted.
+God View is org-level (totals consistent with the nest) — no change needed.
+**Deviations:** none. R2b (feature-flag cluster scope) is the follow-up.
+**Decisions:** D-049, D-050, D-051, D-052
+**Next:** R2b — feature-flag cluster scope (4-scope panel + affordances).
+**Issues:** —
+
 ## Session 22 — 2026-07-31 — R1: unify portals into one app + single login
 **Built:** reversed the three-portal split (D-026/D-035). One app, one `/login`.
 - `src/router.tsx` rewritten as a single merged route tree; deleted

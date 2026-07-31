@@ -2,7 +2,10 @@ export type UserRole = 'super_admin' | 'cloud_customer_admin' | 'onprem_customer
 
 export type OrgStatus = 'active' | 'suspended' | 'churned' | 'degraded'
 export type HealthStatus = 'healthy' | 'degraded' | 'down'
-export type NamespaceStatus = 'running' | 'degraded' | 'down'
+// R2 (D-049/D-050): on-prem hierarchy is cluster → namespace → org → tenant. A
+// namespace or cluster can be decommissioned (local/ephemeral — D-052).
+export type NamespaceStatus = 'running' | 'degraded' | 'down' | 'decommissioned'
+export type ClusterStatus = 'active' | 'decommissioned'
 export type WorkflowStatus = 'success' | 'failed' | 'running'
 export type InvoiceStatus = 'paid' | 'pending' | 'failed'
 export type FlagScope = 'global' | 'org' | 'namespace'
@@ -75,6 +78,8 @@ export interface Namespace {
   executionsToday: number
 }
 
+// R2: a namespace is infra hosting multiple orgs. Its detail carries the header
+// facts + namespace-level env vars (D-051 — tenants/metrics moved to NamespaceOrg).
 export interface NamespaceDetail extends Namespace {
   region: string
   kubernetesVersion: string
@@ -82,14 +87,9 @@ export interface NamespaceDetail extends Namespace {
   cpuUsage: number
   memoryUsage: number
   diskUsage: number
-  executionsTrend: TrendPoint[]
-  apiCallsTrend: TrendPoint[]
   latestVersion: string
-  featureFlags: FeatureFlag[]
   envVars: EnvVar[]
   logs: LogEntry[]
-  errorBreakdown: ErrorBreakdownItem[]
-  recentWorkflows: WorkflowRun[]
   uptime: number
 }
 
@@ -223,10 +223,48 @@ export interface OnPremNamespaceRow extends Namespace {
   createdAt: string
 }
 
+// R2 (D-050): cluster is first-class. A customer org owns clusters; a cluster
+// hosts namespaces; a namespace hosts orgs (NamespaceOrg).
+export interface Cluster {
+  id: string
+  customerOrgId: string
+  name: string
+  region?: string
+  status: ClusterStatus
+  createdAt: string
+}
+
+export interface OnPremClusterGroup {
+  cluster: Cluster
+  namespaces: OnPremNamespaceRow[]
+}
+
 export interface OnPremOrgDetail {
   org: OnPremOrg
   latestVersion: string
-  namespaces: OnPremNamespaceRow[]
+  clusters: OnPremClusterGroup[]
+}
+
+// R2 (D-051): the org WITHIN a namespace (displayed in the UI as "Organizations").
+// Named NamespaceOrg to avoid colliding with the top-level customer Organization.
+// Tenants + ALL metrics are scoped by this entity, not the namespace.
+export interface NamespaceOrg {
+  id: string
+  namespaceId: string
+  name: string
+  plan?: string
+  status: OrgStatus
+  createdAt: string
+  contactName?: string
+  contactEmail?: string
+  tenants: number      // summary counts for the list table
+  activeUsers: number
+}
+
+export interface NamespaceOrgDetail extends NamespaceOrg {
+  executionsTrend: TrendPoint[]
+  apiCallsTrend: TrendPoint[]
+  errorBreakdown: ErrorBreakdownItem[]
 }
 
 export interface OverviewStats {

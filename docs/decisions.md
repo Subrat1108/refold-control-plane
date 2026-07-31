@@ -417,6 +417,47 @@ role + landing route (super→/overview, cloud→/dashboard, onprem→/namespace
 role-mismatched routes render AccessDenied (RouteGuard); one build, typecheck/
 lint/build green.
 
+## D-049 — On-prem hierarchy corrected to cluster → namespace → org → tenant (2026-07-31)
+R2 amends build-spec §4. Previously tenants/metrics were shown per NAMESPACE,
+which was wrong: a namespace is infra that hosts multiple ORGS, and tenants + ALL
+metrics (Tenant/Usage/Workflow/Connector/AI-credits) belong to the org. New nest:
+customer org → clusters → namespaces → orgs (NamespaceOrg) → tenants/metrics.
+Metrics stay MOCK (D-027) — this was a mock-data + UI restructure, no APIs. Split
+into R2a (this session: data model + nesting + decommission) and R2b (feature-flag
+cluster scope, next).
+
+## D-050 — Cluster promoted to a first-class entity (2026-07-31)
+`Cluster { id, customerOrgId, name, region?, status: 'active'|'decommissioned',
+createdAt }`. A customer org owns clusters; each namespace belongs to a clusterId
+(already carried) and is grouped under its cluster. `OnPremOrgDetail` now returns
+`clusters: { cluster, namespaces }[]` instead of a flat namespaces array. Clusters
+are decommissionable (see D-052). Mock: ONPREM_CLUSTERS metadata (5 clusters
+across the 3 demo customers); God View totals (org.totalNamespaces/totalClusters)
+remain org-level and consistent with the nest, so no God-View change was needed.
+
+## D-051 — NamespaceOrg entity; tenants/all metrics re-scoped to it; :nsOrgId route (2026-07-31)
+New `NamespaceOrg` (displayed as "Organizations"; named to avoid colliding with
+the top-level customer Organization): `{ id, namespaceId, name, plan?, status,
+createdAt, contact?, tenants, activeUsers }`. Tenants + all DetailMetrics/Charts/
+AiCredits are now fetched by nsOrgId (`fetchNamespaceOrgMetrics`/`fetchNamespaceOrg`/
+`fetchNamespaceOrgs`), not the namespace — the DetailTabs/DetailMetrics shapes are
+reused unchanged, just re-scoped. `NamespaceDetail` slimmed to header + namespace-
+level env vars (metric-tab fields removed). New page `NamespaceOrgDetailPage` holds
+the 5 metric tabs, nested under the namespace at `/onprem-customers/:orgId/
+namespaces/:namespaceId/orgs/:nsOrgId` — a DISTINCT inner param `:nsOrgId` (never
+`:orgId`, which stays the top customer). The namespace detail lists its orgs via the
+shared DataTable in the Cloud-Customers column style (no fork). Env vars stay
+namespace-level per the spec.
+
+## D-052 — Decommission = ephemeral local status (extends D-009) (2026-07-31)
+Cluster and namespace decommission reuse the confirmation Modal and set
+`status='decommissioned'` in component-local state only (ephemeral; resets on
+reload — like the upgrade/add-namespace mutations, D-009). Decommissioning a
+cluster also decommissions its namespaces. Rendered via StatusBadge (new gray
+`decommissioned` style); decommissioned rows disable upgrade/decommission and drop
+their name link. This maps to the DELETE operations in the API sheet for later —
+local-only for now (metrics stay mock, D-027).
+
 ---
 
 # Parked

@@ -27,6 +27,8 @@
 - [x] 6.4a — Provisioning engine + super-admin user mgmt (Edge Function, invite-accept, admin UI; D-038–D-042)
 - [x] 6.4b — Customer-owner user mgmt + owner-defined sub-roles (+RLS) + owner AAL2 + Phase-0 self-edit lockdown (D-043–D-046)
 - [x] R1 — Unify the three portals into one app + single login (reverses 6.3; D-048)
+- [x] R2a — On-prem hierarchy cluster→namespace→org→tenant: data model + nesting + decommission (D-049–D-052)
+- [ ] R2b — Feature-flag cluster scope (4-scope panel + cluster/namespace affordances; D-053)
 - [ ] 6.5 — Live data layer (provider switch; metrics-proxy)
 - [ ] 6.6 — QBR export (export-xlsx)
 - [ ] 6.7 — Netlify deploy + polish (now ONE site, not three — per R1)
@@ -52,6 +54,6 @@
 (See docs/devlog.md for full session history — this is just the pointer.)
 
 Date: 2026-07-31
-Completed: R1 — unify the three portals into ONE app with a single /login (reverses 6.3; supersedes D-026/D-035; D-048). Merged all routes into one router with per-route RouteGuard → AccessDenied; deleted the portals/ route modules, config/portal.ts, WrongPortal.tsx; retired VITE_PORTAL. RequireAuth simplified (session → super_admin/owner AAL2 → render); IndexRedirect + LoginPage send each user to homeRoute(role) (super→/overview, cloud→/dashboard, onprem→/namespaces). onprem nav reordered (Namespaces first) to keep the home=first-nav invariant. README rewritten for the single app. Verified locally: all three demo users sign in via the same /login and resolve to the right role + landing route; ONE build; typecheck/lint/build green; no portal imports remain.
-Decisions made: D-048
-Known issues: — (cloud Supabase project URL/keys still user-provided; provisioned orgs shown via pending-invites panel until 6.5; metrics still mock via external_ref bridge)
+Completed: R2a — corrected the on-prem hierarchy to cluster→namespace→org→tenant (build-spec §4 amend; D-049–D-052; mock-only, D-027). New types Cluster (first-class, decommissionable) + NamespaceOrg; OnPremOrgDetail returns clusters; tenants/all metrics re-scoped to the org WITHIN a namespace; NamespaceDetail slimmed to header+env vars. Mock rebuilt as the full nest (5 clusters, 10 namespace-orgs, ≥1 degraded + ≥1 down). NamespaceClusters reworked (per-cluster groups; cluster+namespace decommission via confirm modal → ephemeral status; clickable rows). NamespaceDetailPage = header+Upgrade/Decommission+Organizations list (shared DataTable)+Env Vars; NEW NamespaceOrgDetailPage = 5 DetailTabs at nested :nsOrgId route. StatusBadge gained decommissioned style. Verified: nest via tsx script, typecheck/lint/build green, dev serves 200 (interactive drill-down/decommission click-testable, not headlessly asserted).
+Decisions made: D-049, D-050, D-051, D-052
+Known issues: — (R2b feature-flag cluster scope still to do; cloud Supabase project URL/keys still user-provided; metrics still mock via external_ref bridge)

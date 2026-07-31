@@ -40,15 +40,24 @@ export function useCloudDetailCharts(id: string) {
   })
 }
 
-export function useNamespaceMetrics(nsId: string) {
-  return useQuery({ queryKey: ['namespaceMetrics', nsId], queryFn: () => api.fetchNamespaceMetrics(nsId), enabled: !!nsId })
+// R2 (D-051): metrics + charts are scoped by the org WITHIN a namespace.
+export function useNamespaceOrgs(nsId: string) {
+  return useQuery({ queryKey: ['namespaceOrgs', nsId], queryFn: () => api.fetchNamespaceOrgs(nsId), enabled: !!nsId })
 }
 
-export function useNamespaceCharts(nsId: string) {
+export function useNamespaceOrg(nsOrgId: string) {
+  return useQuery({ queryKey: ['namespaceOrg', nsOrgId], queryFn: () => api.fetchNamespaceOrg(nsOrgId), enabled: !!nsOrgId })
+}
+
+export function useNamespaceOrgMetrics(nsOrgId: string) {
+  return useQuery({ queryKey: ['namespaceOrgMetrics', nsOrgId], queryFn: () => api.fetchNamespaceOrgMetrics(nsOrgId), enabled: !!nsOrgId })
+}
+
+export function useNamespaceOrgCharts(nsOrgId: string) {
   return useQuery({
-    queryKey: ['namespaceDetail', nsId],
-    queryFn: () => api.fetchNamespaceDetail(nsId),
-    enabled: !!nsId,
+    queryKey: ['namespaceOrg', nsOrgId],
+    queryFn: () => api.fetchNamespaceOrg(nsOrgId),
+    enabled: !!nsOrgId,
     select: (d) => ({
       executionsTrend: d.executionsTrend,
       apiCallsTrend: d.apiCallsTrend,

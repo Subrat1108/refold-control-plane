@@ -18,6 +18,9 @@ import type {
   Connector,
   OnPremOrgDetail,
   OnPremNamespaceRow,
+  Cluster,
+  NamespaceOrg,
+  NamespaceOrgDetail,
 } from '@/types'
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────
@@ -208,6 +211,38 @@ const ONPREM_ORGS: OnPremOrg[] = [
       { id: 'ns_006', name: 'us-east', orgId: 'org_onprem_003', clusterId: 'cls_005', clusterName: 'nyc-k8s-01', status: 'running', version: '3.12.1', lastSeen: '2025-06-09T11:45:00Z', activeWorkflows: 213, executionsToday: 4_107 },
     ],
   },
+]
+
+// R2 (D-050): cluster metadata. A customer org owns clusters; each namespace's
+// clusterId points here. fetchOnPremOrgDetail groups namespaces under these.
+const ONPREM_CLUSTERS: Cluster[] = [
+  { id: 'cls_001', customerOrgId: 'org_onprem_001', name: 'tokyo-prod-cluster', region: 'ap-northeast-1', status: 'active', createdAt: '2022-11-10T00:00:00Z' },
+  { id: 'cls_002', customerOrgId: 'org_onprem_001', name: 'osaka-dr-cluster',   region: 'ap-northeast-3', status: 'active', createdAt: '2023-05-19T00:00:00Z' },
+  { id: 'cls_003', customerOrgId: 'org_onprem_002', name: 'london-prod-cluster', region: 'eu-west-2',      status: 'active', createdAt: '2023-03-22T00:00:00Z' },
+  { id: 'cls_004', customerOrgId: 'org_onprem_003', name: 'sf-k8s-01',           region: 'us-west-2',      status: 'active', createdAt: '2024-09-04T00:00:00Z' },
+  { id: 'cls_005', customerOrgId: 'org_onprem_003', name: 'nyc-k8s-01',          region: 'us-east-1',      status: 'active', createdAt: '2024-09-04T00:00:00Z' },
+]
+
+// R2 (D-051): the orgs hosted WITHIN each namespace. Tenants + all metrics are
+// scoped here (built by fetchNamespaceOrgMetrics). ≥1 degraded + ≥1 down for the
+// health matrix. tenants/activeUsers are the summary counts shown in the list.
+const NAMESPACE_ORGS: NamespaceOrg[] = [
+  // ns_001 — Meridian production (running)
+  { id: 'nso_001', namespaceId: 'ns_001', name: 'Genomics Division',   plan: 'enterprise', status: 'active',   createdAt: '2022-12-01T00:00:00Z', contactName: 'Hana Ito',      contactEmail: 'hana.ito@meridian-labs.jp',    tenants: 148, activeUsers: 214 },
+  { id: 'nso_002', namespaceId: 'ns_001', name: 'Clinical Trials Unit', plan: 'enterprise', status: 'active',  createdAt: '2023-01-15T00:00:00Z', contactName: 'Ren Kobayashi', contactEmail: 'ren.k@meridian-labs.jp',       tenants: 63,  activeUsers: 97 },
+  { id: 'nso_003', namespaceId: 'ns_001', name: 'Proteomics Lab',       plan: 'growth',     status: 'degraded', createdAt: '2023-06-20T00:00:00Z', contactName: 'Mei Sato',     contactEmail: 'mei.sato@meridian-labs.jp',    tenants: 29,  activeUsers: 41 },
+  // ns_002 — Meridian staging (degraded)
+  { id: 'nso_004', namespaceId: 'ns_002', name: 'QA Sandbox',           plan: 'growth',     status: 'active',   createdAt: '2023-02-10T00:00:00Z', contactName: 'Yuki Tanaka',  contactEmail: 'qa@meridian-labs.jp',          tenants: 11,  activeUsers: 18 },
+  // ns_003 — Meridian dr-replica (running)
+  { id: 'nso_005', namespaceId: 'ns_003', name: 'Genomics Division (DR)', plan: 'enterprise', status: 'active', createdAt: '2023-05-25T00:00:00Z', contactName: 'Hana Ito',    contactEmail: 'hana.ito@meridian-labs.jp',    tenants: 142, activeUsers: 203 },
+  // ns_004 — Braeburn production (running)
+  { id: 'nso_006', namespaceId: 'ns_004', name: 'Retail Banking',       plan: 'enterprise', status: 'active',   createdAt: '2023-04-02T00:00:00Z', contactName: 'Callum Hartley', contactEmail: 'retail@braeburn.finance',    tenants: 88,  activeUsers: 132 },
+  { id: 'nso_007', namespaceId: 'ns_004', name: 'Wealth Management',     plan: 'enterprise', status: 'active',   createdAt: '2023-08-11T00:00:00Z', contactName: 'Priya Nair',  contactEmail: 'wealth@braeburn.finance',      tenants: 34,  activeUsers: 52 },
+  // ns_005 — Vertex us-west (down)
+  { id: 'nso_008', namespaceId: 'ns_005', name: 'Platform Team',        plan: 'community',  status: 'churned',  createdAt: '2024-09-10T00:00:00Z', contactName: 'Diego Almeida', contactEmail: 'platform@vertex-infra.io',   tenants: 7,   activeUsers: 0 },
+  // ns_006 — Vertex us-east (running)
+  { id: 'nso_009', namespaceId: 'ns_006', name: 'Edge Services',        plan: 'community',  status: 'active',   createdAt: '2024-09-14T00:00:00Z', contactName: 'Diego Almeida', contactEmail: 'edge@vertex-infra.io',       tenants: 19,  activeUsers: 27 },
+  { id: 'nso_010', namespaceId: 'ns_006', name: 'Analytics Guild',      plan: 'growth',     status: 'active',   createdAt: '2025-01-08T00:00:00Z', contactName: 'Sofia Marín', contactEmail: 'analytics@vertex-infra.io',    tenants: 24,  activeUsers: 38 },
 ]
 
 // Per-namespace static detail overrides
@@ -415,28 +450,57 @@ export async function fetchCloudOrgMetrics(orgId: string): Promise<DetailMetrics
   })
 }
 
-export async function fetchNamespaceMetrics(nsId: string): Promise<DetailMetrics> {
+// R2 (D-051): tenants + all metrics are scoped by the org WITHIN a namespace
+// (NamespaceOrg), not the namespace. The DetailMetrics shape is reused as-is.
+export async function fetchNamespaceOrgMetrics(nsOrgId: string): Promise<DetailMetrics> {
   await delay(); maybeThrow()
-  const ns = ONPREM_ORGS.flatMap((o) => o.namespaces).find((n) => n.id === nsId)
-  if (!ns) throw new Error(`Namespace ${nsId} not found`)
+  const nso = NAMESPACE_ORGS.find((o) => o.id === nsOrgId)
+  if (!nso) throw new Error(`Namespace org ${nsOrgId} not found`)
 
-  const live = ns.status === 'running' || ns.status === 'degraded'
-  const scale = Math.max(ns.executionsToday, 1)
+  const live = nso.status === 'active' || nso.status === 'degraded'
+  const seed = nsOrgId.charCodeAt(nsOrgId.length - 1)
+  const execToday = live ? 1_200 + seed * 137 : 0
   return buildDetailMetrics({
-    id: nsId,
+    id: nsOrgId,
     live,
-    seed: nsId.charCodeAt(nsId.length - 1),
-    tenants: live ? Math.round(18 + (ns.activeWorkflows % 40)) : 6,
-    activeTenants: live ? Math.round(14 + (ns.activeWorkflows % 32)) : 0,
-    newTenants: live ? 2 + (ns.activeWorkflows % 4) : 0,
-    storageUsed: live ? Math.round(40 + (scale % 260)) : 12,
+    seed,
+    tenants: nso.tenants,
+    activeTenants: live ? Math.round(nso.tenants * 0.84) : 0,
+    newTenants: live ? 2 + (seed % 5) : 0,
+    storageUsed: live ? Math.round(40 + (seed * 7) % 260) : 8,
     storageLimit: 512,
-    successRate: live ? Math.round((94 + (scale % 5) + Math.random() * 1.5) * 10) / 10 : 0,
-    execToday: ns.executionsToday,
-    totalWorkflows: ns.activeWorkflows,
-    apiCallsThisMonth: ns.executionsToday * 31,
-    activeUsers: live ? Math.round(8 + (ns.activeWorkflows % 44)) : 0,
+    successRate: live ? Math.round((94 + (seed % 5) + Math.random() * 1.5) * 10) / 10 : 0,
+    execToday,
+    totalWorkflows: live ? Math.round(40 + seed * 3) : 0,
+    apiCallsThisMonth: execToday * 31,
+    activeUsers: nso.activeUsers,
   })
+}
+
+export async function fetchNamespaceOrgs(nsId: string): Promise<NamespaceOrg[]> {
+  await delay(); maybeThrow()
+  return NAMESPACE_ORGS.filter((o) => o.namespaceId === nsId).map((o) => ({ ...o }))
+}
+
+export async function fetchNamespaceOrg(nsOrgId: string): Promise<NamespaceOrgDetail> {
+  await delay(); maybeThrow()
+  const nso = NAMESPACE_ORGS.find((o) => o.id === nsOrgId)
+  if (!nso) throw new Error(`Namespace org ${nsOrgId} not found`)
+
+  const live = nso.status === 'active' || nso.status === 'degraded'
+  const seed = nsOrgId.charCodeAt(nsOrgId.length - 1)
+  const execBase = live ? 1_200 + seed * 137 : 0
+  return {
+    ...nso,
+    executionsTrend: trend30(Math.max(execBase, 1), 0.25),
+    apiCallsTrend: trend30(Math.max(execBase * 3, 1), 0.3),
+    errorBreakdown: [
+      { type: 'Timeout', count: live ? 210 + seed * 6 : 0, color: '#ef4444' },
+      { type: 'Connection refused', count: live ? 120 + seed * 4 : 0, color: '#f59e0b' },
+      { type: 'OOM killed', count: live ? 40 + seed : 0, color: '#6366F1' },
+      { type: 'Config error', count: live ? 18 + seed : 0, color: '#8b5cf6' },
+    ],
+  }
 }
 
 export async function fetchOnPremOrgs(): Promise<OnPremOrg[]> {
@@ -471,15 +535,21 @@ export async function fetchOnPremOrgDetail(orgId: string): Promise<OnPremOrgDeta
   const org = ONPREM_ORGS.find((o) => o.id === orgId)
   if (!org) throw new Error(`On-prem org ${orgId} not found`)
 
-  const namespaces: OnPremNamespaceRow[] = org.namespaces.map((ns) => ({
+  const rows: OnPremNamespaceRow[] = org.namespaces.map((ns) => ({
     ...ns,
     createdAt: ONPREM_NS_CREATED[ns.id] ?? org.createdAt,
+  }))
+
+  // R2 (D-050): group namespaces under their first-class cluster.
+  const clusters = ONPREM_CLUSTERS.filter((c) => c.customerOrgId === orgId).map((cluster) => ({
+    cluster: { ...cluster },
+    namespaces: rows.filter((n) => n.clusterId === cluster.id),
   }))
 
   return {
     org: { ...org },
     latestVersion: LATEST_REFOLD_VERSION,
-    namespaces,
+    clusters,
   }
 }
 
@@ -489,7 +559,6 @@ export async function fetchNamespaceDetail(nsId: string): Promise<NamespaceDetai
   if (!ns) throw new Error(`Namespace ${nsId} not found`)
 
   const overrides = NS_DETAIL_OVERRIDES[nsId] ?? {}
-  const seed = nsId.charCodeAt(nsId.length - 1)
 
   return {
     ...ns,
@@ -501,10 +570,7 @@ export async function fetchNamespaceDetail(nsId: string): Promise<NamespaceDetai
     diskUsage: 29,
     uptime: 99.7,
     ...overrides,
-    executionsTrend: trend30(ns.executionsToday || 500, 0.25),
-    apiCallsTrend: trend30((ns.executionsToday || 500) * 3, 0.3),
     latestVersion: LATEST_REFOLD_VERSION,
-    featureFlags: FEATURE_FLAGS_POOL.slice(1, 5),
     envVars: [
       { id: `${nsId}_ev_001`, key: 'N8N_ENCRYPTION_KEY', value: 'enc_xg8vu91kp3mz', isSecret: true, updatedAt: '2025-05-22T00:00:00Z' },
       { id: `${nsId}_ev_002`, key: 'DB_HOST', value: 'pg-primary.internal', isSecret: false, updatedAt: '2025-04-01T00:00:00Z' },
@@ -518,13 +584,6 @@ export async function fetchNamespaceDetail(nsId: string): Promise<NamespaceDetai
       { id: `${nsId}_log_004`, timestamp: '2025-06-09T11:37:44Z', level: 'info', message: 'Health check passed for all 3 worker pods', source: 'health-monitor' },
       { id: `${nsId}_log_005`, timestamp: '2025-06-09T11:31:09Z', level: 'warn', message: 'Slow query detected: execution_history scan took 4.2s', source: 'db-connector' },
     ],
-    errorBreakdown: [
-      { type: 'Timeout', count: 312, color: '#ef4444' },
-      { type: 'Connection refused', count: 178, color: '#f59e0b' },
-      { type: 'OOM killed', count: 54, color: '#6366F1' },
-      { type: 'Config error', count: 27, color: '#8b5cf6' },
-    ],
-    recentWorkflows: workflowRuns(8, seed),
   }
 }
 

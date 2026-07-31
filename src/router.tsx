@@ -14,6 +14,7 @@ import { OnPremCustomersPage } from '@/pages/OnPremCustomersPage'
 import { OnPremOrgDetailPage } from '@/pages/OnPremOrgDetailPage'
 import { NamespacesPage } from '@/pages/NamespacesPage'
 import { NamespaceDetailPage } from '@/pages/NamespaceDetailPage'
+import { NamespaceOrgDetailPage } from '@/pages/NamespaceOrgDetailPage'
 import { FeatureFlagsPage } from '@/pages/FeatureFlagsPage'
 import { SuperAdminsPage } from '@/pages/SuperAdminsPage'
 import { OrgUsersPage } from '@/pages/OrgUsersPage'
@@ -80,6 +81,16 @@ export const router = createBrowserRouter([
         element: (
           <RouteGuard allowedRoles={['super_admin', 'onprem_customer_admin']}>
             <OrgScopeGuard><NamespaceDetailPage /></OrgScopeGuard>
+          </RouteGuard>
+        ),
+      },
+      {
+        // R2 (D-051): the org within a namespace — metric tabs. Distinct inner
+        // param :nsOrgId (never :orgId, which is the top customer).
+        path: 'onprem-customers/:orgId/namespaces/:namespaceId/orgs/:nsOrgId',
+        element: (
+          <RouteGuard allowedRoles={['super_admin', 'onprem_customer_admin']}>
+            <OrgScopeGuard><NamespaceOrgDetailPage /></OrgScopeGuard>
           </RouteGuard>
         ),
       },

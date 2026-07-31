@@ -12,8 +12,9 @@ export function OnPremOrgDetailPage() {
   if (isLoading) return <HeaderSkeleton />
   if (isError || !data) return <ErrorState message="Failed to load organization" onRetry={refetch} />
 
-  const { org, namespaces } = data
-  const clusterCount = new Set(namespaces.map((n) => n.clusterId)).size
+  const { org, clusters } = data
+  const clusterCount = clusters.length
+  const namespaceCount = clusters.reduce((sum, c) => sum + c.namespaces.length, 0)
 
   return (
     <div className="space-y-6">
@@ -27,7 +28,7 @@ export function OnPremOrgDetailPage() {
             </span>
             <StatusBadge status={org.status} />
             <span className="text-sm text-muted-foreground">
-              {namespaces.length} namespace{namespaces.length === 1 ? '' : 's'} across {clusterCount} cluster{clusterCount === 1 ? '' : 's'}
+              {namespaceCount} namespace{namespaceCount === 1 ? '' : 's'} across {clusterCount} cluster{clusterCount === 1 ? '' : 's'}
             </span>
           </div>
         </div>

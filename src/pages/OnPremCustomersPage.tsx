@@ -24,6 +24,7 @@ const NS_DOT: Record<NamespaceStatus, string> = {
   running: 'bg-green-500',
   degraded: 'bg-amber-400',
   down: 'bg-red-500',
+  decommissioned: 'bg-gray-400',
 }
 
 function NamespaceDots({ namespaces }: { namespaces: OnPremOrg['namespaces'] }) {

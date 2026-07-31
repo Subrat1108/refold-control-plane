@@ -41,11 +41,11 @@ function OnPremDashboard({ orgId }: { orgId: string }) {
         </div>
       ) : isError || !data ? (
         <ErrorState message="Failed to load namespaces" onRetry={refetch} />
-      ) : data.namespaces.length === 0 ? (
+      ) : data.clusters.flatMap((c) => c.namespaces).length === 0 ? (
         <EmptyState title="No namespaces" description="No Refold installations have been provisioned yet." />
       ) : (
         <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-6">
-          {data.namespaces.map((ns) => (
+          {data.clusters.flatMap((c) => c.namespaces).map((ns) => (
             <NamespaceCard key={ns.id} orgId={orgId} ns={ns} />
           ))}
         </div>

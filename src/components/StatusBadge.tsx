@@ -12,6 +12,7 @@ const STATUS_STYLES: Record<string, string> = {
   degraded: 'bg-amber-100 text-amber-800',
   pending: 'bg-amber-100 text-amber-800',
   paused: 'bg-gray-100 text-gray-700',
+  decommissioned: 'bg-gray-200 text-gray-600',
   churned: 'bg-red-100 text-red-800',
   down: 'bg-red-100 text-red-800',
   failed: 'bg-red-100 text-red-800',

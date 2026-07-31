@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from 'react'
 import { Link } from 'react-router-dom'
-import { Activity, ArrowUpCircle, Check, KeyRound, Plus } from 'lucide-react'
+import { ArrowUpCircle, Check, Plus, Power } from 'lucide-react'
 import { useOnPremOrgDetail } from '@/hooks'
 import { DataTable, type Column } from '@/components/DataTable'
 import { StatusBadge } from '@/components/StatusBadge'
@@ -11,27 +11,12 @@ import { ErrorState } from '@/components/ErrorState'
 import { EmptyState } from '@/components/EmptyState'
 import { formatDate } from '@/utils/formatDate'
 import { isUpgradeAvailable } from '@/utils/semver'
-import type { OnPremNamespaceRow } from '@/types'
+import type { Cluster, OnPremClusterGroup, OnPremNamespaceRow } from '@/types'
 
-interface ClusterGroup {
-  clusterId: string
-  clusterName: string
-  namespaces: OnPremNamespaceRow[]
-}
-
-function groupByCluster(namespaces: OnPremNamespaceRow[]): ClusterGroup[] {
-  const map = new Map<string, ClusterGroup>()
-  for (const ns of namespaces) {
-    const existing = map.get(ns.clusterId)
-    if (existing) existing.namespaces.push(ns)
-    else map.set(ns.clusterId, { clusterId: ns.clusterId, clusterName: ns.clusterName, namespaces: [ns] })
-  }
-  return Array.from(map.values())
-}
-
-// Per-cluster namespace tables + their interactions (upgrade, edit env vars,
-// add namespace). Shared by the on-prem org detail page (5.6) and the on-prem
-// customer's Namespaces view (5.8). All mutations are component-local (D-009).
+// R2 (D-050/D-052): per-cluster namespace tables. Clusters and namespaces are
+// decommissionable (confirm modal → ephemeral local status, D-009). Namespace
+// rows link to the namespace detail (which lists the orgs within). Shared by the
+// on-prem org detail page and the on-prem customer's own Namespaces view.
 export function NamespaceClusters({
   orgId,
   heading,
@@ -43,27 +28,62 @@ export function NamespaceClusters({
 }) {
   const { data, isLoading, isError, refetch } = useOnPremOrgDetail(orgId)
 
-  const [namespaces, setNamespaces] = useState<OnPremNamespaceRow[] | null>(null)
+  // Local, ephemeral copy so upgrade / add / decommission reflect immediately
+  // without mutating the mock layer (D-009).
+  const [groups, setGroups] = useState<OnPremClusterGroup[] | null>(null)
   useEffect(() => {
-    if (data && namespaces === null) setNamespaces(data.namespaces)
-  }, [data, namespaces])
+    if (data && groups === null) setGroups(data.clusters)
+  }, [data, groups])
 
   const [upgradeTarget, setUpgradeTarget] = useState<OnPremNamespaceRow | null>(null)
-  const [envVarsTarget, setEnvVarsTarget] = useState<OnPremNamespaceRow | null>(null)
+  const [decommTarget, setDecommTarget] = useState<
+    { type: 'cluster' | 'namespace'; id: string; name: string } | null
+  >(null)
   const [addOpen, setAddOpen] = useState(false)
 
-  const list = useMemo(() => namespaces ?? data?.namespaces ?? [], [namespaces, data])
-  const clusters = useMemo(() => groupByCluster(list), [list])
+  const list = useMemo(() => groups ?? data?.clusters ?? [], [groups, data])
   const latestVersion = data?.latestVersion ?? ''
 
   function handleUpgradeConfirm() {
     if (!upgradeTarget) return
-    setNamespaces((prev) => (prev ?? []).map((n) => (n.id === upgradeTarget.id ? { ...n, version: latestVersion } : n)))
+    setGroups((prev) =>
+      (prev ?? []).map((g) => ({
+        ...g,
+        namespaces: g.namespaces.map((n) => (n.id === upgradeTarget.id ? { ...n, version: latestVersion } : n)),
+      })),
+    )
     setUpgradeTarget(null)
   }
 
-  function handleAddNamespace(ns: OnPremNamespaceRow) {
-    setNamespaces((prev) => [...(prev ?? []), ns])
+  function handleDecommissionConfirm() {
+    if (!decommTarget) return
+    setGroups((prev) =>
+      (prev ?? []).map((g) => {
+        if (decommTarget.type === 'cluster' && g.cluster.id === decommTarget.id) {
+          // Decommissioning a cluster decommissions its namespaces too.
+          return {
+            cluster: { ...g.cluster, status: 'decommissioned' as const },
+            namespaces: g.namespaces.map((n) => ({ ...n, status: 'decommissioned' as const })),
+          }
+        }
+        if (decommTarget.type === 'namespace') {
+          return { ...g, namespaces: g.namespaces.map((n) => (n.id === decommTarget.id ? { ...n, status: 'decommissioned' as const } : n)) }
+        }
+        return g
+      }),
+    )
+    setDecommTarget(null)
+  }
+
+  function handleAddNamespace(ns: OnPremNamespaceRow, cluster: Cluster) {
+    setGroups((prev) => {
+      const groupsNow = prev ?? []
+      const existing = groupsNow.find((g) => g.cluster.id === cluster.id)
+      if (existing) {
+        return groupsNow.map((g) => (g.cluster.id === cluster.id ? { ...g, namespaces: [...g.namespaces, ns] } : g))
+      }
+      return [...groupsNow, { cluster, namespaces: [ns] }]
+    })
     setAddOpen(false)
   }
 
@@ -88,23 +108,44 @@ export function NamespaceClusters({
       {isLoading ? (
         <TablesSkeleton />
       ) : isError || !data ? (
-        <ErrorState message="Failed to load namespaces" onRetry={refetch} />
-      ) : clusters.length === 0 ? (
-        <EmptyState title="No namespaces" description="No namespaces have been provisioned yet." />
+        <ErrorState message="Failed to load clusters" onRetry={refetch} />
+      ) : list.length === 0 ? (
+        <EmptyState title="No clusters" description="No clusters have been provisioned yet." />
       ) : (
-        clusters.map((cluster) => (
-          <div key={cluster.clusterId} className="bg-white rounded-lg shadow-card p-6">
-            <h3 className="text-sm font-semibold text-foreground mb-4 font-mono">{cluster.clusterName}</h3>
-            <DataTable
-              columns={makeColumns(orgId, latestVersion, setUpgradeTarget, setEnvVarsTarget)}
-              data={cluster.namespaces}
-              rowKey={(n) => n.id}
-            />
-          </div>
-        ))
+        list.map((group) => {
+          const decommissioned = group.cluster.status === 'decommissioned'
+          return (
+            <div key={group.cluster.id} className="bg-white rounded-lg shadow-card p-6">
+              <div className="flex items-center justify-between mb-4">
+                <div className="flex items-center gap-2.5">
+                  <h3 className="text-sm font-semibold text-foreground font-mono">{group.cluster.name}</h3>
+                  {group.cluster.region && <span className="text-xs text-muted-foreground">{group.cluster.region}</span>}
+                  {decommissioned && <StatusBadge status="decommissioned" />}
+                </div>
+                {!decommissioned && (
+                  <Tooltip content="Decommission cluster">
+                    <button
+                      onClick={() => setDecommTarget({ type: 'cluster', id: group.cluster.id, name: group.cluster.name })}
+                      className="inline-flex items-center gap-1.5 rounded-md border border-border px-2.5 py-1.5 text-xs font-medium text-muted-foreground hover:text-red-600 hover:border-red-200 hover:bg-red-50 transition-colors"
+                    >
+                      <Power className="w-3.5 h-3.5" /> Decommission
+                    </button>
+                  </Tooltip>
+                )}
+              </div>
+              <DataTable
+                columns={makeColumns(orgId, latestVersion, setUpgradeTarget, (n) => setDecommTarget({ type: 'namespace', id: n.id, name: n.name }))}
+                data={group.namespaces}
+                rowKey={(n) => n.id}
+                emptyTitle="No namespaces"
+                emptyDescription="This cluster has no namespaces."
+              />
+            </div>
+          )
+        })
       )}
 
-      {/* Upgrade confirmation modal */}
+      {/* Upgrade confirmation */}
       <Modal open={!!upgradeTarget} onClose={() => setUpgradeTarget(null)} title={`Upgrade ${upgradeTarget?.name ?? ''}`}>
         {upgradeTarget && (
           <div className="space-y-4">
@@ -128,19 +169,33 @@ export function NamespaceClusters({
         )}
       </Modal>
 
-      {/* Edit env vars slide-over — real panel wired up in 5.7's namespace page */}
-      <SlideOver open={!!envVarsTarget} onClose={() => setEnvVarsTarget(null)} title={`Environment variables — ${envVarsTarget?.name ?? ''}`}>
-        <p className="text-sm text-muted-foreground">
-          Manage environment variables from the namespace detail page.
-        </p>
-      </SlideOver>
+      {/* Decommission confirmation (cluster or namespace) */}
+      <Modal open={!!decommTarget} onClose={() => setDecommTarget(null)} title={`Decommission ${decommTarget?.name ?? ''}`}>
+        {decommTarget && (
+          <div className="space-y-4">
+            <p className="text-sm text-red-700 bg-red-50 rounded-md px-3 py-2">
+              {decommTarget.type === 'cluster'
+                ? 'Decommissioning this cluster will also decommission all of its namespaces. This is a destructive action.'
+                : 'Decommissioning this namespace stops all of its orgs. This is a destructive action.'}
+            </p>
+            <div className="flex justify-end gap-2">
+              <button onClick={() => setDecommTarget(null)} className="rounded-md border border-border px-3 py-2 text-sm font-medium text-foreground hover:bg-gray-50 transition-colors">
+                Cancel
+              </button>
+              <button onClick={handleDecommissionConfirm} className="rounded-md bg-red-600 px-3 py-2 text-sm font-medium text-white hover:bg-red-700 transition-colors">
+                Decommission
+              </button>
+            </div>
+          </div>
+        )}
+      </Modal>
 
       {/* Add namespace slide-over */}
       <AddNamespaceSlideOver
         open={addOpen}
         onClose={() => setAddOpen(false)}
         orgId={orgId}
-        clusters={clusters}
+        groups={list}
         latestVersion={latestVersion}
         onAdd={handleAddNamespace}
       />
@@ -152,17 +207,30 @@ function makeColumns(
   orgId: string,
   latestVersion: string,
   onUpgrade: (ns: OnPremNamespaceRow) => void,
-  onEditEnv: (ns: OnPremNamespaceRow) => void
+  onDecommission: (ns: OnPremNamespaceRow) => void,
 ): Column<OnPremNamespaceRow>[] {
   return [
-    { key: 'name', header: 'Namespace', render: (n) => <span className="font-medium text-foreground">{n.name}</span> },
+    {
+      key: 'name',
+      header: 'Namespace',
+      render: (n) =>
+        n.status === 'decommissioned' ? (
+          <span className="font-medium text-muted-foreground line-through">{n.name}</span>
+        ) : (
+          <Link to={`/onprem-customers/${orgId}/namespaces/${n.id}`} className="font-medium text-foreground hover:text-primary transition-colors">
+            {n.name}
+          </Link>
+        ),
+    },
     { key: 'status', header: 'Status', render: (n) => <StatusBadge status={n.status} /> },
     { key: 'version', header: 'Refold Version', render: (n) => <span className="font-mono text-muted-foreground">{n.version}</span> },
     {
       key: 'upgrade',
       header: 'Upgrade Available',
       render: (n) =>
-        isUpgradeAvailable(n.version, latestVersion) ? (
+        n.status === 'decommissioned' ? (
+          <span className="text-muted-foreground">—</span>
+        ) : isUpgradeAvailable(n.version, latestVersion) ? (
           <span className="font-mono text-amber-700">→ {latestVersion}</span>
         ) : (
           <Check className="w-4 h-4 text-green-600" aria-label="Up to date" />
@@ -173,27 +241,10 @@ function makeColumns(
       key: 'actions',
       header: 'Actions',
       render: (n) => {
-        const canUpgrade = isUpgradeAvailable(n.version, latestVersion)
+        const decommissioned = n.status === 'decommissioned'
+        const canUpgrade = !decommissioned && isUpgradeAvailable(n.version, latestVersion)
         return (
           <div className="flex items-center gap-1">
-            <Tooltip content="View metrics">
-              <Link
-                to={`/onprem-customers/${orgId}/namespaces/${n.id}`}
-                className="inline-flex items-center justify-center w-8 h-8 rounded-md text-muted-foreground hover:bg-gray-100 hover:text-foreground transition-colors"
-                aria-label="View metrics"
-              >
-                <Activity className="w-4 h-4" />
-              </Link>
-            </Tooltip>
-            <Tooltip content="Edit env vars">
-              <button
-                onClick={() => onEditEnv(n)}
-                className="inline-flex items-center justify-center w-8 h-8 rounded-md text-muted-foreground hover:bg-gray-100 hover:text-foreground transition-colors"
-                aria-label="Edit env vars"
-              >
-                <KeyRound className="w-4 h-4" />
-              </button>
-            </Tooltip>
             <Tooltip content={canUpgrade ? 'Upgrade' : 'Up to date'}>
               <button
                 onClick={() => canUpgrade && onUpgrade(n)}
@@ -202,6 +253,16 @@ function makeColumns(
                 aria-label="Upgrade"
               >
                 <ArrowUpCircle className="w-4 h-4" />
+              </button>
+            </Tooltip>
+            <Tooltip content={decommissioned ? 'Decommissioned' : 'Decommission namespace'}>
+              <button
+                onClick={() => !decommissioned && onDecommission(n)}
+                disabled={decommissioned}
+                className="inline-flex items-center justify-center w-8 h-8 rounded-md text-muted-foreground hover:bg-red-50 hover:text-red-600 transition-colors disabled:opacity-40 disabled:cursor-not-allowed disabled:hover:bg-transparent"
+                aria-label="Decommission namespace"
+              >
+                <Power className="w-4 h-4" />
               </button>
             </Tooltip>
           </div>
@@ -217,17 +278,19 @@ function AddNamespaceSlideOver({
   open,
   onClose,
   orgId,
-  clusters,
+  groups,
   latestVersion,
   onAdd,
 }: {
   open: boolean
   onClose: () => void
   orgId: string
-  clusters: ClusterGroup[]
+  groups: OnPremClusterGroup[]
   latestVersion: string
-  onAdd: (ns: OnPremNamespaceRow) => void
+  onAdd: (ns: OnPremNamespaceRow, cluster: Cluster) => void
 }) {
+  // Only active clusters can take new namespaces.
+  const activeGroups = groups.filter((g) => g.cluster.status === 'active')
   const [name, setName] = useState('')
   const [clusterChoice, setClusterChoice] = useState('')
   const [newClusterName, setNewClusterName] = useState('')
@@ -236,11 +299,12 @@ function AddNamespaceSlideOver({
   useEffect(() => {
     if (open) {
       setName('')
-      setClusterChoice(clusters[0]?.clusterId ?? NEW_CLUSTER)
+      setClusterChoice(activeGroups[0]?.cluster.id ?? NEW_CLUSTER)
       setNewClusterName('')
       setVersion(latestVersion)
     }
-  }, [open, clusters, latestVersion])
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [open, latestVersion])
 
   const isNewCluster = clusterChoice === NEW_CLUSTER
   const canSubmit =
@@ -250,24 +314,26 @@ function AddNamespaceSlideOver({
     e.preventDefault()
     if (!canSubmit) return
     const now = new Date().toISOString()
-    const clusterId = isNewCluster ? `cls_new_${Date.now()}` : clusterChoice
-    const clusterName = isNewCluster
-      ? newClusterName.trim()
-      : clusters.find((c) => c.clusterId === clusterChoice)?.clusterName ?? newClusterName.trim()
+    const cluster: Cluster = isNewCluster
+      ? { id: `cls_new_${Date.now()}`, customerOrgId: orgId, name: newClusterName.trim(), status: 'active', createdAt: now }
+      : activeGroups.find((g) => g.cluster.id === clusterChoice)!.cluster
 
-    onAdd({
-      id: `ns_new_${Date.now()}`,
-      name: name.trim(),
-      orgId,
-      clusterId,
-      clusterName,
-      status: 'running',
-      version: version.trim(),
-      lastSeen: now,
-      activeWorkflows: 0,
-      executionsToday: 0,
-      createdAt: now,
-    })
+    onAdd(
+      {
+        id: `ns_new_${Date.now()}`,
+        name: name.trim(),
+        orgId,
+        clusterId: cluster.id,
+        clusterName: cluster.name,
+        status: 'running',
+        version: version.trim(),
+        lastSeen: now,
+        activeWorkflows: 0,
+        executionsToday: 0,
+        createdAt: now,
+      },
+      cluster,
+    )
   }
 
   return (
@@ -281,8 +347,8 @@ function AddNamespaceSlideOver({
         <div>
           <label className="block text-sm font-medium text-foreground mb-1">Cluster</label>
           <select value={clusterChoice} onChange={(e) => setClusterChoice(e.target.value)} className="w-full rounded-md border border-border px-3 py-2 text-sm bg-white focus:outline-none focus:ring-2 focus:ring-primary/40">
-            {clusters.map((c) => (
-              <option key={c.clusterId} value={c.clusterId}>{c.clusterName}</option>
+            {activeGroups.map((g) => (
+              <option key={g.cluster.id} value={g.cluster.id}>{g.cluster.name}</option>
             ))}
             <option value={NEW_CLUSTER}>New cluster…</option>
           </select>
