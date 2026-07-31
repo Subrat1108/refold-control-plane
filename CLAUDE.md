@@ -3,8 +3,8 @@
 ## Current status
 <!-- Canonical state snapshot. The build room updates this block at the end of
      every session. The planning room reads it first. Keep it under ~10 lines. -->
-- Last session: 2026-07-31 — 6.4a Provisioning engine + super-admin user mgmt (D-038–D-042). `provisioning` Edge Function (sole service-role holder; self-verifies super_admin+AAL2; actions provision_org/invite_super_admin/assign_sub_role/set_user_status/accept_invite; audit_log each). service_role GRANTs migration (D-039). `/accept-invite` page + admin SuperAdminsPage (`/admin-users`) + AddCustomer/PendingInvites. Verified local (authz 401/403, AAL2 success, Mailpit invite, full accept flow, disable/enable/assign, typecheck/lint/build ×3, no service key in bundles, rls_test green after reset)
-- Next up: 6.4b — customer-owner user mgmt + owner-defined org sub-roles (+RLS migration) + customer-owner AAL2 step-up
+- Last session: 2026-07-31 — 6.4b Owner user-mgmt + owner sub-roles + Phase-0 security fix (D-043–D-046). Phase 0: profiles self-edit locked to full_name via column-level UPDATE grant (migration …002), killing self-escalation. Edge Function owner lane (no fork): owner_invite_user/owner_assign_sub_role/owner_set_user_status — own-org+own-type+AAL2. Owner sub-role RLS (migration …003, current_account_type() helper). Owner AAL2 (needsMfa covers owners). OrgUsersPage (`/users`, owner-gated) in cloud+onprem. Verified: rls_test ALL PASSED, owner-lane 14/14, build ×3 clean, no service key in bundles. 6.4 COMPLETE (a+b).
+- Next up: 6.5 — live data layer (provider switch mock|live; metrics-proxy Edge Function; rebuild global search + ErrorBoundary)
 - Blockers: cloud Supabase project (URL/keys) to be created by user; Refold/Facets API docs needed for 6.5
 - Deployed: not yet — Phase 6 targets Netlify (3 portals) + Supabase; local stack only so far
 - Known issues: provisioned orgs don't appear in the mock-backed customer lists yet (shown via a Pending-invites panel until 6.5)

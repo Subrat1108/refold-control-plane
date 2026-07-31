@@ -16,6 +16,40 @@ Template:
 
 ---
 
+## Session 20 — 2026-07-31 — 6.4b Owner user-mgmt + owner sub-roles + Phase-0 sec fix
+**Built:**
+- **Phase 0 (security, D-043)** — migration `20260731000002` locks down profiles
+  self-edit via column-level UPDATE grant (`revoke update … ; grant update
+  (full_name)`), killing the self-escalation path (member → owner/super_admin or
+  org jump). rls_test extended to prove it.
+- **Edge Function owner lane (no fork, D-044)** — `authorize()`→`loadCaller()` +
+  `requireSuperAdminAal2`/`requireOwnerAal2`; new owner actions
+  `owner_invite_user` / `owner_assign_sub_role` / `owner_set_user_status`, all
+  own-org + own-type + AAL2, audit w/ org_id.
+- **Owner sub-roles (D-045)** — migration `20260731000003`: `current_account_type()`
+  helper + `sub_roles_owner_insert/update` policies (org-scoped, non-system,
+  AAL2). Owners write these via the direct RLS-gated client.
+- **Owner AAL2 (D-046)** — `needsMfa` now covers `profile.role==='owner'`.
+- **Owner UI** — `OrgUsersPage` (`/users`, owner-gated) in cloud + onprem portals:
+  user list, invite, assign sub-role (SlideOver), disable/enable, + custom
+  sub-role editor (Toggle-based perms). Nav item `ownerOnly`, filtered in Sidebar
+  by profile.role. Client helpers in `provisioning.ts`; hooks `useOrgUsers`,
+  `createOrgSubRole`/`updateOrgSubRole` in `useProvisioning.ts`.
+**Verified (honest, local `functions serve --no-verify-jwt`):** rls_test ALL
+PASSED (self-escalation denied per column; owner sub-role own-org ok / cross-org
++ system + is_system denied; cross-org profile update 0 rows; existing isolation).
+Owner-lane suite 14/14: AAL1 owner→403, member→403, owner→invite_super_admin 403,
+own-org invite/assign/disable/enable→200, cross-org→403, wrong-type sub-role→400,
+self-disable→400, direct sub-role RLS (own ok / cross+system 42501), owner-invited
+member accept→active. typecheck/lint/build green ×3; no service-role key in
+bundles; OrgUsersPage DCE'd from the admin bundle, present in cloud/onprem.
+**Deviations:** none. (Owner sub-role DELETE deferred — edit only this phase.)
+**Decisions:** D-043–D-046
+**Next:** 6.5 — live data layer (provider switch; metrics-proxy Edge Function;
+rebuild global search + ErrorBoundary).
+**Issues:** — (cloud Supabase project URL/keys still user-provided; provisioned
+orgs shown via pending-invites until 6.5; metrics still mock via external_ref)
+
 ## Session 19 — 2026-07-31 — 6.4a Provisioning engine + super-admin user mgmt
 **Built:** the super-admin half of RBAC/provisioning.
 - **Edge Function** `supabase/functions/provisioning` (Deno, action router) — the

@@ -328,6 +328,55 @@ Postgres-provisioned org won't appear in the table until 6.5 — so the admin
 customer pages surface a Postgres-backed "Pending owner invites" panel instead,
 making the action visible and honest.
 
+## D-043 — profiles self-edit locked down via column-level UPDATE grant (2026-07-31)
+The profiles_update RLS self-edit branch (`id = auth.uid()`) combined with the
+6.1 table-wide UPDATE grant let a user change ANY column on their own row
+(role/account_type/sub_role_id/org_id/status) — a privilege-escalation path.
+Fixed at the Postgres PRIVILEGE layer (append-only migration
+`20260731000002`): `revoke update on profiles from authenticated` then
+`grant update (full_name) on profiles to authenticated`. Any authenticated
+UPDATE touching a privileged column now fails 42501, independent of RLS logic.
+Chosen over a BEFORE UPDATE trigger because column privileges can't be bypassed
+by a policy mistake and are trivially provable. Privileged transitions are
+unaffected — they run through the Edge Function under `service_role` (bypasses
+column grants; D-039). Also blocks self email-change (intentional). rls_test
+extended: member 1004 can self-edit full_name but every privileged-column
+self-edit raises insufficient_privilege.
+
+## D-044 — Edge Function owner lane (own-org, own-type, AAL2) (2026-07-31)
+The provisioning Edge Function gained a second authz lane (no fork). `authorize()`
+became `loadCaller()` (identity + profile only); each action then applies
+`requireSuperAdminAal2` (6.4a, unchanged) or `requireOwnerAal2`. Owner lane:
+caller must be `role='owner'` AND `account_type ∈ {cloud_customer,onprem_customer}`
+AND AAL2. Owner actions `owner_invite_user` / `owner_assign_sub_role` /
+`owner_set_user_status` force `org_id = caller.orgId` and `account_type =
+caller.accountType`, validate any sub-role belongs to the caller's type + (system
+or own org), never create super-admins, never change account_type, and block
+self-status-change. Each writes audit_log with org_id. Verified: AAL1 owner→403,
+member→403, cross-org→403, wrong-type sub-role→400, self-disable→400, owner
+inviting super-admin→403; own-org invite/assign/disable/enable→200.
+
+## D-045 — Owner-defined org sub-roles via direct RLS-gated writes (2026-07-31)
+Owners create/edit their OWN org's non-system sub-roles through the direct
+(RLS-gated) client — not the Edge Function. Migration `20260731000003` adds a
+`current_account_type()` SECURITY DEFINER helper and two additive policies
+(OR-combined with the super-admin ones): `sub_roles_owner_insert` /
+`sub_roles_owner_update` require `is_owner() AND is_aal2() AND is_system=false AND
+org_id = current_org_id() AND account_type = current_account_type()`. System
+sub-roles (org_id NULL) stay super-admin-only (D-032); owner DELETE is out of
+scope this phase (edit, don't delete). rls_test proves own-org insert works while
+cross-org / system / is_system=true inserts raise 42501, and another org's owner
+can't see the row.
+
+## D-046 — Customer owners now AAL2-gated (D-034's deferred half) (2026-07-31)
+Owners have write actions in 6.4b, so `needsMfa` in AuthProvider now triggers for
+`role === 'super_admin' || profile.role === 'owner'` — owners must reach AAL2
+(RequireAuth → MfaStepUp, reused) before the app renders, matching the RLS
+is_aal2() gate and the Edge Function's owner-lane AAL2 check. Members stay AAL1.
+Completes D-034. The owner user-management UI (`OrgUsersPage`, `/users`) is
+owner-gated (nav filtered by profile.role + in-page AccessDenied for members) and
+mounted in the cloud + onprem portals.
+
 ---
 
 # Parked

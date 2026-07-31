@@ -1,10 +1,11 @@
-import { LayoutDashboard, Users, Server, Flag, Settings, Layers, ShieldCheck } from 'lucide-react'
+import { LayoutDashboard, Users, Server, Flag, Settings, Layers, ShieldCheck, UsersRound } from 'lucide-react'
 import type { UserRole } from '@/types'
 
 export interface NavItem {
   to: string
   label: string
   icon: React.ReactNode
+  ownerOnly?: boolean // 6.4b: shown only to customer owners, hidden from members
 }
 
 // Single source of truth for the role-driven sidebar. The first item of each
@@ -20,11 +21,13 @@ export const NAV_BY_ROLE: Record<UserRole, NavItem[]> = {
   ],
   cloud_customer_admin: [
     { to: '/dashboard', label: 'Dashboard', icon: <LayoutDashboard size={16} /> },
+    { to: '/users', label: 'Users', icon: <UsersRound size={16} />, ownerOnly: true },
     { to: '/settings', label: 'Settings', icon: <Settings size={16} /> },
   ],
   onprem_customer_admin: [
     { to: '/dashboard', label: 'Dashboard', icon: <LayoutDashboard size={16} /> },
     { to: '/namespaces', label: 'Namespaces', icon: <Layers size={16} /> },
+    { to: '/users', label: 'Users', icon: <UsersRound size={16} />, ownerOnly: true },
     { to: '/settings', label: 'Settings', icon: <Settings size={16} /> },
   ],
 }

@@ -4,6 +4,7 @@ import { DashboardPage } from '@/pages/DashboardPage'
 import { NamespacesPage } from '@/pages/NamespacesPage'
 import { NamespaceDetailPage } from '@/pages/NamespaceDetailPage'
 import { OnPremOrgDetailPage } from '@/pages/OnPremOrgDetailPage'
+import { OrgUsersPage } from '@/pages/OrgUsersPage'
 import { SettingsPage } from '@/pages/SettingsPage'
 
 // onprem_customer_admin portal. Includes the org + namespace detail routes
@@ -13,6 +14,7 @@ export const onpremRoutes: RouteObject[] = [
   { index: true, element: <Navigate to="/dashboard" replace /> },
   { path: 'dashboard', element: <DashboardPage /> },
   { path: 'namespaces', element: <NamespacesPage /> },
+  { path: 'users', element: <OrgUsersPage /> },
   { path: 'onprem-customers/:orgId', element: <OrgScopeGuard><OnPremOrgDetailPage /></OrgScopeGuard> },
   { path: 'onprem-customers/:orgId/namespaces/:namespaceId', element: <OrgScopeGuard><NamespaceDetailPage /></OrgScopeGuard> },
   { path: 'settings', element: <SettingsPage /> },

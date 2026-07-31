@@ -153,7 +153,9 @@ export function SupabaseAuthProvider({ children }: { children: ReactNode }) {
     }
   }, [profile, role])
 
-  const needsMfa = role === 'super_admin' && aalCurrent !== 'aal2'
+  // AAL2 required for anyone with write actions: super_admins (D-034) and now
+  // customer owners (6.4b — they provision within their org). Members stay AAL1.
+  const needsMfa = (role === 'super_admin' || profile?.role === 'owner') && aalCurrent !== 'aal2'
 
   const value: AuthContextState = {
     loading, session, profile, aalCurrent, aalNext, role, user, needsMfa,

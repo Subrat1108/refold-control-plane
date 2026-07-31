@@ -23,8 +23,9 @@
 - [x] 6.2 — Auth + MFA
 - [x] 6.3 — Portal split (VITE_PORTAL)
 - [x] Seed/login fix — demo logins require `supabase db reset`; seed adds auth.identities (D-037)
+- [x] 6.4 — RBAC + provisioning UI (complete: 6.4a + 6.4b)
 - [x] 6.4a — Provisioning engine + super-admin user mgmt (Edge Function, invite-accept, admin UI; D-038–D-042)
-- [ ] 6.4b — Customer-owner user mgmt + owner-defined sub-roles (+RLS) + owner AAL2 step-up
+- [x] 6.4b — Customer-owner user mgmt + owner-defined sub-roles (+RLS) + owner AAL2 + Phase-0 self-edit lockdown (D-043–D-046)
 - [ ] 6.5 — Live data layer (provider switch; metrics-proxy)
 - [ ] 6.6 — QBR export (export-xlsx)
 - [ ] 6.7 — Netlify deploy + polish
@@ -50,6 +51,6 @@
 (See docs/devlog.md for full session history — this is just the pointer.)
 
 Date: 2026-07-31
-Completed: 6.4a — Provisioning engine + super-admin user management. Built the `provisioning` Edge Function (sole service-role holder; self-verifies super_admin + AAL2 before every action: provision_org, invite_super_admin, assign_sub_role, set_user_status, accept_invite; audit_log on each). Added a service_role GRANTs migration (D-039). Invite-accept flow (`/accept-invite` top-level page). Admin UI: SuperAdminsPage (`/admin-users`) + AddCustomer/PendingInvites on the customer pages. Verified locally: authz rejections (401/403), AAL2 success paths, Mailpit invite, full accept→active→sign-in, disable/enable/assign; typecheck/lint/build green ×3, no service-role key in bundles, rls_test green after reset.
-Decisions made: D-038, D-039, D-040, D-041, D-042
-Known issues: — (cloud Supabase project URL/keys still user-provided; provisioned orgs not yet in mock customer lists — shown via pending-invites panel until 6.5; metrics still mock via external_ref bridge)
+Completed: 6.4b — customer-owner user management + owner-defined sub-roles + owner AAL2, plus a Phase-0 security fix. Phase 0 (D-043): profiles self-edit locked down via column-level UPDATE grant (only full_name), closing the self-escalation path. Edge Function owner lane (D-044, no fork): owner_invite_user/owner_assign_sub_role/owner_set_user_status — own-org + own-type + AAL2, audit w/ org_id. Owner sub-role RLS (D-045): current_account_type() helper + sub_roles_owner_insert/update policies; owners write via direct RLS-gated client. Owner AAL2 (D-046): needsMfa now covers owners. OrgUsersPage (`/users`, owner-gated) in cloud+onprem portals. Verified: rls_test ALL PASSED (self-escalation denied, owner sub-role org-scoping); owner-lane suite 14/14 (AAL1/member/cross-org/wrong-type/self-disable rejections; own-org actions + accept→active); typecheck/lint/build green ×3; no service-role key in bundles.
+Decisions made: D-043, D-044, D-045, D-046
+Known issues: — (cloud Supabase project URL/keys still user-provided; provisioned orgs shown via pending-invites panel until 6.5; metrics still mock via external_ref bridge)

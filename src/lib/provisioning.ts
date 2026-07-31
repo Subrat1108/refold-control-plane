@@ -62,3 +62,25 @@ export function setUserStatus(userId: string, status: 'active' | 'disabled') {
 export function acceptInvite() {
   return invoke<{ ok: true; alreadyActive?: boolean }>({ action: 'accept_invite' })
 }
+
+// ── owner lane (6.4b) — customer owners managing their own org ─────────────────
+export interface OwnerInviteUserInput {
+  email: string
+  fullName?: string
+  subRoleId?: string | null
+}
+
+export function ownerInviteUser(input: OwnerInviteUserInput) {
+  return invoke<{ ok: true; userId: string; email: string }>({
+    action: 'owner_invite_user',
+    ...input,
+  })
+}
+
+export function ownerAssignSubRole(userId: string, subRoleId: string | null) {
+  return invoke<{ ok: true }>({ action: 'owner_assign_sub_role', userId, subRoleId })
+}
+
+export function ownerSetUserStatus(userId: string, status: 'active' | 'disabled') {
+  return invoke<{ ok: true }>({ action: 'owner_set_user_status', userId, status })
+}

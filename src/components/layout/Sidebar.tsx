@@ -10,10 +10,12 @@ import { Tooltip } from '@/components/Tooltip'
 
 export function Sidebar() {
   const { user, role } = useAuth()
-  const { signOut } = useSupabaseAuth()
+  const { signOut, profile } = useSupabaseAuth()
   const navigate = useNavigate()
   const collapsed = useMediaQuery('(max-width: 1200px)')
-  const navItems = NAV_BY_ROLE[role]
+  // Owner-only items (6.4b user management) are hidden from members.
+  const isOwner = profile?.role === 'owner'
+  const navItems = NAV_BY_ROLE[role].filter((item) => !item.ownerOnly || isOwner)
 
   async function handleSignOut() {
     await signOut()
