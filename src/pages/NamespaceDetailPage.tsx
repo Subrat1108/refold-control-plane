@@ -1,10 +1,11 @@
 import { useEffect, useState } from 'react'
 import { Link, useParams } from 'react-router-dom'
-import { ArrowUpCircle, ChevronLeft, Eye, EyeOff, Lock, Pencil, Plus, Power, Trash2 } from 'lucide-react'
-import { useNamespaceDetail, useNamespaceOrgs } from '@/hooks'
+import { ArrowUpCircle, ChevronLeft, Eye, EyeOff, Flag, Lock, Pencil, Plus, Power, Trash2 } from 'lucide-react'
+import { useAuth, useNamespaceDetail, useNamespaceOrgs } from '@/hooks'
 import { StatusBadge } from '@/components/StatusBadge'
 import { DataTable, type Column } from '@/components/DataTable'
 import { Modal } from '@/components/Modal'
+import { FeatureFlagsPanel } from '@/components/FeatureFlagsPanel'
 import { Tooltip } from '@/components/Tooltip'
 import { EmptyState } from '@/components/EmptyState'
 import { ErrorState } from '@/components/ErrorState'
@@ -21,9 +22,13 @@ const SECRET_MASK = '●●●●●●'
 export function NamespaceDetailPage() {
   const { orgId, namespaceId } = useParams()
   const nsId = namespaceId ?? ''
+  // Feature-flag editing is a Refold concern — super_admin only (D-006).
+  const { role } = useAuth()
+  const canEditFlags = role === 'super_admin'
 
   const [upgradeOpen, setUpgradeOpen] = useState(false)
   const [decommOpen, setDecommOpen] = useState(false)
+  const [flagsOpen, setFlagsOpen] = useState(false)
   // Header version + status live in local state so a confirmed upgrade /
   // decommission reflects immediately (D-009 — ephemeral, not persisted).
   const [version, setVersion] = useState<string | null>(null)
@@ -75,24 +80,32 @@ export function NamespaceDetailPage() {
             <StatusBadge status={currentStatus} />
           </div>
         </div>
-        {!decommissioned && (
-          <div className="flex items-center gap-2">
-            {canUpgrade && (
-              <button
-                onClick={() => setUpgradeOpen(true)}
-                className="inline-flex items-center gap-2 rounded-md bg-primary px-3 py-2 text-sm font-medium text-white hover:bg-primary/90 transition-colors"
-              >
-                <ArrowUpCircle className="w-4 h-4" /> Upgrade available
-              </button>
-            )}
+        <div className="flex items-center gap-2">
+          {canEditFlags && (
+            <button
+              onClick={() => setFlagsOpen(true)}
+              className="inline-flex items-center gap-2 rounded-md border border-border px-3 py-2 text-sm font-medium text-foreground hover:bg-gray-50 transition-colors"
+            >
+              <Flag className="w-4 h-4" /> Edit feature flags
+            </button>
+          )}
+          {!decommissioned && canUpgrade && (
+            <button
+              onClick={() => setUpgradeOpen(true)}
+              className="inline-flex items-center gap-2 rounded-md bg-primary px-3 py-2 text-sm font-medium text-white hover:bg-primary/90 transition-colors"
+            >
+              <ArrowUpCircle className="w-4 h-4" /> Upgrade available
+            </button>
+          )}
+          {!decommissioned && (
             <button
               onClick={() => setDecommOpen(true)}
               className="inline-flex items-center gap-2 rounded-md border border-border px-3 py-2 text-sm font-medium text-muted-foreground hover:text-red-600 hover:border-red-200 hover:bg-red-50 transition-colors"
             >
               <Power className="w-4 h-4" /> Decommission
             </button>
-          </div>
-        )}
+          )}
+        </div>
       </div>
 
       {/* Organizations within this namespace (metrics live here) */}
@@ -139,6 +152,15 @@ export function NamespaceDetailPage() {
           </div>
         </div>
       </Modal>
+
+      {/* Namespace-scoped feature flags (super_admin) */}
+      <FeatureFlagsPanel
+        open={flagsOpen}
+        onClose={() => setFlagsOpen(false)}
+        scope="namespace"
+        entityId={nsId}
+        entityName={ns.name}
+      />
     </div>
   )
 }

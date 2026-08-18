@@ -4,6 +4,7 @@ import type {
   OnPremOrg,
   NamespaceDetail,
   FeatureFlag,
+  FlagScope,
   OverviewStats,
   CloudDashboard,
   OnPremDashboard,
@@ -73,6 +74,10 @@ const FEATURE_FLAGS_POOL: FeatureFlag[] = [
   { id: 'ff_005', label: 'Dark Mode', description: 'Beta dark theme for the customer dashboard', enabled: false, scope: 'org', updatedAt: '2025-05-05T17:20:00Z' },
   { id: 'ff_006', label: 'SAML SSO', description: 'Allow customers to authenticate via their own SAML IdP', enabled: true, scope: 'org', updatedAt: '2025-06-03T08:00:00Z' },
   { id: 'ff_007', label: 'Execution Replay', description: 'Re-run a failed workflow from the point of failure', enabled: false, scope: 'global', updatedAt: '2025-05-28T14:10:00Z' },
+  // R2b — cluster-scoped flags (D-053)
+  { id: 'ff_008', label: 'Cluster Autoscaling', description: 'Automatically scale cluster nodes based on workflow queue depth', enabled: true, scope: 'cluster', updatedAt: '2025-06-05T10:15:00Z' },
+  { id: 'ff_009', label: 'Node Pool Isolation', description: 'Run system and tenant workloads on separate node pools', enabled: false, scope: 'cluster', updatedAt: '2025-05-18T13:40:00Z' },
+  { id: 'ff_010', label: 'Cluster Mesh Routing', description: 'Route cross-namespace traffic through the service mesh', enabled: false, scope: 'cluster', updatedAt: '2025-06-07T16:05:00Z' },
 ]
 
 const CLOUD_ORGS: CloudOrg[] = [
@@ -587,12 +592,19 @@ export async function fetchNamespaceDetail(nsId: string): Promise<NamespaceDetai
   }
 }
 
-export async function fetchFeatureFlags(orgId?: string): Promise<FeatureFlag[]> {
+// R2b (D-053): scope the panel to one of global | cluster | namespace | org.
+// `global` (the management page) returns the whole pool across all four scopes;
+// a specific scope returns the global flags plus that scope's own flags. entityId
+// is the cluster/namespace/org the panel was opened for (unused by the mock, but
+// carried through so a real backend can filter by entity).
+export async function fetchFeatureFlags(
+  scope: FlagScope = 'global',
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars
+  _entityId?: string,
+): Promise<FeatureFlag[]> {
   await delay(); maybeThrow()
-  if (!orgId) return FEATURE_FLAGS_POOL.map((f) => ({ ...f }))
-  // Cloud orgs have no namespace concept, so hide namespace-scoped flags for them.
-  const isOnPrem = orgId.includes('onprem')
-  return FEATURE_FLAGS_POOL.filter((f) => isOnPrem || f.scope !== 'namespace').map((f) => ({ ...f }))
+  if (scope === 'global') return FEATURE_FLAGS_POOL.map((f) => ({ ...f }))
+  return FEATURE_FLAGS_POOL.filter((f) => f.scope === 'global' || f.scope === scope).map((f) => ({ ...f }))
 }
 
 export async function updateFeatureFlag(id: string, enabled: boolean): Promise<FeatureFlag> {

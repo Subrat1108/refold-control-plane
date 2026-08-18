@@ -8,7 +8,8 @@ export type NamespaceStatus = 'running' | 'degraded' | 'down' | 'decommissioned'
 export type ClusterStatus = 'active' | 'decommissioned'
 export type WorkflowStatus = 'success' | 'failed' | 'running'
 export type InvoiceStatus = 'paid' | 'pending' | 'failed'
-export type FlagScope = 'global' | 'org' | 'namespace'
+// R2b (D-053): feature flags scope at four levels of the on-prem hierarchy.
+export type FlagScope = 'global' | 'cluster' | 'namespace' | 'org'
 
 export interface TrendPoint {
   date: string

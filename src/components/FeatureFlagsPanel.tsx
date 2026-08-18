@@ -9,26 +9,30 @@ import type { FlagScope } from '@/types'
 interface FeatureFlagsPanelProps {
   open: boolean
   onClose: () => void
-  orgId?: string
-  orgName?: string
+  // R2b (D-053): the panel is opened at one of four scopes; entityId/name is the
+  // cluster / namespace / org it was opened for (omitted for the global page).
+  scope?: FlagScope
+  entityId?: string
+  entityName?: string
 }
 
-// Single reusable feature-flags slide-over, triggered from org detail pages,
-// the customer list flag icons, and the global /feature-flags page.
-export function FeatureFlagsPanel({ open, onClose, orgId, orgName }: FeatureFlagsPanelProps) {
-  const title = orgId ? `Feature Flags — ${orgName ?? 'Organization'}` : 'Global Feature Flags'
+// Single reusable feature-flags slide-over, triggered from org detail pages, the
+// customer-list flag icons, the global /feature-flags page, and (R2b) the cluster
+// group + namespace detail headers.
+export function FeatureFlagsPanel({ open, onClose, scope = 'global', entityId, entityName }: FeatureFlagsPanelProps) {
+  const title = scope === 'global' ? 'Global Feature Flags' : `Feature Flags — ${entityName ?? 'Entity'}`
 
   return (
     <SlideOver open={open} onClose={onClose} title={title}>
       {/* Body remounts each open (Radix unmounts closed content), so state and
           the fetch baseline reset to a fresh copy every time. */}
-      {open && <PanelBody orgId={orgId} />}
+      {open && <PanelBody scope={scope} entityId={entityId} />}
     </SlideOver>
   )
 }
 
-function PanelBody({ orgId }: { orgId?: string }) {
-  const { data, isLoading, isError, refetch } = useFeatureFlags(orgId)
+function PanelBody({ scope, entityId }: { scope: FlagScope; entityId?: string }) {
+  const { data, isLoading, isError, refetch } = useFeatureFlags(scope, entityId)
 
   // Baseline (as-fetched) vs draft (edited) enabled state, seeded once.
   const [original, setOriginal] = useState<Record<string, boolean> | null>(null)
@@ -51,7 +55,7 @@ function PanelBody({ orgId }: { orgId?: string }) {
   function handleSave() {
     const changes = data!
       .filter((f) => changedIds.includes(f.id))
-      .map((f) => ({ id: f.id, label: f.label, scope: f.scope, from: original![f.id], to: draft[f.id], orgId: orgId ?? 'global' }))
+      .map((f) => ({ id: f.id, label: f.label, scope: f.scope, from: original![f.id], to: draft[f.id], entity: entityId ?? scope }))
     // No API call yet (per spec); log the diff and reset the baseline.
     console.log('[FeatureFlags] Saved changes:', changes)
     setOriginal({ ...draft })
@@ -99,14 +103,16 @@ function PanelBody({ orgId }: { orgId?: string }) {
 
 const SCOPE_LABELS: Record<FlagScope, string> = {
   global: 'Global',
-  org: 'Org',
+  cluster: 'Cluster',
   namespace: 'Namespace',
+  org: 'Org',
 }
 
 const SCOPE_STYLES: Record<FlagScope, string> = {
   global: 'bg-indigo-50 text-indigo-700',
-  org: 'bg-slate-100 text-slate-700',
+  cluster: 'bg-emerald-100 text-emerald-800',
   namespace: 'bg-amber-100 text-amber-800',
+  org: 'bg-slate-100 text-slate-700',
 }
 
 function ScopeBadge({ scope }: { scope: FlagScope }) {

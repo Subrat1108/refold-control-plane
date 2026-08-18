@@ -16,6 +16,31 @@ Template:
 
 ---
 
+## Session 24 — 2026-07-31 — R2b: feature-flag cluster scope
+**Built:** feature flags now work at four scopes — global | cluster | namespace |
+org (added `cluster`). Mock/UI only (D-027).
+- **Types:** `FlagScope += cluster` (order global, cluster, namespace, org).
+- **Panel (no fork):** `FeatureFlagsPanel` props `orgId/orgName` → `scope +
+  entityId + entityName`; `useFeatureFlags(scope, entityId)` →
+  `fetchFeatureFlags(scope, entityId)`. Scope badge gained a Cluster pill.
+- **Mock:** +3 cluster-scoped flags; `fetchFeatureFlags` returns the whole pool
+  for `global`, else global + that scope's flags.
+- **Affordances (super_admin, D-006):** flag-icon button on each cluster group
+  header (NamespaceClusters) + "Edit feature flags" on the namespace detail
+  header, each opening the shared panel scoped to that cluster/namespace.
+- **Existing triggers** (org-detail button, customer-list flag icon,
+  /feature-flags page) updated to pass `scope="org"`/global — behavior unchanged.
+**Verified (honest):** tsx unit-check of all four scope fetches (global=10 incl.
+3 cluster; cluster/namespace/org = global + own, org no longer leaks namespace/
+cluster flags). typecheck/lint/build green. D-017 Save (console diff, no persist)
+unchanged. Panel open-per-scope + badges are code-complete + build-verified;
+interactive click-through available on the dev server, not headlessly asserted.
+**Deviations:** org panel no longer lists namespace flags (moved to the namespace
+panel) — intentional under the clean scope model; noted in D-053.
+**Decisions:** D-053
+**Next:** 6.5 live data layer, or 6.7 one-site Netlify deploy (per user).
+**Issues:** —
+
 ## Session 23 — 2026-07-31 — R2a: cluster→namespace→org→tenant hierarchy
 **Built:** corrected the on-prem model so tenants/metrics belong to the org WITHIN
 a namespace, not the namespace (build-spec §4 amend). Mock-only (D-027).

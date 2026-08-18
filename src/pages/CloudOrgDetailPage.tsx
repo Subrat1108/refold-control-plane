@@ -93,8 +93,9 @@ export function CloudOrgDetailView({ orgId, showBack }: { orgId: string; showBac
       <FeatureFlagsPanel
         open={flagsOpen}
         onClose={() => setFlagsOpen(false)}
-        orgId={orgId}
-        orgName={detail.data?.name}
+        scope="org"
+        entityId={orgId}
+        entityName={detail.data?.name}
       />
     </div>
   )

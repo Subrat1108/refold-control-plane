@@ -1,5 +1,6 @@
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import * as api from '@/data/mockData'
+import type { FlagScope } from '@/types'
 
 export function useOverviewStats() {
   return useQuery({ queryKey: ['overviewStats'], queryFn: api.fetchOverviewStats })
@@ -74,8 +75,11 @@ export function useNamespaceDetail(nsId: string) {
   return useQuery({ queryKey: ['namespaceDetail', nsId], queryFn: () => api.fetchNamespaceDetail(nsId), enabled: !!nsId })
 }
 
-export function useFeatureFlags(orgId?: string) {
-  return useQuery({ queryKey: ['featureFlags', orgId ?? 'global'], queryFn: () => api.fetchFeatureFlags(orgId) })
+export function useFeatureFlags(scope: FlagScope = 'global', entityId?: string) {
+  return useQuery({
+    queryKey: ['featureFlags', scope, entityId ?? '-'],
+    queryFn: () => api.fetchFeatureFlags(scope, entityId),
+  })
 }
 
 export function useCloudDashboard(orgId: string) {

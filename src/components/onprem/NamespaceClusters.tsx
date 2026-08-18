@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState } from 'react'
 import { Link } from 'react-router-dom'
-import { ArrowUpCircle, Check, Plus, Power } from 'lucide-react'
-import { useOnPremOrgDetail } from '@/hooks'
+import { ArrowUpCircle, Check, Flag, Plus, Power } from 'lucide-react'
+import { useAuth, useOnPremOrgDetail } from '@/hooks'
 import { DataTable, type Column } from '@/components/DataTable'
 import { StatusBadge } from '@/components/StatusBadge'
 import { Modal } from '@/components/Modal'
@@ -9,6 +9,7 @@ import { SlideOver } from '@/components/SlideOver'
 import { Tooltip } from '@/components/Tooltip'
 import { ErrorState } from '@/components/ErrorState'
 import { EmptyState } from '@/components/EmptyState'
+import { FeatureFlagsPanel } from '@/components/FeatureFlagsPanel'
 import { formatDate } from '@/utils/formatDate'
 import { isUpgradeAvailable } from '@/utils/semver'
 import type { Cluster, OnPremClusterGroup, OnPremNamespaceRow } from '@/types'
@@ -27,6 +28,10 @@ export function NamespaceClusters({
   showAdd?: boolean
 }) {
   const { data, isLoading, isError, refetch } = useOnPremOrgDetail(orgId)
+  // Feature-flag editing is a Refold concern — super_admin only (D-006).
+  const { role } = useAuth()
+  const canEditFlags = role === 'super_admin'
+  const [flagCluster, setFlagCluster] = useState<{ id: string; name: string } | null>(null)
 
   // Local, ephemeral copy so upgrade / add / decommission reflect immediately
   // without mutating the mock layer (D-009).
@@ -122,16 +127,29 @@ export function NamespaceClusters({
                   {group.cluster.region && <span className="text-xs text-muted-foreground">{group.cluster.region}</span>}
                   {decommissioned && <StatusBadge status="decommissioned" />}
                 </div>
-                {!decommissioned && (
-                  <Tooltip content="Decommission cluster">
-                    <button
-                      onClick={() => setDecommTarget({ type: 'cluster', id: group.cluster.id, name: group.cluster.name })}
-                      className="inline-flex items-center gap-1.5 rounded-md border border-border px-2.5 py-1.5 text-xs font-medium text-muted-foreground hover:text-red-600 hover:border-red-200 hover:bg-red-50 transition-colors"
-                    >
-                      <Power className="w-3.5 h-3.5" /> Decommission
-                    </button>
-                  </Tooltip>
-                )}
+                <div className="flex items-center gap-2">
+                  {canEditFlags && (
+                    <Tooltip content="Edit feature flags">
+                      <button
+                        onClick={() => setFlagCluster({ id: group.cluster.id, name: group.cluster.name })}
+                        aria-label="Edit feature flags"
+                        className="inline-flex items-center justify-center w-8 h-8 rounded-md text-muted-foreground hover:text-primary hover:bg-primary/10 transition-colors"
+                      >
+                        <Flag className="w-4 h-4" />
+                      </button>
+                    </Tooltip>
+                  )}
+                  {!decommissioned && (
+                    <Tooltip content="Decommission cluster">
+                      <button
+                        onClick={() => setDecommTarget({ type: 'cluster', id: group.cluster.id, name: group.cluster.name })}
+                        className="inline-flex items-center gap-1.5 rounded-md border border-border px-2.5 py-1.5 text-xs font-medium text-muted-foreground hover:text-red-600 hover:border-red-200 hover:bg-red-50 transition-colors"
+                      >
+                        <Power className="w-3.5 h-3.5" /> Decommission
+                      </button>
+                    </Tooltip>
+                  )}
+                </div>
               </div>
               <DataTable
                 columns={makeColumns(orgId, latestVersion, setUpgradeTarget, (n) => setDecommTarget({ type: 'namespace', id: n.id, name: n.name }))}
@@ -189,6 +207,15 @@ export function NamespaceClusters({
           </div>
         )}
       </Modal>
+
+      {/* Cluster-scoped feature flags (super_admin) */}
+      <FeatureFlagsPanel
+        open={!!flagCluster}
+        onClose={() => setFlagCluster(null)}
+        scope="cluster"
+        entityId={flagCluster?.id}
+        entityName={flagCluster?.name}
+      />
 
       {/* Add namespace slide-over */}
       <AddNamespaceSlideOver

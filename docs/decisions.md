@@ -458,6 +458,27 @@ cluster also decommissions its namespaces. Rendered via StatusBadge (new gray
 their name link. This maps to the DELETE operations in the API sheet for later —
 local-only for now (metrics stay mock, D-027).
 
+## D-053 — Feature flags gain the cluster scope; panel is 4-scope (2026-07-31)
+R2b completes the R2 hierarchy for flags. `FlagScope` becomes `global | cluster |
+namespace | org` (adds `cluster`); the SlideOver's scope badge renders a Cluster
+pill. The single `FeatureFlagsPanel` (no fork) now takes `scope` + `entityId` +
+`entityName` instead of `orgId`/`orgName`; `useFeatureFlags(scope, entityId)` →
+`fetchFeatureFlags(scope, entityId)`. Mock rule: `global` returns the whole pool
+(all four scopes, for the /feature-flags management page); a specific scope returns
+`global` + that scope's flags. Added 3 cluster-scoped flags (Cluster Autoscaling /
+Node Pool Isolation / Cluster Mesh Routing). D-017 save semantics unchanged (local
+draft; Save console-logs the diff; no persistence). New "Edit feature flags"
+affordances on each cluster group header (NamespaceClusters) and the namespace
+detail header, opening the panel scoped to that entity — gated to super_admin per
+D-006 (flags are a Refold concern; owners don't see them). The three existing
+triggers (org-detail button, customer-list flag icon, /feature-flags page) are
+unchanged in behavior — updated only to pass `scope="org"`/global. Behavior nuance
+(intentional): under the clean scope model an org panel now shows global+org only;
+namespace flags moved to the namespace panel (previously an onprem org panel also
+listed namespace flags via an id-string hack). Verified: tsx unit-check of all
+four scope fetches; typecheck/lint/build green; interactive open-per-scope is
+code-complete + build-verified, not headlessly click-asserted.
+
 ---
 
 # Parked

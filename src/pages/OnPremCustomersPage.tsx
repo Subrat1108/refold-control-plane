@@ -184,8 +184,9 @@ export function OnPremCustomersPage() {
       <FeatureFlagsPanel
         open={!!flagOrgId}
         onClose={() => setFlagOrgId(null)}
-        orgId={flagOrgId ?? undefined}
-        orgName={data?.find((o) => o.id === flagOrgId)?.name}
+        scope="org"
+        entityId={flagOrgId ?? undefined}
+        entityName={data?.find((o) => o.id === flagOrgId)?.name}
       />
     </div>
   )
