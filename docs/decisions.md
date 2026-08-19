@@ -486,4 +486,8 @@ code-complete + build-verified, not headlessly click-asserted.
 Out-of-scope ideas land here instead of derailing the current prompt block.
 Format: one line each, with the session it came from.
 
-- (empty)
+- Maintenance / pre-production cleanup (deploy stage): rotate the Supabase CLI
+  access token; rotate the secret (service-role) key + DB password; change the
+  demo-user passwords or keep the hosted preview URL unlisted (known demo creds
+  are publicly reachable once deployed); review/disable demo logins before wider
+  sharing.
