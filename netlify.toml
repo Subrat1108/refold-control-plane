@@ -1,0 +1,15 @@
+# Single-site Netlify deploy (post-R1: one app, one login — D-048).
+# The whole app is one Vite build; SPA routing means every path must serve
+# index.html so deep links (e.g. /onprem-customers/:id) resolve client-side
+# instead of 404ing on Netlify.
+
+[build]
+  command = "npm run build"
+  publish = "dist"
+
+# SPA fallback — serve the built index.html for any path the CDN can't match to
+# a static file. Status 200 (rewrite, not redirect) so the URL is preserved.
+[[redirects]]
+  from = "/*"
+  to = "/index.html"
+  status = 200

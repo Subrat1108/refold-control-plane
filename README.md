@@ -59,18 +59,30 @@ Requires the local Supabase stack running and a `.env` with
 > **Deployment implication:** this is now **one site**, not three. The Netlify
 > deploy (single site) is a later change.
 
-## Deployment (Vercel)
+## Deployment (Netlify — one site)
+
+Post-R1 this is a **single site**, not three (D-048). Build config lives in
+`netlify.toml` (build command `npm run build`, publish `dist`, plus an SPA
+fallback rewrite so deep links like `/onprem-customers/:id` resolve instead of
+404ing).
 
 1. Push the repo to GitHub.
-2. Connect the GitHub repo to Vercel at [vercel.com/new](https://vercel.com/new).
-3. Set the framework preset to **Vite**.
-4. Build command `npm run build`, output directory `dist` (both auto-detected).
-5. No environment variables are needed yet (all data is mocked). When the real
-   backend is wired up, add the variables in `.env.example`.
-6. Deploy from the `main` branch.
+2. Connect the repo to Netlify (New site from Git). Framework, build command, and
+   publish dir are picked up from `netlify.toml`.
+3. Set the environment variables below (Netlify → Site settings → Environment).
+4. Deploy branch: **`main`** (`dev` ← active work is merged into `main` to release).
 
-SPA routing (so direct links like `/cloud-customers/abc` resolve instead of
-404ing) is configured in `vercel.json`.
+### Required Netlify environment variables (names only — set real values in Netlify, never in the repo)
+
+| Variable | Purpose |
+|---|---|
+| `VITE_SUPABASE_URL` | Cloud Supabase project URL |
+| `VITE_SUPABASE_ANON_KEY` | Public anon / publishable key (RLS-gated; safe to expose) |
+| `VITE_DATA_SOURCE` | `mock` for now (flip to `live` when the data layer lands, 6.5) |
+
+The service-role key is **never** a build/frontend variable — it lives only in the
+Edge Function runtime (Supabase auto-injects it). Do not add any `SUPABASE_SERVICE_ROLE_KEY`
+to Netlify's build env.
 
 ## Supabase (Phase 6) — local dev
 
