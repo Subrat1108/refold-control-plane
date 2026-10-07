@@ -3,12 +3,12 @@
 ## Current status
 <!-- Canonical state snapshot. The build room updates this block at the end of
      every session. The planning room reads it first. Keep it under ~10 lines. -->
-- Last session: 2026-07-31 — R2b (D-053): feature flags now 4-scope (global | cluster | namespace | org; added cluster; mock-only, D-027). FlagScope enum extended; single FeatureFlagsPanel (no fork) takes scope+entityId+entityName; useFeatureFlags(scope,entityId)/fetchFeatureFlags(scope,entityId); Cluster badge added. +3 cluster mock flags; global=whole pool, else global+that scope. NEW super_admin-gated "Edit feature flags" affordances on each cluster group header + namespace detail header (D-006). 3 existing triggers updated to scope="org"/global (unchanged behavior). Verified: tsx unit-check of all 4 scope fetches, typecheck/lint/build green. R2 COMPLETE (R2a+R2b). Prior: R2a hierarchy (D-049–D-052), R1 single-login (D-048).
-- Next up: 6.5 live data layer (provider switch mock|live; metrics-proxy Edge Function; rebuild global search + ErrorBoundary) — or 6.7 one-site Netlify deploy, per user.
-- Blockers: cloud Supabase project (URL/keys) to be created by user; Refold/Facets API docs needed for 6.5
-- Deployed: not yet — post-R1 this is ONE Netlify site (not three) + Supabase; local stack only so far
-- Known issues: provisioned orgs don't appear in the mock-backed customer lists yet (shown via a Pending-invites panel until 6.5)
-- Phase 6 note: ONE app now (R1) — single `npm run dev`/`npm run build`, one /login, role redirect via homeRoute(role); no VITE_PORTAL. dev role-switcher (D-002) + password gate (D-023) removed (6.2). Metrics still mock via external_ref→mock-id bridge (D-033) until 6.5. TOTP in supabase/config.toml. Local dev needs a gitignored .env (VITE_SUPABASE_URL/ANON_KEY from `npx supabase start`). Edge Functions: `npx supabase functions serve` (auto-injects the service-role key; invite emails land in Mailpit http://127.0.0.1:54324)
+- Last session: 2026-10-07 — Phase 7 kickoff, 7.1 Data model v3 (backend only, D-055–D-065). Product re-scoped to the Refold CS Hub (super-admin only; customer portals frozen). 8 append-only migrations: segments/metric_definitions lookups; organizations extended (segment/deployment_model/health/lifecycle_stage/owner/data_access_mode/aliases); proposals/sync_state/sync_runs; projects+milestones/accomplishments/risks/asks; escalations/tickets/engagements/metric_values/portfolio_notes — every CS record table has provenance + a per-org source_ref dedupe key. One generic SECURITY DEFINER audit trigger on organizations + 13 new tables. audit_log hardened (trigger-only writes; fixed an owner-visible leak of Phase-7 data via the audit trail). RLS: super_admin-only + AAL2 writes, zero customer-role access on every new table. New TS types; fictional local fixtures (Prism/Meridian). Also retroactively closed out 6.7 (D-054) and removed dead vercel.json. Verified: db reset clean (17 migrations), extended rls_test.sql all passing, typecheck/lint/build green.
+- Next up: 7.2 — God-mode workspace (Portfolio board, Account 360, coverage view).
+- Blockers: 8 new Phase-7.1 migrations are ready but NOT pushed to the cloud project — the Supabase CLI access token used for the 6.7 deploy is revoked; need a fresh token before `supabase db push`. Refold MCP server details needed for 7.5.
+- Deployed: YES — live at `refold-control-plane.netlify.app`, one Netlify site, deploying from `main`, backed by cloud Supabase `xwtxrdxktbogswxuuetp`; all demo logins work (D-054).
+- Known issues: cloud project schema is now 9 migrations behind local (see Blockers). Provisioned orgs still don't appear in the mock-backed customer lists (Pending-invites panel shows them instead; unaffected by Phase 7).
+- Phase 7 note: Phase 7 is **super-admin only**; cloud/on-prem owner portals are **frozen** (kept working, no new work — do not add features there). CS Hub tables (segments, organizations' new columns, projects, milestones, …) have NO UI yet — 7.1 was backend-only. Confidentiality rule (build-spec-v3 § 0) is now in Key coding rules: never commit real customer data; all fixtures fictional. TOTP in supabase/config.toml. Local dev needs a gitignored .env (VITE_SUPABASE_URL/ANON_KEY from `npx supabase start`). Edge Functions: `npx supabase functions serve` (invite emails land in Mailpit http://127.0.0.1:54324)
 
 ## Session protocol (build room)
 **Start of every session** — reconstruct context in one command before doing anything:
@@ -28,10 +28,15 @@ git clone -b dev https://github.com/Subrat1108/refold-control-plane.git && cd re
 A session that doesn't push is invisible to the planning room.
 
 ## Project overview
-Single admin panel replacing two tools: a Cloud Admin Panel and an On-Premise
-Control Plane. Supports three user roles across two customer deployment types.
-Full build spec (prompt blocks 5.1–5.12, IA, data model, permissions matrix):
-`docs/build-spec.md`.
+Now the **Refold CS Hub** (build-spec-v3, Phase 7 onward) — the customer
+success team's single system of record for every account across its whole
+lifecycle, built on the same base as the original admin panel (Phases 5–6):
+React UI, Supabase auth + MFA + RLS, provisioning, single login, cluster →
+namespace → org → tenant, 4-scope feature flags, Netlify + cloud Supabase.
+**Phase 7 is super-admin only.** Customer-facing logins (cloud/on-prem owner)
+are **frozen**: kept working, no new work. Original build spec (prompt blocks
+5.1–5.12, IA, permissions matrix): `docs/build-spec.md`. Phase 6
+re-architecture: `docs/build-spec-v2.md`. Current spec: `docs/build-spec-v3.md`.
 
 **Deployment types**
 - `cloud` — hosted SaaS customers, no concept of namespaces or clusters
@@ -97,6 +102,13 @@ Accessing a route without the required role shows an "Access denied" page with
 a back button. Never silently redirect without telling the user why.
 
 ## Key coding rules
+
+**Confidentiality (build-spec-v3 § 0)**
+- This repository is **public**. Never commit real customer names, health
+  ratings, risks, contacts, metrics, Slack/email content, or any secret.
+- Real data enters only through the running app (manual entry, approved
+  proposals, or imports executed against the database) — never as files in git.
+- All seeds, fixtures, and examples use fictional companies.
 
 **Types**
 - All TypeScript interfaces live in `src/types/index.ts`. Never define inline
@@ -174,11 +186,19 @@ The panel is 400px wide, slides from the right, closes on outside click or
 Escape, and shows unsaved changes with a subtle yellow background highlight.
 
 ## Deployment target
-Free tier on Vercel (Vite preset). SPA routing via `vercel.json`:
-```json
-{ "rewrites": [{ "source": "/(.*)", "destination": "/" }] }
+Netlify, one site (post-R1). Config in `netlify.toml`:
+```toml
+[build]
+  command = "npm run build"
+  publish = "dist"
+[[redirects]]
+  from = "/*"
+  to = "/index.html"
+  status = 200
 ```
-Build command: `npm run build` — Output dir: `dist` — Deploy branch: `main`
+Build command: `npm run build` — Output dir: `dist` — Deploy branch: `main`.
+Live at `refold-control-plane.netlify.app`, backed by cloud Supabase project
+`xwtxrdxktbogswxuuetp`.
 
 ## Git conventions
 Branch strategy: `main` (production) ← `dev` (active work) ← `feature/*`

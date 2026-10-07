@@ -402,3 +402,237 @@ export interface Invitation {
   expiresAt: string
   orgName: string | null
 }
+
+// ── Phase 7 — Refold CS Hub (build-spec-v3 § 5). Backend only this session (7.1)
+// — no UI wiring yet. Mirrors the Postgres schema in supabase/migrations/
+// 20261007*.sql. Distinct from the existing mock CloudOrg/OnPremOrg shapes
+// (those stay as-is, still backing the frozen customer-facing mock UI).
+
+export type OrgHealth = 'active' | 'caution' | 'risk'
+export type LifecycleStage = 'prospect' | 'poc' | 'onboarding' | 'live' | 'expansion' | 'renewal' | 'churned'
+export type DeploymentModel = 'cloud' | 'onprem_managed' | 'onprem_airgapped'
+export type DataAccessMode = 'api' | 'manual' | 'mixed'
+
+export type ProjectHealth = 'completed' | 'on_schedule' | 'caution' | 'at_risk'
+export type MilestoneStatus = 'not_started' | 'in_progress' | 'done' | 'at_risk'
+export type RiskSeverity = 'low' | 'medium' | 'high' | 'critical' // shared by risks + escalations
+export type RiskStatus = 'open' | 'mitigating' | 'resolved' | 'accepted'
+export type AskStatus = 'open' | 'in_progress' | 'resolved'
+export type EscalationStatus = 'open' | 'in_progress' | 'resolved' | 'closed'
+export type TicketPriority = 'p1' | 'p2' | 'p3' | 'p4'
+export type TicketStatus = 'open' | 'pending' | 'resolved' | 'closed'
+export type EngagementType = 'call' | 'check_in' | 'qbr' | 'ebr' | 'note'
+
+export type RecordSource = 'manual' | 'agent' | 'chat' | 'api' | 'file'
+export type ProposalOperation = 'create' | 'update' | 'delete'
+export type ProposalStatus = 'pending' | 'approved' | 'rejected' | 'superseded'
+export type SyncRunMode = 'scoped' | 'backfill' | 'daily'
+export type SyncRunStatus = 'running' | 'success' | 'failed' | 'partial'
+export type PortfolioNoteKind = 'milestone' | 'recommendation'
+
+export interface Segment {
+  id: string
+  name: string
+  sort: number
+}
+
+// The full extended `organizations` row (Phase 6 core columns + Phase 7 CS
+// columns) — the CS Hub's "Account". Separate from CloudOrg/OnPremOrg, which
+// are mock-data shapes for the frozen customer UI, not a mirror of this table.
+export interface Account {
+  id: string
+  name: string
+  deploymentType: DeploymentType
+  plan: string | null
+  status: OrgStatus
+  externalRef: string | null
+  segmentId: string | null
+  deploymentModel: DeploymentModel | null
+  health: OrgHealth
+  lifecycleStage: LifecycleStage
+  ownerProfileId: string | null
+  dataAccessMode: DataAccessMode | null
+  aliases: string[]
+  createdAt: string
+}
+
+// Shared provenance fields on every CS record table (not lookups, not
+// proposals/sync_state/sync_runs, which carry their own analogous columns).
+export interface Provenance {
+  source: RecordSource
+  sourceRef: string | null
+  createdBy: string | null
+  updatedBy: string | null
+  verifiedAt: string | null
+  proposalId: string | null
+}
+
+export interface Project extends Provenance {
+  id: string
+  orgId: string
+  name: string
+  releaseNo: string | null
+  startDate: string | null
+  goLiveDate: string | null
+  expectedEndDate: string | null
+  health: ProjectHealth
+  liveTenants: number
+  devUatTenants: number
+  goals: string[]
+  fdes: string[]
+  edlProfileId: string | null
+  issueTrackerUrl: string | null
+  createdAt: string
+}
+
+export interface Milestone extends Provenance {
+  id: string
+  projectId: string
+  orgId: string
+  period: string
+  description: string
+  status: MilestoneStatus
+  createdAt: string
+}
+
+export interface Accomplishment extends Provenance {
+  id: string
+  projectId: string
+  orgId: string
+  period: string
+  text: string
+  createdAt: string
+}
+
+export interface Risk extends Provenance {
+  id: string
+  projectId: string | null
+  orgId: string
+  risk: string
+  impact: string
+  mitigation: string | null
+  severity: RiskSeverity
+  status: RiskStatus
+  owner: string | null
+  createdAt: string
+}
+
+export interface Ask extends Provenance {
+  id: string
+  projectId: string | null
+  orgId: string
+  text: string
+  owner: string | null
+  status: AskStatus
+  createdAt: string
+}
+
+export interface Escalation extends Provenance {
+  id: string
+  orgId: string
+  projectId: string | null
+  title: string
+  severity: RiskSeverity
+  raisedBy: string | null
+  raisedAt: string
+  status: EscalationStatus
+  resolution: string | null
+  createdAt: string
+}
+
+export interface Ticket extends Provenance {
+  id: string
+  orgId: string
+  externalKey: string
+  title: string
+  priority: TicketPriority
+  status: TicketStatus
+  openedAt: string
+  updatedAt: string
+  url: string | null
+  system: string
+  createdAt: string
+}
+
+export interface Engagement extends Provenance {
+  id: string
+  orgId: string
+  type: EngagementType
+  engagementDate: string
+  attendees: string[]
+  summary: string
+  followUps: string | null
+  createdAt: string
+}
+
+export interface MetricDefinition {
+  key: string
+  label: string
+  unit: string
+  category: string
+  hasBaseline: boolean
+  sort: number
+}
+
+export interface MetricValue extends Provenance {
+  id: string
+  orgId: string
+  projectId: string | null
+  metricKey: string
+  period: string
+  value: number
+  baselineValue: number | null
+  createdAt: string
+}
+
+export interface PortfolioNote extends Provenance {
+  id: string
+  period: string
+  kind: PortfolioNoteKind
+  body: string
+  impact: string | null
+  createdAt: string
+}
+
+export interface Proposal {
+  id: string
+  orgId: string | null
+  targetTable: string
+  targetId: string | null
+  operation: ProposalOperation
+  payload: Record<string, unknown>
+  source: RecordSource
+  sourceRef: string | null
+  evidenceUrl: string | null
+  evidenceExcerpt: string | null
+  confidence: number | null
+  proposedBy: string
+  triggeredBy: string | null
+  runId: string | null
+  status: ProposalStatus
+  decidedBy: string | null
+  decidedAt: string | null
+  reason: string | null
+  createdAt: string
+}
+
+export interface SyncState {
+  orgId: string
+  recordType: string
+  lastSyncedAt: string | null
+  lastStatus: string | null
+  lastError: string | null
+  lockedUntil: string | null
+}
+
+export interface SyncRun {
+  id: string
+  mode: SyncRunMode
+  triggeredBy: string
+  scope: Record<string, unknown> | null
+  startedAt: string
+  finishedAt: string | null
+  status: SyncRunStatus
+  counts: Record<string, unknown> | null
+  cost: number | null
+}

@@ -16,6 +16,70 @@ Template:
 
 ---
 
+## Session 25 — 2026-10-07 — Phase 7 kickoff: 7.1 Data model v3
+**Built:** backend-only CS Hub data model (build-spec-v3 § 5), no UI wiring.
+- **Housekeeping:** committed `docs/build-spec-v3.md`; confidentiality grep
+  clean; retroactively closed out 6.7 (Netlify + cloud Supabase were already
+  live but never logged — D-054); removed the dead `vercel.json`; CLAUDE.md
+  reframed as the Refold CS Hub, Deployment target → Netlify, new
+  Confidentiality rule (spec § 0).
+- **8 append-only migrations:** new enums (org_health, lifecycle_stage,
+  deployment_model, project_health, risk_severity, etc. — several status enums
+  aren't explicit in the spec, chosen as sensible defaults, flagged inline);
+  `segments`/`metric_definitions` lookups (seeded, incl. the § 2.2 EBR catalog);
+  `organizations` extended (segment/deployment_model/health/lifecycle_stage/
+  owner/data_access_mode/aliases, backfilled — health auto-fills 'active',
+  lifecycle defaults 'prospect' for new rows but existing rows explicitly
+  backfilled 'live'); `proposals`/`sync_state`/`sync_runs`; `projects` +
+  milestones/accomplishments/risks/asks; `escalations`/`tickets`/`engagements`/
+  `metric_values`/`portfolio_notes`. Every CS record table carries provenance
+  (source/source_ref/created_by/updated_by/verified_at/proposal_id) and a
+  per-org `(org_id, source_ref)` dedupe unique index (portfolio_notes has no
+  org_id — dedupes on source_ref alone).
+- **Generic audit trigger:** one SECURITY DEFINER function
+  (`write_audit_log()`), attached to organizations + 13 new tables, reads
+  OLD/NEW generically via `to_jsonb` with ONE special case (org_id := id only
+  for organizations — a blind id-fallback for every table would have broken
+  portfolio_notes/sync_runs, which have no org_id; caught during design, not in
+  testing). NOT attached to profiles/sub_roles/invitations/saved_report_configs
+  (already manually audited — would double-log) or segments/metric_definitions
+  (pure lookups).
+- **audit_log hardened:** revoked direct insert/update/delete from
+  authenticated + service_role (trigger-only writes now); fixed a real leak —
+  tightened `audit_log_select` so an owner can't see Phase-7 CS data via the
+  audit trail just because org_id matches (with a backfill so D-046's existing
+  owner-visible rows weren't silently dropped).
+- **RLS:** every new table is super_admin-only, AAL2 for writes, zero
+  customer-role access regardless of org match (D-039 grants to
+  authenticated+service_role).
+- **Types:** `Account`, `Segment`, `Provenance`, `Project`, `Milestone`,
+  `Accomplishment`, `Risk`, `Ask`, `Escalation`, `Ticket`, `Engagement`,
+  `MetricDefinition`, `MetricValue`, `PortfolioNote`, `Proposal`, `SyncState`,
+  `SyncRun` + all new enums in `src/types/index.ts`.
+- **Fixtures:** local-only `seed.sql` additions reusing the two existing
+  fictional demo accounts (Prism Analytics, Meridian Laboratories) — projects,
+  milestones, accomplishments, risks, an ask, an escalation, tickets,
+  engagements, metric values, 2 pending proposals.
+**Verified (honest):** `supabase db reset` applies all 17 migrations cleanly;
+extended `rls_test.sql` proves AAL1-write rejection, zero customer-role access
+across `projects`/`risks`/`tickets`/`escalations` for owner+owner+member, a
+complete audit trail (create/update/delete, correct before/after/org_id) for a
+super-admin AAL2 CRUD cycle, per-org dedupe rejecting a duplicate source_ref
+while the same source_ref in a different org succeeds, and the audit_log
+leak-fix (owner sees 0 rows for record_table IN projects/risks). typecheck/
+lint/build green (build was unusually slow this session — background/Docker
+resource contention, not a code issue; reran clean). Did NOT push to the cloud
+project (old CLI token revoked) — 8 migrations ready whenever a fresh token is
+available.
+**Deviations:** several enum value sets are inferred, not spec-explicit (flagged
+inline in the enums migration and in D-062); a few extra integrity constraints
+added beyond the literal spec text (tickets/metric_values natural keys,
+metric_definitions.sort).
+**Decisions:** D-054–D-065
+**Next:** 7.2 — God-mode workspace (Portfolio board, Account 360, coverage view).
+**Issues:** 8 Phase 7.1 migrations pending a cloud push (need a fresh Supabase
+CLI access token — the one used for 6.7 is revoked).
+
 ## Session 24 — 2026-07-31 — R2b: feature-flag cluster scope
 **Built:** feature flags now work at four scopes — global | cluster | namespace |
 org (added `cluster`). Mock/UI only (D-027).

@@ -29,9 +29,20 @@
 - [x] R1 — Unify the three portals into one app + single login (reverses 6.3; D-048)
 - [x] R2a — On-prem hierarchy cluster→namespace→org→tenant: data model + nesting + decommission (D-049–D-052)
 - [x] R2b — Feature-flag cluster scope (4-scope panel + cluster/namespace affordances; D-053)
-- [ ] 6.5 — Live data layer (provider switch; metrics-proxy)
-- [ ] 6.6 — QBR export (export-xlsx)
-- [ ] 6.7 — Netlify deploy + polish (now ONE site, not three — per R1)
+- [x] 6.5 — folded into 7.5 (Refold platform metrics now arrive via the CS Sync Skill/MCP, not a standalone metrics-proxy; D-061)
+- [x] 6.6 — folded into 7.7 (Reports — monthly status report + EBR pack; D-061)
+- [x] 6.7 — Netlify deploy (live, one site — retroactively logged D-054); ongoing polish folds into Phase 7 work
+
+## Phase 7 — Refold CS Hub (docs/build-spec-v3.md)
+
+- [x] 7.1 — Data model v3: migrations (enums, segments/metric_definitions, organizations extend, proposals/sync_state/sync_runs, projects+subtables, account records), RLS, generic audit trigger, provenance/dedupe, TS types, fictional local fixtures (D-055–D-065)
+- [ ] 7.2 — God-mode workspace (Portfolio board, Account 360, coverage view)
+- [ ] 7.3 — Approvals inbox + audit log screen
+- [ ] 7.4 — Ingest API
+- [ ] 7.5 — CS Sync Skill + runner + Refresh (was 6.5)
+- [ ] 7.6 — Chat agent
+- [ ] 7.7 — Reports (was 6.6)
+- [ ] 7.8 — Air-gapped import
 
 ## Deployment
 
@@ -53,7 +64,8 @@
 ## Last session
 (See docs/devlog.md for full session history — this is just the pointer.)
 
-Date: 2026-07-31
-Completed: R2b — feature flags now work at four scopes (global | cluster | namespace | org; added cluster; D-053; mock-only, D-027). FlagScope enum extended; the single FeatureFlagsPanel (no fork) takes scope+entityId+entityName; useFeatureFlags(scope,entityId)/fetchFeatureFlags(scope,entityId); scope badge gained a Cluster pill. +3 cluster-scoped mock flags; global returns the whole pool, a scope returns global+that scope. New super_admin-gated "Edit feature flags" affordances on each cluster group header + the namespace detail header (D-006). The 3 existing triggers updated to scope="org"/global (behavior unchanged). Verified: tsx unit-check of all four scope fetches; typecheck/lint/build green; interactive open-per-scope code-complete + build-verified (not headlessly click-asserted). R2 complete (R2a + R2b).
-Decisions made: D-053
-Known issues: — (cloud Supabase project URL/keys still user-provided; metrics still mock via external_ref bridge until 6.5)
+Date: 2026-10-07
+Completed: Phase 7 kickoff — 7.1 Data model v3 (backend only, no UI). Product re-scoped to the Refold CS Hub (super-admin only; customer portals frozen; D-055). 8 append-only migrations: new enums; `segments`/`metric_definitions` lookups (seeded); `organizations` extended (segment/deployment_model/health/lifecycle_stage/owner/data_access_mode/aliases, backfilled); `proposals`/`sync_state`/`sync_runs`; `projects`+milestones/accomplishments/risks/asks; `escalations`/`tickets`/`engagements`/`metric_values`/`portfolio_notes` — every CS record table carries provenance (source/source_ref/created_by/updated_by/verified_at/proposal_id) and a per-org `source_ref` dedupe key. One generic SECURITY DEFINER audit trigger (`write_audit_log()`) attached to organizations + all 13 new tables, firing for both authenticated and service_role writes. Hardened `audit_log`: revoked direct insert/update/delete (trigger-only writes now) and fixed a real leak — tightened `audit_log_select` so a customer owner can no longer see Phase-7 CS data via the audit trail (with a backfill so existing owner-visible rows weren't silently lost). RLS on every new table: super_admin-only, AAL2 for writes, zero customer-role access (not just org-scoped — none). New TS types (`Account`, `Project`, `Risk`, `Proposal`, etc.) in `src/types/index.ts`. Local fictional fixtures (reusing Prism Analytics/Meridian Laboratories) for 7.2/7.3. Also retroactively closed out 6.7 (Netlify + cloud Supabase deploy, which had shipped without ever being logged) and removed the dead `vercel.json`.
+Verified: `supabase db reset` applies cleanly (all 17 migrations); extended `rls_test.sql` proves AAL1-write rejection, zero customer-role access across new tables, full audit trail (create/update/delete with correct before/after/org_id), per-org dedupe + cross-org independence, and the audit_log leak-fix — all passing locally. typecheck/lint/build green. Did NOT push migrations to the cloud project this session (old CLI token revoked) — see Known issues.
+Decisions made: D-054–D-065
+Known issues: 8 new local migrations (20261007000001–008) are ready to push to the cloud project but have NOT been pushed — the Supabase CLI access token used for the 6.7 deploy was revoked/rotated; a fresh token is needed before `supabase db push`. Cloud Supabase project URL/keys still user-provided for local dev.

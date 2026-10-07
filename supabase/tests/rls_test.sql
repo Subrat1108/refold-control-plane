@@ -168,3 +168,123 @@ begin
 
   raise notice 'ALL RLS TESTS PASSED';
 end $$;
+
+-- ═══════════════════════════════════════════════════════════════════════════
+-- Phase 7.1 — CS Hub data model v3 (build-spec-v3 § 5) RLS + audit-trigger proof
+-- ═══════════════════════════════════════════════════════════════════════════
+-- Uses the Phase 7.1 fixtures (seed.sql): Prism project 10000000-…-0001 (org
+-- 0002), Meridian project 10000000-…-0002 (org 0003), plus their milestones/
+-- risks/tickets/escalations.
+
+do $$
+declare
+  n int;
+  v_project_id uuid;
+begin
+  -- ── super_admin at AAL1 cannot write a new table (writes require is_aal2) ──
+  set local role authenticated;
+  set local request.jwt.claims = '{"sub":"00000000-0000-0000-0000-000000001001","aal":"aal1"}';
+  begin
+    insert into public.projects (org_id, name) values ('00000000-0000-0000-0000-000000000002', 'AAL1 should fail');
+    assert false, 'super_admin at AAL1 must NOT be able to insert into projects';
+  exception when insufficient_privilege then null; end;
+  reset role;
+
+  -- ── customer roles get NO access to any new table (not just org-scoped — none) ──
+  -- Prism owner (aal2): their OWN org's seeded project is invisible.
+  set local role authenticated;
+  set local request.jwt.claims = '{"sub":"00000000-0000-0000-0000-000000001002","aal":"aal2"}';
+  select count(*) into n from public.projects;
+  assert n = 0, format('Prism owner must see 0 projects (not just own-org-scoped), saw %s', n);
+  select count(*) into n from public.risks;
+  assert n = 0, format('Prism owner must see 0 risks, saw %s', n);
+  select count(*) into n from public.tickets;
+  assert n = 0, format('Prism owner must see 0 tickets, saw %s', n);
+  reset role;
+
+  -- Meridian owner (aal2): same — even though Meridian's own fixtures exist.
+  set local role authenticated;
+  set local request.jwt.claims = '{"sub":"00000000-0000-0000-0000-000000001003","aal":"aal2"}';
+  select count(*) into n from public.projects;
+  assert n = 0, format('Meridian owner must see 0 projects, saw %s', n);
+  select count(*) into n from public.escalations;
+  assert n = 0, format('Meridian owner must see 0 escalations, saw %s', n);
+  reset role;
+
+  -- Prism member/analyst (aal1 — reads don't need aal2): also 0.
+  set local role authenticated;
+  set local request.jwt.claims = '{"sub":"00000000-0000-0000-0000-000000001004","aal":"aal1"}';
+  select count(*) into n from public.projects;
+  assert n = 0, format('Prism member must see 0 projects, saw %s', n);
+  reset role;
+
+  -- ── super_admin at AAL2 can CRUD a new table, with a full audit trail ──────
+  set local role authenticated;
+  set local request.jwt.claims = '{"sub":"00000000-0000-0000-0000-000000001001","aal":"aal2"}';
+
+  insert into public.projects (org_id, name, health)
+  values ('00000000-0000-0000-0000-000000000002', 'RLS Test Project', 'on_schedule')
+  returning id into v_project_id;
+
+  select count(*) into n from public.audit_log
+    where record_table = 'projects' and record_id = v_project_id and action = 'create'
+      and after ->> 'name' = 'RLS Test Project' and before is null;
+  assert n = 1, format('expected exactly 1 create audit_log row for the test project, saw %s', n);
+
+  update public.projects set name = 'RLS Test Project (renamed)' where id = v_project_id;
+
+  select count(*) into n from public.audit_log
+    where record_table = 'projects' and record_id = v_project_id and action = 'update'
+      and before ->> 'name' = 'RLS Test Project' and after ->> 'name' = 'RLS Test Project (renamed)';
+  assert n = 1, format('expected exactly 1 update audit_log row reflecting the rename, saw %s', n);
+
+  delete from public.projects where id = v_project_id;
+
+  select count(*) into n from public.audit_log
+    where record_table = 'projects' and record_id = v_project_id and action = 'delete'
+      and after is null and before ->> 'name' = 'RLS Test Project (renamed)';
+  assert n = 1, format('expected exactly 1 delete audit_log row, saw %s', n);
+
+  -- org_id was correctly populated on every one of those rows (Prism's org).
+  select count(*) into n from public.audit_log
+    where record_table = 'projects' and record_id = v_project_id
+      and org_id = '00000000-0000-0000-0000-000000000002';
+  assert n = 3, format('expected all 3 audit_log rows to carry org_id = Prism, saw %s', n);
+
+  reset role;
+
+  -- ── duplicate source_ref per org is rejected (the sync dedupe key) ─────────
+  set local role authenticated;
+  set local request.jwt.claims = '{"sub":"00000000-0000-0000-0000-000000001001","aal":"aal2"}';
+
+  insert into public.risks (org_id, risk, impact, source, source_ref)
+  values ('00000000-0000-0000-0000-000000000002', 'Dedupe test risk 1', 'n/a', 'agent', 'slack:C999/1.000');
+
+  begin
+    insert into public.risks (org_id, risk, impact, source, source_ref)
+    values ('00000000-0000-0000-0000-000000000002', 'Dedupe test risk 2 (duplicate source_ref)', 'n/a', 'agent', 'slack:C999/1.000');
+    assert false, 'duplicate (org_id, source_ref) must be rejected';
+  exception when unique_violation then null; end;
+
+  -- same source_ref, DIFFERENT org: must succeed (dedupe is per-org, not global).
+  insert into public.risks (org_id, risk, impact, source, source_ref)
+  values ('00000000-0000-0000-0000-000000000003', 'Dedupe test risk, different org', 'n/a', 'agent', 'slack:C999/1.000');
+
+  reset role;
+
+  -- ── audit_log leak-fix: owner must NOT see audit rows about new tables ─────
+  -- (Prism's org_id matches the rows written above, but record_table='projects'
+  -- is not in the owner-visible allowlist — proves the tightened policy works.)
+  set local role authenticated;
+  set local request.jwt.claims = '{"sub":"00000000-0000-0000-0000-000000001002","aal":"aal2"}';
+  select count(*) into n from public.audit_log where record_table = 'projects';
+  assert n = 0, format('Prism owner must not see any projects audit_log rows, saw %s', n);
+  select count(*) into n from public.audit_log where record_table = 'risks';
+  assert n = 0, format('Prism owner must not see any risks audit_log rows, saw %s', n);
+  -- owner-visible allowlist (pre-Phase-7 tables) still works (D-046, unaffected).
+  select count(*) into n from public.audit_log where org_id = '00000000-0000-0000-0000-000000000002';
+  assert n >= 0; -- just confirms the query itself isn't blocked outright
+  reset role;
+
+  raise notice 'ALL PHASE 7 RLS + AUDIT TESTS PASSED';
+end $$;

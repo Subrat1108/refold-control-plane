@@ -481,6 +481,157 @@ code-complete + build-verified, not headlessly click-asserted.
 
 ---
 
+## D-054 — Retroactive close-out: 6.7 Netlify + cloud Supabase deploy is live (2026-10-07)
+Logged now because it was never logged when it happened — several ad-hoc
+sessions between R2b and this one shipped the actual 6.7 deploy without running
+the end-of-session protocol, leaving CLAUDE.md's "Deployed: not yet" stale.
+`netlify.toml` added (build `npm run build` → `dist`, SPA fallback rewrite);
+repo linked to cloud Supabase project `xwtxrdxktbogswxuuetp` (ap-northeast-1);
+all 9 then-existing migrations pushed and confirmed in sync; `provisioning`
+Edge Function deployed (ACTIVE); `main` branch created from `dev` and kept
+fast-forwarded as the Netlify deploy branch. The app is live at
+`refold-control-plane.netlify.app`; demo logins work end-to-end against the
+cloud project. The stale `vercel.json` is removed this session (superseded).
+Pre-production cleanup (rotate tokens/keys, handle demo creds) stays parked,
+below.
+
+## D-055 — Product re-scoped to the Refold CS Hub (build-spec-v3 § 1, § 8.1) (2026-10-07)
+Refold is moving away from Refold-assisted on-prem deployments (most installs
+will be air-gapped, no API access). The product becomes the customer success
+team's single system of record for every account across its lifecycle. Phase 7
+(this phase) is **super-admin only** — account intelligence, fed by manual
+entry and an agentic sync. Phase 8 (planned) adds lifecycle modules on the same
+foundation. Customer-facing logins (cloud/on-prem owner) are **frozen**: kept
+working, no new work. Phases 5–6 stay as the base (React UI, Supabase auth +
+MFA + RLS, provisioning, single login, cluster→namespace→org→tenant, 4-scope
+feature flags, Netlify + cloud Supabase).
+
+## D-056 — Public-repo confidentiality rule (build-spec-v3 § 0, § 8.2) (2026-10-07)
+This repository is public. Real customer names, health ratings, risks,
+contacts, metrics, Slack/email content, and secrets may never be committed.
+Real data enters only through the running app (manual entry, approved
+proposals, or imports executed against the database) — never as files in git.
+Seeds, fixtures, and examples use fictional companies. Added to CLAUDE.md's Key
+coding rules. Verified this session by grepping the spec, the repo, and every
+new fixture before committing.
+
+## D-057 — One write pipeline: proposals + field-level provenance + DB-trigger audit (build-spec-v3 § 3, § 8.3) (2026-10-07)
+Every input (manual, chat agent, agentic sync, file import) becomes either a
+direct audited change (manual, applied immediately) or a proposal a logged-in
+super admin approves. Every CS record carries provenance (`source`,
+`source_ref`, `created_by`, `updated_by`, `verified_at`, `proposal_id`).
+Approvals/audit are enforced by database triggers so nothing bypasses them
+(§3.2) — see D-063/D-064 for the Phase 7.1 implementation of this.
+
+## D-058 — One CS service user + one Refold MCP server; CS Sync Skill is the contract (build-spec-v3 § 4, § 8.4) (2026-10-07)
+Agentic sync runs as a single generic CS service user through one MCP server
+config exposing every tool the sync needs (Slack, email, ticketing, CRM, Drive,
+Refold workflows/metrics). The CS Sync Skill (`skills/cs-sync`, built in 7.5)
+is the one contract both the platform's Edge Function runner (Refresh + daily)
+and a hand-run agent session follow. The platform runner posts structured
+output to the ingest API itself — the model never holds the ingest token.
+
+## D-059 — Sync unit = (account, record type) with a watermark (build-spec-v3 § 4.4, § 8.5) (2026-10-07)
+`sync_state` keyed by `(org_id, record_type)` holds `last_synced_at` +
+status/error/lock. A Refresh button and the daily pg_cron job share one code
+path, differing only in which units they loop over. Idempotent via
+`source_ref`; the watermark advances only on success.
+
+## D-060 — Vocabulary: "project" = delivery workstream, "engagement" = touchpoint (build-spec-v3 § 2, § 8.6) (2026-10-07)
+Phase 6 used "engagement" loosely; v3 fixes the meaning: **project** is a
+delivery workstream (what the status deck calls a project; an account can have
+several), **engagement** is a customer touchpoint (call/check-in/QBR/EBR/note).
+Reflected in the new `projects` and `engagements` tables and TS types.
+
+## D-061 — Old 6.5 → 7.5, old 6.6 → 7.7 (build-spec-v3 § 8.7) (2026-10-07)
+The live-data-layer block (provider switch, metrics-proxy) folds into 7.5 (CS
+Sync Skill + runner — Refold platform metrics now arrive via the MCP sync, not
+a standalone metrics-proxy Edge Function). The QBR-export block folds into 7.7
+(Reports — monthly status report + EBR pack generated from platform data).
+PROGRESS.md marks both folded rather than dropped.
+
+## D-062 — Data model v3 schema shape (build-spec-v3 § 5) (2026-10-07)
+8 append-only migrations (`20261007000001`–`…008`): enums; `segments` +
+`metric_definitions` lookups (seeded); `organizations` extended with
+`segment_id`/`deployment_model`/`health`/`lifecycle_stage`/`owner_profile_id`/
+`data_access_mode`/`aliases` (health defaults + auto-fills 'active'; lifecycle
+defaults 'prospect' for new rows, existing rows explicitly backfilled to
+'live'; deployment_model backfilled from deployment_type, left NULL for the
+internal org); `proposals`/`sync_state`/`sync_runs` (their own schemas, no
+generic provenance columns — they're pipeline plumbing, not CS records);
+`projects` + `milestones`/`accomplishments`/`risks`/`asks`; `escalations`/
+`tickets`/`engagements`/`metric_values`/`portfolio_notes`. Every CS record
+table denormalizes `org_id` directly (even where the spec shorthand ties a
+table only to `project`) so the per-org dedupe constraint and the generic audit
+trigger both work without per-table joins; `portfolio_notes` has no `org_id`
+(portfolio-wide per the domain model) and dedupes on `source_ref` alone.
+Several enum value sets aren't explicit in the spec (milestone/risk/ask/
+escalation/ticket status, severity, ticket priority) — chosen as sensible
+defaults, called out inline in the enums migration, easy to extend later. Added
+a few small integrity constraints beyond the literal spec text: natural-key
+unique on `tickets(org_id, system, external_key)`, `metric_values(org_id,
+metric_key, period, project_id)` NULLS NOT DISTINCT, and a `sort` column on
+`metric_definitions`.
+
+## D-063 — Generic audit trigger, one function for every table (build-spec-v3 § 3.2, § 5) (2026-10-07)
+`public.write_audit_log()` — SECURITY DEFINER (same bypass pattern as
+`is_super_admin()`/`is_aal2()`), reads OLD/NEW via `to_jsonb(...)` so one
+function serves organizations + all 13 new CS/plumbing tables with no
+per-table branches: `record_id` and `proposal_id` are read generically off the
+row; `org_id` is read as-is for every table EXCEPT `organizations` itself,
+which special-cases `org_id := id` (it IS the org — the one case a blind
+id-fallback would have been correct for; a blind fallback for every table would
+have wrongly stuffed `portfolio_notes`/`sync_runs`' own id into `audit_log.org_id`,
+violating its FK and breaking every write to those two tables — caught and
+fixed during this session's own verification before writing the migration).
+`actor_id := auth.uid()`; when null (service-role/migration/seed context),
+`on_behalf_of := current_user`. Populates both the legacy `target_type`/
+`target_id` columns and the new `record_table`/`record_id` columns identically
+(backward + forward compatible). Attached to `organizations` + 13 new tables;
+deliberately NOT attached to `profiles`/`sub_roles`/`invitations`/
+`saved_report_configs` (already manually audited by the provisioning Edge
+Function — the trigger would double-log every provisioning action) or to
+`segments`/`metric_definitions` (pure lookups, same treatment as system
+sub-roles). Known accepted side effect: `organizations` now gets logged twice
+for `provision_org` (manual Edge Function insert + trigger) — redundant, not
+deduped this session.
+
+## D-064 — audit_log hardened: trigger-only writes; owner-visible leak fixed (build-spec-v3 § 3.2) (2026-10-07)
+Two changes to the existing `audit_log` table (append-only ALTER + one
+drop/recreate of its SELECT policy, same pattern D-032/D-045 already used).
+(1) `REVOKE insert, update, delete on audit_log` from both `authenticated` and
+`service_role` — going forward the only writer is the SECURITY DEFINER trigger
+(D-063), which bypasses the revoke via its owner's privileges regardless of
+which role fired the statement; this is the literal enforcement of "nothing
+bypasses it" (§3.2). (2) `audit_log_select` previously let a customer owner see
+every audit row for their own `org_id`, which would have leaked Phase 7 CS data
+(risks, escalations, …) to owners who have zero RLS access to the underlying
+tables. Tightened to `is_super_admin() OR (org_id = current_org_id() AND
+record_table = ANY(['organizations','profiles','invitations','sub_roles',
+'saved_report_configs']))`. Existing historical rows (written with the old
+singular `target_type` values `'organization'`/`'profile'`) are backfilled to
+the new plural `record_table` form in the same migration — without this,
+owners would have silently lost visibility into audit rows D-046 already
+promised them. Verified by rls_test.sql: an owner sees 0 `audit_log` rows for
+`record_table IN ('projects','risks')` even though `org_id` matches.
+
+## D-065 — RLS pattern for every new table; fixtures reuse the existing fictional accounts (build-spec-v3 § 5) (2026-10-07)
+Every new table (lookups included) gets the identical 4-policy shape already
+established for `organizations`: SELECT `is_super_admin()`; INSERT/UPDATE/
+DELETE `is_super_admin() AND is_aal2()`. Grants to both `authenticated` and
+`service_role` (D-039). Local fixtures (`seed.sql`, never shipped) reuse the
+two existing fictional demo accounts (Prism Analytics, Meridian Laboratories)
+rather than inventing new org rows: one project each (health `on_schedule` /
+`caution` for variety), milestones, accomplishments, risks, an ask, an
+escalation, tickets, engagements, metric values, and 2 pending proposals.
+Verified end-to-end by the extended `rls_test.sql`: AAL1 super-admin write
+rejected; cloud owner, on-prem owner, and a member each see 0 rows across
+`projects`/`risks`/`tickets`/`escalations` (proving "no access to any new
+table," not just org-scoping); AAL2 super-admin CRUD produces exactly the
+expected create/update/delete `audit_log` rows with correct before/after/
+org_id; duplicate `(org_id, source_ref)` rejected while the same `source_ref`
+in a different org succeeds (dedupe is per-org, not global).
+
 # Parked
 
 Out-of-scope ideas land here instead of derailing the current prompt block.
