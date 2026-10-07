@@ -632,10 +632,37 @@ expected create/update/delete `audit_log` rows with correct before/after/
 org_id; duplicate `(org_id, source_ref)` rejected while the same `source_ref`
 in a different org succeeds (dedupe is per-org, not global).
 
-# Parked
+## D-066 — Single environment until the first customer goes live (2026-10-07)
+No staging tier yet: the cloud Supabase project `xwtxrdxktbogswxuuetp` is the
+only database, and Netlify's production branch is now `dev` (the user switched
+it in the Netlify dashboard) — **every push to `dev` deploys to production.**
+Supersedes the "deploy from `main`" convention for now; `main` is left as-is
+and becomes the prod branch again at go-live. Consequence enforced going
+forward (added to the session protocol): if a session adds migrations, push
+them to cloud (`supabase db push`) **before** pushing code to `dev`, since code
+expecting a new table/column must never reach production ahead of the schema
+that backs it. Verified this session: the 8 Phase 7.1 migrations (D-062–D-065)
+pushed cleanly; `supabase migration list` shows all 17 migrations matching
+local/remote.
 
-Out-of-scope ideas land here instead of derailing the current prompt block.
-Format: one line each, with the session it came from.
+## D-067 — Phase 7 demo data lives in its own idempotent, admin-agnostic file (2026-10-07)
+Extracted the Phase 7.1 fictional fixtures out of `seed.sql` into
+`supabase/demo/phase7_demo_data.sql`, loaded locally via a second entry in
+`[db.seed].sql_paths` (config.toml) — **not** via a `psql` `\i`/`\ir` meta-command,
+which the Supabase CLI's seed runner does not support (confirmed by a failing
+`db reset` before the fix: `syntax error at or near "\\"`). The file resolves
+its `created_by`/`updated_by`/`owner_profile_id`/`edl_profile_id` attribution
+dynamically (`select … from profiles where account_type='super_admin' order by
+created_at limit 1`) rather than a fixed demo profile id, and creates its own
+two fictional organization rows (Prism Analytics / Meridian Laboratories,
+`ON CONFLICT DO NOTHING`) if they don't already exist — both fixes needed
+because the cloud project has neither the local demo seed's profiles nor its
+orgs, only the migrated schema. Creates no auth users; idempotent (every write
+is a plain UPDATE, an `ON CONFLICT DO NOTHING` keyed insert, or a natural-key
+upsert on `metric_values`); safe to paste into the cloud SQL Editor more than
+once. Not run against cloud this session — the user runs it if/when they want
+demo data on the live site. Verified locally: `db reset` seeds both files in
+order without error; `rls_test.sql` still passes in full afterward.
 
 - Maintenance / pre-production cleanup (deploy stage): rotate the Supabase CLI
   access token; rotate the secret (service-role) key + DB password; change the

@@ -16,6 +16,50 @@ Template:
 
 ---
 
+## Session 26 — 2026-10-07 — Single environment + push Phase 7.1 to cloud
+**Built:** operational session, no new features.
+- **D-066 single environment:** Netlify's production branch is now `dev` (user
+  switched it) — every push to `dev` deploys. Cloud Supabase
+  (`xwtxrdxktbogswxuuetp`) is the only DB until the first customer goes live;
+  `main` left alone for go-live. Added to the session protocol: push migrations
+  to cloud before pushing code to `dev`, since code now reaches prod the moment
+  it's pushed.
+- **Pushed the 8 Phase 7.1 migrations to cloud:** `db push --dry-run` first
+  (confirmed the pending list was exactly those 8, nothing else), then the real
+  push. `migration list` shows all 17 local=remote.
+- **D-067 demo data extracted:** `supabase/demo/phase7_demo_data.sql` — the
+  Phase 7.1 fictional fixtures, pulled out of `seed.sql`, idempotent, creates
+  no auth users. Tried loading it from `seed.sql` via `psql \i`/`\ir` first —
+  the Supabase CLI's seed runner doesn't support meta-commands at all (`db
+  reset` failed: `syntax error at or near "\\"`); fixed by adding it as a
+  second entry in config.toml's `[db.seed].sql_paths` instead. Also redesigned
+  attribution to resolve dynamically (`select … from profiles where
+  account_type='super_admin' order by created_at limit 1`) instead of a fixed
+  demo profile id, and to create its own two fictional org rows if missing —
+  both needed because the cloud project has the migrated schema but none of
+  the local demo seed's profiles/orgs.
+- **Read-only cloud verification** via `supabase db dump --linked`: all 16
+  Phase-7 tables, all 14 `*_audit` triggers, and the tightened
+  `audit_log_select` policy confirmed present on cloud, matching the design
+  exactly. No mutations performed.
+- **rls_test.sql checked, not run on cloud:** it is NOT wrapped in a
+  rolling-back transaction — a `full_name` change, a 'Prism QA' sub-role row,
+  and two "Dedupe test risk" rows all persist. Confirmed unsafe for cloud;
+  did not suggest running it there.
+- CLAUDE.md: Deployment section rewritten for single-env mode; session
+  protocol gained the migrate-before-code-push rule.
+**Verified (honest):** db push dry-run matched exactly 8 files; migration list
+17/17 in sync; local db reset seeds both files in the new order without error;
+full rls_test.sql still green afterward; cloud schema dump confirms every new
+table/trigger/policy present.
+**Deviations:** demo-data attribution + org-creation design differs from the
+original seed.sql fixture (fixed ids) — necessary for cloud-standalone use,
+noted in D-067.
+**Decisions:** D-066, D-067
+**Next:** 7.2 — God-mode workspace. (Optionally: run phase7_demo_data.sql
+against cloud via the SQL Editor if demo data on the live site is wanted.)
+**Issues:** —
+
 ## Session 25 — 2026-10-07 — Phase 7 kickoff: 7.1 Data model v3
 **Built:** backend-only CS Hub data model (build-spec-v3 § 5), no UI wiring.
 - **Housekeeping:** committed `docs/build-spec-v3.md`; confidentiality grep

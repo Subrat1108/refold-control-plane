@@ -3,11 +3,11 @@
 ## Current status
 <!-- Canonical state snapshot. The build room updates this block at the end of
      every session. The planning room reads it first. Keep it under ~10 lines. -->
-- Last session: 2026-10-07 — Phase 7 kickoff, 7.1 Data model v3 (backend only, D-055–D-065). Product re-scoped to the Refold CS Hub (super-admin only; customer portals frozen). 8 append-only migrations: segments/metric_definitions lookups; organizations extended (segment/deployment_model/health/lifecycle_stage/owner/data_access_mode/aliases); proposals/sync_state/sync_runs; projects+milestones/accomplishments/risks/asks; escalations/tickets/engagements/metric_values/portfolio_notes — every CS record table has provenance + a per-org source_ref dedupe key. One generic SECURITY DEFINER audit trigger on organizations + 13 new tables. audit_log hardened (trigger-only writes; fixed an owner-visible leak of Phase-7 data via the audit trail). RLS: super_admin-only + AAL2 writes, zero customer-role access on every new table. New TS types; fictional local fixtures (Prism/Meridian). Also retroactively closed out 6.7 (D-054) and removed dead vercel.json. Verified: db reset clean (17 migrations), extended rls_test.sql all passing, typecheck/lint/build green.
+- Last session: 2026-10-07 (later same day) — Single-environment switch (D-066): Netlify prod branch is now `dev` (every push deploys), cloud Supabase is the only DB until go-live. Pushed the 8 Phase 7.1 migrations to cloud (dry-run confirmed exact list first); `migration list` shows all 17 local=remote. Extracted Phase-7 fictional fixtures into standalone `supabase/demo/phase7_demo_data.sql` (D-067) — idempotent, no auth users, resolves attribution to whichever super_admin profile exists (not a fixed id), loaded locally via config.toml `sql_paths` (a psql `\i` include doesn't work with the CLI's seed runner — found and fixed). Read-only cloud dump confirmed all 16 Phase-7 tables, all 14 audit triggers, and the tightened audit_log_select policy present on cloud. rls_test.sql confirmed NOT safe to run on cloud (not wrapped in a rolling-back transaction) — flagged, not run there. Prior same day: 7.1 Data model v3 (D-055–D-065).
 - Next up: 7.2 — God-mode workspace (Portfolio board, Account 360, coverage view).
-- Blockers: 8 new Phase-7.1 migrations are ready but NOT pushed to the cloud project — the Supabase CLI access token used for the 6.7 deploy is revoked; need a fresh token before `supabase db push`. Refold MCP server details needed for 7.5.
-- Deployed: YES — live at `refold-control-plane.netlify.app`, one Netlify site, deploying from `main`, backed by cloud Supabase `xwtxrdxktbogswxuuetp`; all demo logins work (D-054).
-- Known issues: cloud project schema is now 9 migrations behind local (see Blockers). Provisioned orgs still don't appear in the mock-backed customer lists (Pending-invites panel shows them instead; unaffected by Phase 7).
+- Blockers: Refold MCP server details needed for 7.5. None for schema/deploy — cloud is fully in sync.
+- Deployed: YES — live at `refold-control-plane.netlify.app`, Netlify prod branch `dev` (single-env, D-066), backed by cloud Supabase `xwtxrdxktbogswxuuetp` (the only DB). All demo logins work.
+- Known issues: Phase-7 demo data (fictional) has NOT been run against cloud yet — run `supabase/demo/phase7_demo_data.sql` in the cloud SQL Editor if you want sample data on the live site. Provisioned orgs still don't appear in the mock-backed customer lists (Pending-invites panel shows them instead; unaffected by Phase 7).
 - Phase 7 note: Phase 7 is **super-admin only**; cloud/on-prem owner portals are **frozen** (kept working, no new work — do not add features there). CS Hub tables (segments, organizations' new columns, projects, milestones, …) have NO UI yet — 7.1 was backend-only. Confidentiality rule (build-spec-v3 § 0) is now in Key coding rules: never commit real customer data; all fixtures fictional. TOTP in supabase/config.toml. Local dev needs a gitignored .env (VITE_SUPABASE_URL/ANON_KEY from `npx supabase start`). Edge Functions: `npx supabase functions serve` (invite emails land in Mailpit http://127.0.0.1:54324)
 
 ## Session protocol (build room)
@@ -23,7 +23,11 @@ git clone -b dev https://github.com/Subrat1108/refold-control-plane.git && cd re
 2. Prepend a session entry to `docs/devlog.md` (newest first, use the template there)
 3. Log any decisions made to `docs/decisions.md`
 4. Refresh the **Current status** block at the top of this file
-5. Commit per the convention below and **push to `dev`**
+5. **If the session added migrations, push them to the cloud project
+   (`supabase db push`) BEFORE pushing code to `dev`** — `dev` auto-deploys
+   (single-environment mode, D-066), so code that expects a new table/column
+   must not reach Netlify before the schema does.
+6. Commit per the convention below and **push to `dev`**
 
 A session that doesn't push is invisible to the planning room.
 
@@ -186,6 +190,14 @@ The panel is 400px wide, slides from the right, closes on outside click or
 Escape, and shows unsaved changes with a subtle yellow background highlight.
 
 ## Deployment target
+**Single environment until the first customer goes live (D-066).** There is
+only one database — the cloud Supabase project `xwtxrdxktbogswxuuetp` — and
+Netlify's production branch is `dev`, not `main`: **every push to `dev` deploys
+to production.** `main` is left as-is and becomes the prod branch again at
+go-live; there is no staging DB and no staging site right now. Treat pushes to
+`dev` with the same care as a prod deploy (because it is one) — see the
+migration-before-code rule in the session protocol above.
+
 Netlify, one site (post-R1). Config in `netlify.toml`:
 ```toml
 [build]
@@ -196,9 +208,9 @@ Netlify, one site (post-R1). Config in `netlify.toml`:
   to = "/index.html"
   status = 200
 ```
-Build command: `npm run build` — Output dir: `dist` — Deploy branch: `main`.
-Live at `refold-control-plane.netlify.app`, backed by cloud Supabase project
-`xwtxrdxktbogswxuuetp`.
+Build command: `npm run build` — Output dir: `dist` — Deploy branch: `dev`
+(single-env; was `main`, see above). Live at `refold-control-plane.netlify.app`,
+backed by cloud Supabase project `xwtxrdxktbogswxuuetp` (the only DB).
 
 ## Git conventions
 Branch strategy: `main` (production) ← `dev` (active work) ← `feature/*`
