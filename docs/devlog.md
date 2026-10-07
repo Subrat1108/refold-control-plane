@@ -16,6 +16,37 @@ Template:
 
 ---
 
+## Session 27 — 2026-10-07 — HOTFIX: production login broken (PGRST201)
+**Symptom:** live site sign-in succeeded (token returned) but the app stayed
+on `/login` for everyone — the profile-load query failed with `300 PGRST201`
+("more than one relationship was found for 'profiles' and 'organizations'").
+**Cause:** 7.1 added `organizations.owner_profile_id → profiles`, giving
+`profiles`/`organizations` a second relationship alongside the original
+`profiles.org_id → organizations`. `AuthProvider.loadProfile()`'s unqualified
+`organizations(...)` embed became ambiguous.
+**Built:**
+- Fixed the one affected call site: `AuthProvider.tsx` →
+  `organizations!profiles_org_id_fkey(...)`. Response key is unchanged
+  (`organizations`), so no other code touched.
+- Audited every other `.select()` embed in `src/` (2× `profiles→sub_roles`,
+  1× `invitations→organizations`) against the full FK graph across every
+  migration — all three confirmed single-relationship, left unchanged.
+  `supabase/functions/provisioning` has zero embeds — no redeploy needed.
+- New `scripts/smoke-login.ts` (committed, env-var credentials, no passwords
+  in the repo): signs in as each demo role and runs the exact AuthProvider
+  profile query. Added to the session protocol — run it against a fresh
+  `db reset` before pushing any session with new migrations.
+- CLAUDE.md: new "Supabase / PostgREST queries" coding rule (check for a
+  second FK before/after adding one near an existing embed) + the smoke-check
+  step in the end-of-session protocol.
+**Verified (honest):** fresh local `db reset` (all 17 migrations); smoke check
+— all three roles (super_admin, Prism owner, Meridian owner) sign in and load
+profile + org cleanly. typecheck/lint/build green.
+**Deviations:** none.
+**Decisions:** D-068
+**Next:** 7.2 — God-mode workspace.
+**Issues:** —
+
 ## Session 26 — 2026-10-07 — Single environment + push Phase 7.1 to cloud
 **Built:** operational session, no new features.
 - **D-066 single environment:** Netlify's production branch is now `dev` (user

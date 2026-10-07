@@ -664,6 +664,39 @@ once. Not run against cloud this session — the user runs it if/when they want
 demo data on the live site. Verified locally: `db reset` seeds both files in
 order without error; `rls_test.sql` still passes in full afterward.
 
+## D-068 — PostgREST embeds must name the FK when tables have multiple relationships (2026-10-07)
+**Production hotfix.** 7.1's `organizations.owner_profile_id → profiles` FK
+gave `organizations`/`profiles` a SECOND relationship alongside the original
+`profiles.org_id → organizations`. PostgREST can no longer infer which one an
+unqualified embed means, so `AuthProvider.loadProfile()`'s
+`.select('…, organizations(name, deployment_type, external_ref)')` started
+returning `300 PGRST201` ("more than one relationship was found") in
+production — sign-in succeeded (token returned) but the profile never loaded,
+so every user stayed stuck on `/login`. Fixed by naming the relationship
+explicitly: `organizations!profiles_org_id_fkey(...)`. The `!fkey` hint does
+not change the response's JSON key (stays `organizations`), so no other code
+needed to change. Audited every `.select()` embed in `src/` and
+`supabase/functions/`: the two `profiles → sub_roles(name)` embeds and the one
+`invitations → organizations(name)` embed are each still single-relationship
+(confirmed by grepping every FK in every migration, not just assumed) and were
+left unchanged; the Edge Function has zero embeds at all, so no redeploy was
+needed. Added a permanent **role-login smoke check**
+(`scripts/smoke-login.ts`, reads credentials from env vars, no passwords in
+the repo) that signs in as each demo role and runs the exact profile query
+AuthProvider uses — added to the session protocol: run it against a fresh
+`db reset` before pushing any session that adds migrations, since exactly this
+class of bug (a new FK silently breaking an unrelated existing embed) is build-
+time invisible and only surfaces at runtime. Also added a standing coding rule:
+check for a second FK before adding one near an existing embedded relationship.
+Verified: all three demo roles (super_admin, Prism owner, Meridian owner) sign
+in and load their profile + organization cleanly against a fresh local
+`db reset`; typecheck/lint/build green.
+
+# Parked
+
+Out-of-scope ideas land here instead of derailing the current prompt block.
+Format: one line each, with the session it came from.
+
 - Maintenance / pre-production cleanup (deploy stage): rotate the Supabase CLI
   access token; rotate the secret (service-role) key + DB password; change the
   demo-user passwords or keep the hosted preview URL unlisted (known demo creds

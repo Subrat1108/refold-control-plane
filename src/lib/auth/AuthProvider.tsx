@@ -40,7 +40,12 @@ const AuthContext = createContext<AuthContextState | null>(null)
 async function loadProfile(userId: string): Promise<Profile | null> {
   const { data, error } = await supabase
     .from('profiles')
-    .select('id, email, full_name, org_id, account_type, role, sub_role_id, status, organizations(name, deployment_type, external_ref)')
+    // Explicit FK hint required (PGRST201): organizations has TWO relationships
+    // to profiles since 7.1 added organizations.owner_profile_id — profiles.org_id
+    // (the one we want here) and organizations.owner_profile_id (the EDL). The
+    // `!fkey` hint only disambiguates which relationship PostgREST follows; the
+    // response key stays `organizations` either way (verified empirically).
+    .select('id, email, full_name, org_id, account_type, role, sub_role_id, status, organizations!profiles_org_id_fkey(name, deployment_type, external_ref)')
     .eq('id', userId)
     .single()
   if (error || !data) return null

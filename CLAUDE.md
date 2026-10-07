@@ -3,11 +3,11 @@
 ## Current status
 <!-- Canonical state snapshot. The build room updates this block at the end of
      every session. The planning room reads it first. Keep it under ~10 lines. -->
-- Last session: 2026-10-07 (later same day) — Single-environment switch (D-066): Netlify prod branch is now `dev` (every push deploys), cloud Supabase is the only DB until go-live. Pushed the 8 Phase 7.1 migrations to cloud (dry-run confirmed exact list first); `migration list` shows all 17 local=remote. Extracted Phase-7 fictional fixtures into standalone `supabase/demo/phase7_demo_data.sql` (D-067) — idempotent, no auth users, resolves attribution to whichever super_admin profile exists (not a fixed id), loaded locally via config.toml `sql_paths` (a psql `\i` include doesn't work with the CLI's seed runner — found and fixed). Read-only cloud dump confirmed all 16 Phase-7 tables, all 14 audit triggers, and the tightened audit_log_select policy present on cloud. rls_test.sql confirmed NOT safe to run on cloud (not wrapped in a rolling-back transaction) — flagged, not run there. Prior same day: 7.1 Data model v3 (D-055–D-065).
+- Last session: 2026-10-07 (hotfix) — Production login was broken: 7.1's `organizations.owner_profile_id→profiles` FK made `AuthProvider.loadProfile()`'s unqualified `organizations(...)` embed ambiguous (PGRST201), so every sign-in got a token but never loaded a profile, stuck on /login. Fixed with an explicit FK hint (`organizations!profiles_org_id_fkey(...)`); audited every other embed in src/ and the Edge Function (all confirmed single-relationship or nonexistent — no other changes, no redeploy needed). Added `scripts/smoke-login.ts` (committed, env-var credentials) + a session-protocol step (D-068): run it against a fresh db reset before pushing any session with new migrations. Verified: all 3 demo roles sign in + load profile cleanly; typecheck/lint/build green. **This was pushed to `dev`, which deploys straight to production (D-066) — fix is live.**
 - Next up: 7.2 — God-mode workspace (Portfolio board, Account 360, coverage view).
-- Blockers: Refold MCP server details needed for 7.5. None for schema/deploy — cloud is fully in sync.
-- Deployed: YES — live at `refold-control-plane.netlify.app`, Netlify prod branch `dev` (single-env, D-066), backed by cloud Supabase `xwtxrdxktbogswxuuetp` (the only DB). All demo logins work.
-- Known issues: Phase-7 demo data (fictional) has NOT been run against cloud yet — run `supabase/demo/phase7_demo_data.sql` in the cloud SQL Editor if you want sample data on the live site. Provisioned orgs still don't appear in the mock-backed customer lists (Pending-invites panel shows them instead; unaffected by Phase 7).
+- Blockers: Refold MCP server details needed for 7.5. None for schema/deploy — cloud is fully in sync, login works.
+- Deployed: YES — live at `refold-control-plane.netlify.app`, Netlify prod branch `dev` (single-env, D-066), backed by cloud Supabase `xwtxrdxktbogswxuuetp` (the only DB). All demo logins work (re-verified after this hotfix).
+- Known issues: Phase-7 demo data (fictional) has NOT been run against cloud yet — run `supabase/demo/phase7_demo_data.sql` in the cloud SQL Editor if you want sample data on the live site. Provisioned orgs still don't appear in the mock-backed customer lists (unaffected by Phase 7).
 - Phase 7 note: Phase 7 is **super-admin only**; cloud/on-prem owner portals are **frozen** (kept working, no new work — do not add features there). CS Hub tables (segments, organizations' new columns, projects, milestones, …) have NO UI yet — 7.1 was backend-only. Confidentiality rule (build-spec-v3 § 0) is now in Key coding rules: never commit real customer data; all fixtures fictional. TOTP in supabase/config.toml. Local dev needs a gitignored .env (VITE_SUPABASE_URL/ANON_KEY from `npx supabase start`). Edge Functions: `npx supabase functions serve` (invite emails land in Mailpit http://127.0.0.1:54324)
 
 ## Session protocol (build room)
@@ -27,7 +27,14 @@ git clone -b dev https://github.com/Subrat1108/refold-control-plane.git && cd re
    (`supabase db push`) BEFORE pushing code to `dev`** — `dev` auto-deploys
    (single-environment mode, D-066), so code that expects a new table/column
    must not reach Netlify before the schema does.
-6. Commit per the convention below and **push to `dev`**
+6. **If the session added migrations, run the role-login smoke check** (each
+   demo role signs in and loads its profile — `scripts/smoke-login.ts`)
+   against a fresh local `supabase db reset` before pushing. A new column or
+   FK can silently break the profile-load query that every login depends on
+   (D-068 — PostgREST embeds go ambiguous the moment a table gains a second
+   relationship to the same target, e.g. `organizations.owner_profile_id` vs
+   `profiles.org_id`); this catches it locally instead of in production.
+7. Commit per the convention below and **push to `dev`**
 
 A session that doesn't push is invisible to the planning room.
 
@@ -136,6 +143,23 @@ a back button. Never silently redirect without telling the user why.
   of `src/hooks/useAuth.ts`.
 - The mock auth context must allow switching between all three roles without
   reloading the page (for development).
+
+**Supabase / PostgREST queries (D-068)**
+- Before writing (or adding a column near) a `.select()` embed like
+  `table('a').select('b(...)')`, check whether `b` has more than one foreign
+  key to/from `a`. If it does, PostgREST returns `300 PGRST201` ("more than one
+  relationship was found") and the query fails at runtime — not at build time —
+  the first time two FKs between the same pair of tables both exist.
+- When ambiguous (or to be safe against a future second FK), name the
+  relationship explicitly: `table('a').select('b!b_a_id_fkey(...)')`. The `!fkey`
+  hint does not change the response's JSON key (it stays `b`), so no
+  destructuring code needs to change.
+- A new migration that adds a profile/organization FK (`created_by`,
+  `owner_profile_id`, `edl_profile_id`, …) can silently break an *existing*
+  embed elsewhere in the app that queried the same two tables unqualified —
+  this already happened once (D-068). Grep for `table_name(` inside every
+  `.select(` in `src/` and `supabase/functions/` whenever a migration adds a
+  profiles/organizations FK, not just in the file you're editing.
 
 **Components**
 - Build each component once; use props and conditional rendering for role
