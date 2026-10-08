@@ -43,10 +43,14 @@ begin
 
   -- Phase 7 fields (health/lifecycle were already backfilled to 'active'/'live'
   -- by the organizations_extend migration for rows that pre-date it; these add
-  -- variety + the fields that migration couldn't guess).
+  -- variety + the fields that migration couldn't guess). owner_profile_id is
+  -- NOT set here (7.2a, D-070): it's a derived column now — only the primary
+  -- EDL/TA assignment in account_assignments can produce a value, and a
+  -- direct write like this one would just be silently overridden back to
+  -- whatever that derivation computes (NULL here on cloud, since this script
+  -- never creates people — "do not add people to the cloud demo-data script").
   update public.organizations set
     segment_id = (select id from public.segments where name = 'Enterprise'),
-    owner_profile_id = v_admin_id,
     data_access_mode = 'api',
     aliases = array['prism-analytics', 'prismanalytics.io']
   where id = '00000000-0000-0000-0000-000000000002';
@@ -61,21 +65,29 @@ begin
   -- Projects
   insert into public.projects
     (id, org_id, name, release_no, start_date, go_live_date, expected_end_date,
-     health, live_tenants, dev_uat_tenants, goals, fdes, edl_profile_id,
+     health, live_tenants, dev_uat_tenants, goals,
      issue_tracker_url, source, created_by, updated_by, verified_at) values
     ('10000000-0000-0000-0000-000000000001', '00000000-0000-0000-0000-000000000002',
      'Workflow Automation Rollout', 'R42', '2026-06-01', '2026-10-15', '2026-11-01',
      'on_schedule', 148, 12, array['Migrate legacy ETL jobs to Refold workflows', 'Cut average build time by 30%'],
-     array['Jordan Reyes'], v_admin_id,
      'https://issues.example.com/browse/PRISM-42', 'manual',
      v_admin_id, v_admin_id, now()),
     ('10000000-0000-0000-0000-000000000002', '00000000-0000-0000-0000-000000000003',
      'Genomics Pipeline Integration', 'R17', '2026-05-15', '2026-11-30', '2026-12-15',
      'caution', 63, 8, array['Automate sample-intake pipeline', 'Pass internal security review'],
-     array['Sam Okafor'], null,
      'https://issues.example.com/browse/MERI-17', 'manual',
      v_admin_id, v_admin_id, now())
   on conflict (id) do nothing;
+
+  -- Project members (7.2a replaces projects.fdes/edl_profile_id — D-071).
+  -- Prism's project keeps its EDL (previously edl_profile_id); Meridian's had
+  -- none. Fictional FDE assignments are local-only (seed.sql), not here —
+  -- "do not add people to the cloud demo-data script" (D-069 fixtures note).
+  if v_admin_id is not null then
+    insert into public.project_members (project_id, profile_id, role) values
+      ('10000000-0000-0000-0000-000000000001', v_admin_id, 'edl')
+    on conflict (project_id, profile_id, role) do nothing;
+  end if;
 
   -- Milestones
   insert into public.milestones (id, project_id, org_id, period, description, status, source, created_by) values

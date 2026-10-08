@@ -692,6 +692,159 @@ Verified: all three demo roles (super_admin, Prism owner, Meridian owner) sign
 in and load their profile + organization cleanly against a fresh local
 `db reset`; typecheck/lint/build green.
 
+## D-069 — set_title lives in the provisioning Edge Function (2026-10-08)
+`profiles.title` (head_of_cs/edl/ta/fde) is only writable via a new `set_title`
+super_admin + AAL2 action, mirroring `assign_sub_role`/`set_user_status`'s
+exact shape (validate, service-role UPDATE, write audit) rather than
+introducing a second mechanism (a SECURITY DEFINER RPC) for the same kind of
+action. D-043's column-grant lockdown already restricts `authenticated` direct
+UPDATEs on `profiles` to `full_name` alone — `title` was simply never added to
+that grant, so no RLS/grant change was needed to protect it, only the ALTER
+TABLE adding the column (+ a CHECK tying it to `account_type='super_admin'`).
+Local fixtures (seed.sql, never cloud): 6 fictional CS people — Dana Whitfield
+(head_of_cs), Reza Karimi (edl), Lena Novak (ta), Tomás Rivera/Grace Mwangi/
+Owen Baptiste (fde) — full login-capable auth users, same pattern as the
+existing demo logins, so a human can actually sign in as each title and see
+scoped views. "Do not add these to the cloud demo-data script — real team
+setup happens in the UI."
+
+## D-070 — organizations.owner_profile_id kept as a DERIVED column (2026-10-08)
+Replaces the plan's original "keep or retire" open question. `owner_profile_id`
+stays, but becomes fully derived: primary EDL assignment → else primary TA →
+else NULL (`compute_org_owner()`). Enforced by a trigger, not convention — a
+`BEFORE INSERT OR UPDATE` trigger on `organizations`
+(`force_org_owner_profile_id`) recomputes and overwrites the column on every
+write regardless of what was supplied, so even a future "Add account" flow
+(7.2b) or an ad hoc SQL edit can't desync it; a companion `AFTER` trigger on
+`account_assignments` propagates a recompute whenever an assignment changes. A
+partial unique index enforces at most one primary person per (account, role).
+Backfilled once from any pre-existing `owner_profile_id` value (the 7.1 Prism
+fixture) into a primary EDL assignment row. Verified (rls_test.sql): a direct
+`UPDATE organizations SET owner_profile_id = …` is silently corrected back to
+the real computed value.
+
+## D-071 — projects.fdes/edl_profile_id dropped via a GUARDED check, not name-matching (2026-10-08)
+Supersedes the original 7.1-era plan to migrate these by fuzzy-matching `fdes`
+text names to `profiles.full_name`. Migrations run before seed files in
+`db reset`, and neither local nor cloud had any pre-existing `projects` row
+predating this migration (cloud's `projects` table was empty — verified
+read-only via `supabase db dump --data-only` before pushing: the "Data for
+Name: projects" section had no `INSERT` following it), so there was never
+real data to match against. Instead: a one-time guarded check
+(`count(*) where fdes is not null or edl_profile_id is not null`) that
+`RAISE EXCEPTION`s if it finds ANY non-null data, otherwise proceeds straight
+to creating `project_members` and dropping both columns. Fails loudly instead
+of silently discarding or guessing. `project_members` is now the sole source
+of truth for who's on a project; `supabase/demo/phase7_demo_data.sql` and
+`seed.sql` updated accordingly (the cloud demo script now writes a
+`project_members` row using the dynamically-resolved admin id, same pattern as
+before, never referencing the new fictional local-only people).
+
+## D-072 — generic audit trigger covers id-less tables; saved_views is excluded (2026-10-08)
+`team_members`' natural key is `(team_id, profile_id)`, but it was given a
+surrogate `id uuid` anyway (+ a `unique(team_id, profile_id)` constraint) so
+the 7.1 generic audit trigger's `to_jsonb(...)->>'id'` extraction populates a
+real `record_id` like every other audited table, rather than degrading to
+`sync_state`'s null-record_id case. Verified directly (rls_test.sql): a
+`team_members` insert produces an `audit_log` row with a non-null `record_id`.
+`saved_views` is the one new 7.2a table deliberately NOT given the trigger —
+it's personal UI preference (which filters/sort/columns someone likes), not a
+CS record, and auditing it would only add noise with no value.
+
+## D-073 — scope semantics: Mine / My team / Everyone / person / team_id (2026-10-08)
+Codifies product-overview.md § 12. **Mine** = the viewer's own
+`account_assignments`/`project_members` rows. **My team** = the union of every
+team the viewer leads or belongs to, each such team's FULL membership (members
++ lead), plus the viewer's own direct assignments — a person in two teams (the
+fixture's Grace Mwangi) sees the union across both. **Everyone** = no filter
+(null). **A specific person** / **a specific team** = an explicit other
+target, via `person_account_ids(profile)`/`team_account_ids(team)` (distinct
+from the viewer-implicit `my_team_account_ids()` used for "My team" itself).
+Critically: **scope is focus, never access control** — every super admin can
+already see every account/project via the unchanged blanket
+`is_super_admin()` RLS on `organizations`/`projects`; these 8 SECURITY DEFINER
+functions (`my_*`, `team_*`, `person_*`, `my_team_*`, × account/project) only
+return an id list the frontend filters a list by. Verified (rls_test.sql):
+Grace's `my_team_account_ids()` returns both Prism (via Enterprise Pod) and
+Meridian (via SMB Pod); Dana (no team, no assignments) gets the empty set.
+
+## D-074 — default scope resolution order (2026-10-08)
+Every scoped list resolves its initial scope as: **(1)** the person's saved
+default view for that page (`saved_views.is_default`) → **(2)** their title's
+default (FDE → Mine, EDL/TA → My team, Head of CS → Everyone) → **(3)**
+Everyone when `title` is null — so an untitled super admin (anyone invited
+before 7.2a, or via the existing Super Admins page without a title set) never
+opens to a confusing empty screen. Implemented in `useScope(page)`; the
+explicit choice a person then makes is persisted per-page in `localStorage`
+and wins over the default on their next visit to that same page.
+
+## D-075 — Product direction: the Refold CS Hub, personal workspaces (2026-10-08)
+Every CS person logs into their own book of business, not a generic list:
+Head of CS → EDL/TA team leads → FDEs, with accounts and projects assigned to
+linked people (not text names) via `account_assignments`/`project_members`.
+Standups are per team — there is no single standup; each EDL/TA runs their
+own, the Head of CS can open any and sees a cross-team roll-up. Gamification
+(Phase 10) is deliberately deferred and needs NO new tracking: it's computed
+later from the audit log (actor + timestamp already recorded on every change)
+plus approvals turnaround and data freshness already captured by provenance.
+Ref: `docs/product-overview.md` § 2 (who uses it), § 12 (personal workspaces),
+§ 13 (gamification).
+
+## D-076 — 7.2 split into 7.2a (this session) and 7.2b (next) (2026-10-08)
+Supersedes the single-7.2 plan from the previous session (God-mode workspace:
+Portfolio board + Account 360 + coverage view in one go). **7.2a** (this
+session): titles, teams, account/project assignments, saved views, scope
+helpers, and the Team Structure screen — the people-and-permissions
+foundation. **7.2b** (next): Portfolio board + coverage tab + Account 360 (6
+tabs) + Add account (no invite) + inline add/edit/delete + Mark verified +
+source badges — every list screen built on 7.2a's scope switcher and saved
+views from the start, rather than retrofitted later. The build sequence also
+gained a block between 7.3 and 7.4: Home + per-team Standups + Team (FDE
+performance), pulled ahead of Phase 8 since the team structure is central to
+daily use (`docs/product-overview.md` § 9).
+
+## D-077 — Project-members assignment UI deferred to 7.2b (2026-10-08)
+`project_members` (the table, RLS, audit trigger, and the `my_project_ids`/
+`team_project_ids`/`person_project_ids`/`my_team_project_ids` scope helpers)
+ships this session, fully functional and tested — but the UI to assign people
+to a specific project is cut from the Team Structure screen. Its natural home
+is the Projects tab of 7.2b's Account 360 (where a project is already a
+first-class card with its own context), not a standalone picker bolted onto
+an otherwise account-centric screen. Local fixtures demonstrate project
+membership directly via SQL (seed_team_links.sql) in the meantime.
+
+## D-078 — audit_log regression found during 7.2a verification: service_role grant + stale column names (2026-10-08)
+While testing `set_title`'s audit trail, found that D-064's revoke (last
+session) had removed `insert` on `audit_log` from `service_role`, not just
+`authenticated` — on the stated assumption that only the generic SECURITY
+DEFINER trigger writes the table. That assumption was wrong: the provisioning
+Edge Function's manual `writeAudit()` helper is still the audit path for
+tables that intentionally don't get the generic trigger (profiles,
+organizations, sub_roles, invitations — D-063), and it writes via the
+service-role REST client, which is still subject to table grants regardless
+of RLS bypass. This silently broke every manual audit write — `provision_org`,
+`invite_super_admin`, `assign_sub_role`, `set_title`, `set_user_status`,
+`accept_invite`, all three `owner_*` actions — in both local and (since D-064
+shipped to cloud last session) production, with no surfaced error. Fixed by
+migration `20261008000008_audit_log_service_role_insert.sql`
+(`grant insert on audit_log to service_role`); `authenticated` stays revoked
+(that boundary was correct) and update/delete stay revoked for both roles
+(append-only). A second, independent bug surfaced in the same check:
+`writeAudit()` was still writing the pre-7.1 `target_type`/`target_id`
+columns, never updated when 7.1 introduced `record_table`/`record_id` (D-064's
+backfill only touched existing rows) — so even once the grant was fixed,
+every new manual audit row left `record_table`/`record_id` null, which also
+silently breaks `audit_log_select`'s owner-visibility filter (matches on
+`record_table`). Fixed in the same pass: `writeAudit()` now writes
+`record_table`/`record_id`, mapping the singular `targetType` call-site values
+('profile', 'organization') to the plural table names the generic trigger and
+RLS policy expect ('profiles', 'organizations'). Verified end-to-end after
+both fixes: a fresh `db reset`, full `rls_test.sql` (all 3 blocks), a 6-check
+`set_title` script (AAL1/role/validation rejections, happy path, and the
+previously-failing audit-row check — now passing with a real row), and
+`smoke-login.ts` (all 3 roles) all green. Both fixes pushed to cloud as part
+of this session's migration set, ahead of code.
+
 # Parked
 
 Out-of-scope ideas land here instead of derailing the current prompt block.
@@ -702,3 +855,6 @@ Format: one line each, with the session it came from.
   demo-user passwords or keep the hosted preview URL unlisted (known demo creds
   are publicly reachable once deployed); review/disable demo logins before wider
   sharing.
+- Custom SMTP before inviting the real team (Session 28, 7.2a): Supabase's
+  built-in email sender is capped at 2 emails/hour, too low for onboarding a
+  real CS team via the invite flow.

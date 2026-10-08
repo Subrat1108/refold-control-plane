@@ -11,11 +11,13 @@ const STATUS_STYLES: Record<string, string> = {
   suspended: 'bg-amber-100 text-amber-800',
   degraded: 'bg-amber-100 text-amber-800',
   pending: 'bg-amber-100 text-amber-800',
+  caution: 'bg-amber-100 text-amber-800', // 7.1 org_health
   paused: 'bg-gray-100 text-gray-700',
   decommissioned: 'bg-gray-200 text-gray-600',
   churned: 'bg-red-100 text-red-800',
   down: 'bg-red-100 text-red-800',
   failed: 'bg-red-100 text-red-800',
+  risk: 'bg-red-100 text-red-800', // 7.1 org_health
 }
 
 interface StatusBadgeProps {

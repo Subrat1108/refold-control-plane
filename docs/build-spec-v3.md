@@ -252,8 +252,34 @@ trigger attached.
 - `audit_log` (extend): `on_behalf_of`, `record_table`, `record_id`,
   `before jsonb`, `after jsonb`, `proposal_id`; written by a generic trigger.
 
+**People, teams and views (block 7.2a):**
+
+- `profiles` (extend): `title` (`head_of_cs` | `edl` | `ta` | `fde`), editable
+  by super admins.
+- `teams`: name, `lead_profile_id` (an EDL or TA). `team_members`: team,
+  profile (a person may be in more than one team).
+- `account_assignments`: org, profile, role (`edl` | `ta` | `fde`), primary
+  flag. Replaces the single `organizations.owner_profile_id` as the source of
+  "my accounts" (keep the column as the primary owner, kept in sync, or retire it
+  — decide in the 7.2a plan).
+- `project_members`: project, profile, role (`edl` | `fde` | `ta`). Replaces
+  `projects.fdes text[]` and `projects.edl_profile_id` (migrate any existing
+  values).
+- `saved_views`: owner profile, name, page, scope
+  (`mine` | `team` | `everyone` | `person` | `team_id`), scope target, filters
+  jsonb, sort, columns, `is_default`, pinned.
+- Scope helpers (SQL functions): `my_account_ids()`, `team_account_ids(team)`,
+  `person_account_ids(profile)` — used by every list query so "Mine / My team /
+  Everyone / person" behave identically everywhere.
+- Every new table: super-admin RLS + AAL2 writes + audit trigger, same as 7.1.
+
+See also docs/product-overview.md §12 (personal workspaces) and §13
+(gamification — no new tracking needed, the audit log already records actor +
+time for every change).
+
 Phase 8 adds: `contacts`, `pocs` (+ success criteria), `onboarding_templates`,
-`onboarding_plans`, `onboarding_tasks`, renewals.
+`onboarding_plans`, `onboarding_tasks`, renewals. The team phase adds
+`standups` (per team per date), `standup_entries`, `action_items`.
 
 ---
 
@@ -262,8 +288,10 @@ Phase 8 adds: `contacts`, `pocs` (+ success criteria), `onboarding_templates`,
 | Block | Scope |
 |---|---|
 | **7.1 Data model v3** | Migrations for §5 (not ingest_tokens), lookup seeds, metric catalog seed, RLS, audit trigger, provenance columns, TS types, fictional local fixtures. No UI. |
-| **7.2 God-mode workspace** | Portfolio board, Account 360 (projects, milestones, risks, escalations, tickets, engagements, metrics) with inline add / edit / delete, source badges, last-verified; coverage view. |
-| **7.3 Approvals inbox + audit log screen** | §3.1 and §3.2. |
+| **7.2a People, teams, assignments, scoped views** | Titles, teams, team members, account assignments, project members (migrating 7.1's text fields), saved views, scope helper functions; Admin → Team structure screen to set titles, teams and assignments; scope switcher + saved-view component wired into one existing list as proof. |
+| **7.2b Portfolio + Account 360** | Portfolio board + coverage tab, Account 360 (6 tabs), Add account (no invite), inline add / edit / delete, Mark verified, source badges, last-verified — every list using the scope switcher and saved views from 7.2a. |
+| **7.3 Approvals inbox + audit log screen** | §3.1 and §3.2, scoped (Mine / My team / Everyone). |
+| **7.3+ Home + per-team Standups + Team** | Personal Home in default scope; standups per team (lead runs theirs; Head of CS sees all + roll-up); Team/FDE performance (Head of CS → all, lead → team, FDE → own). |
 | **7.4 Ingest API** | §4.3 endpoint, tokens, validation against schemas, account alias resolution, dedupe. |
 | **7.5 CS Sync Skill + runner + Refresh** | `skills/cs-sync`, Edge Function runner calling Claude with the Refold Server URL, `sync_state`, Refresh buttons, daily pg_cron job, run logs, kill switch. |
 | **7.6 Chat agent** | §4.5. |
@@ -297,6 +325,10 @@ sync (new record types added to the CS Sync Skill).
    one code path.
 6. "Project" = delivery workstream, "engagement" = touchpoint.
 7. Old 6.5 → 7.5 (Refold platform metrics via MCP), old 6.6 → 7.7.
+8. Team structure: Head of CS → EDL/TA leads → FDEs; accounts and projects are
+   assigned to linked people; every list has a Mine / My team / Everyone /
+   person scope and saved views; standups are per team. Gamification comes
+   later and is computed from the audit log.
 
 ## 9. Open questions (non-blocking for 7.1)
 

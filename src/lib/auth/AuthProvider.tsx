@@ -45,7 +45,7 @@ async function loadProfile(userId: string): Promise<Profile | null> {
     // (the one we want here) and organizations.owner_profile_id (the EDL). The
     // `!fkey` hint only disambiguates which relationship PostgREST follows; the
     // response key stays `organizations` either way (verified empirically).
-    .select('id, email, full_name, org_id, account_type, role, sub_role_id, status, organizations!profiles_org_id_fkey(name, deployment_type, external_ref)')
+    .select('id, email, full_name, org_id, account_type, role, sub_role_id, status, title, organizations!profiles_org_id_fkey(name, deployment_type, external_ref)')
     .eq('id', userId)
     .single()
   if (error || !data) return null
@@ -61,6 +61,7 @@ async function loadProfile(userId: string): Promise<Profile | null> {
     role: row.role,
     subRoleId: row.sub_role_id,
     status: row.status,
+    title: row.title ?? null,
     org: org ? { name: org.name, deploymentType: org.deployment_type, externalRef: org.external_ref } : null,
   }
 }

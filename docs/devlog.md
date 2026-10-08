@@ -16,6 +16,66 @@ Template:
 
 ---
 
+## Session 28 — 2026-10-08 — 7.2a: people, teams, assignments, scoped views
+**Built:** the people-and-permissions foundation 7.2b builds on (build-spec-v3
+§ 5 "People, teams and views"; docs/product-overview.md). Supersedes the
+previous session's single-7.2 plan — now split 7.2a (this)/7.2b (D-076).
+- **8 append-only migrations:** enums (profile_title/assignment_role/
+  saved_view_scope); `profiles.title` (super_admin only, CHECK-constrained);
+  `teams`/`team_members` (surrogate id on team_members so the generic audit
+  trigger populates a real record_id, D-072); `account_assignments` +
+  `organizations.owner_profile_id` turned into a DERIVED column (primary EDL →
+  else primary TA → else NULL) enforced by a force-overwrite trigger, not
+  convention (D-070); `project_members` replacing `projects.fdes`/
+  `edl_profile_id` via a GUARDED DROP (fails loudly if any data exists, rather
+  than fuzzy name-matching — D-071); `saved_views` (owner-only RLS, no audit
+  trigger — personal preferences, D-072); 8 scope-helper SECURITY DEFINER
+  functions (my/team/person/my_team × account/project) — focus only, never
+  access control (D-073); an 8th migration hotfixing an `audit_log` grant
+  regression found during this session's own verification (D-078).
+- **Edge Function:** new `set_title` super_admin+AAL2 action (D-069), same
+  shape as `assign_sub_role`/`set_user_status`; `writeAudit()` fixed to write
+  `record_table`/`record_id` (was still writing the pre-7.1 column names,
+  D-078); redeployed.
+- **UI:** `/team-structure` (super_admin nav item) — People (set title),
+  Teams (create/edit/members), Accounts (assign EDL/TA/FDE + primary). New
+  `ScopeSwitcher` + `SavedViewsMenu` components + `useScope(page)` hook
+  (localStorage-persisted, default-resolution chain D-074) wired into the
+  Accounts list as the proof surface. Project-members UI deferred to 7.2b's
+  Account 360 (D-077).
+- **Types:** `Profile`/`ManagedUser` gained `title`; new `Team`/`TeamMember`/
+  `AccountAssignment`/`ProjectMember`/`SavedView` + composed `TeamSummary`/
+  `AccountAssignmentRow`. `Project.fdes`/`edlProfileId` removed.
+- **Fixtures:** 6 fictional CS people (local only, full login-capable — D-069),
+  2 teams (one FDE in both, exercising the multi-team union), assignments
+  across both fictional accounts. Cloud demo-data script updated to write
+  `project_members` instead of the dropped columns.
+**Verified (honest):** read-only `supabase db dump --data-only` against cloud
+BEFORE pushing confirmed `projects` had 0 rows (no `INSERT` in its data
+section) — the guarded drop was safe. A throwaway `set_title` script
+(not committed) first caught the audit row silently missing — traced to
+`service_role` having lost `insert` on `audit_log` (D-064, last session) and,
+once that was fixed, to `writeAudit()` still writing dead pre-7.1 column
+names — both fixed this session (D-078) and re-verified clean. Final
+verification, all against a fresh `db reset`: `rls_test.sql` all 3 blocks
+PASS (title not self-editable; owner_profile_id force-override proven
+directly; team_members' surrogate-id audit trail proven; saved_views private
+per owner including a blocked cross-owner insert; all 8 scope helpers return
+the exact expected sets — Reza/Tomás/Owen/Grace/Dana, including the
+multi-team union and the empty-set case; customer roles see zero rows across
+all 5 new tables); the `set_title` script's full 6 checks PASS (AAL1/
+non-super-admin/invalid-title/non-super_admin-target rejections, happy path,
+and the audit row — now present); `scripts/smoke-login.ts` all 3 roles PASS.
+`db push --dry-run` matched exactly the 8 migrations (7 planned + the
+hotfix); real push applied cleanly; `migration list` confirmed 25/25
+local=remote; `functions deploy provisioning` succeeded.
+**Deviations:** found and fixed a real regression from last session (D-064)
+during this session's own verification — see D-078. No deviation from the
+approved (amended) 7.2a plan itself.
+**Decisions:** D-069–D-078
+**Next:** 7.2b — Portfolio + Account 360.
+**Issues:** —
+
 ## Session 27 — 2026-10-07 — HOTFIX: production login broken (PGRST201)
 **Symptom:** live site sign-in succeeded (token returned) but the app stayed
 on `/login` for everyone — the profile-load query failed with `300 PGRST201`

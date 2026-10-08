@@ -363,6 +363,7 @@ export interface Profile {
   subRoleId: string | null
   status: UserStatus
   org: ProfileOrg | null
+  title: ProfileTitle | null // 7.2a — super_admin only; drives useScope's default
 }
 
 // ── RBAC / provisioning (Phase 6.4 — matches the Postgres schema § 4) ──────────
@@ -389,6 +390,7 @@ export interface ManagedUser {
   subRoleId: string | null
   subRoleName: string | null
   createdAt: string
+  title: ProfileTitle | null // 7.2a — used by the Team Structure screen
 }
 
 export interface Invitation {
@@ -479,8 +481,6 @@ export interface Project extends Provenance {
   liveTenants: number
   devUatTenants: number
   goals: string[]
-  fdes: string[]
-  edlProfileId: string | null
   issueTrackerUrl: string | null
   createdAt: string
 }
@@ -635,4 +635,81 @@ export interface SyncRun {
   status: SyncRunStatus
   counts: Record<string, unknown> | null
   cost: number | null
+}
+
+// ── Phase 7.2a — people, teams, assignments, scoped views (build-spec-v3 § 5;
+// product-overview.md § 12). Backend + Team Structure screen this session —
+// Portfolio/Account 360 (7.2b) wire these into their own list views next.
+
+export type ProfileTitle = 'head_of_cs' | 'edl' | 'ta' | 'fde'
+export type AssignmentRole = 'edl' | 'ta' | 'fde' // shared by account_assignments and project_members
+export type SavedViewScope = 'mine' | 'team' | 'everyone' | 'person' | 'team_id'
+
+export interface Team {
+  id: string
+  name: string
+  leadProfileId: string | null
+  createdAt: string
+}
+
+export interface TeamMember {
+  id: string
+  teamId: string
+  profileId: string
+  createdAt: string
+}
+
+export interface AccountAssignment {
+  id: string
+  orgId: string
+  profileId: string
+  role: AssignmentRole
+  isPrimary: boolean
+  createdAt: string
+}
+
+export interface ProjectMember {
+  id: string
+  projectId: string
+  profileId: string
+  role: AssignmentRole
+  createdAt: string
+}
+
+// Composed shape for the Team Structure screen's Teams list (joins the lead's
+// name + a member count), mirroring how ManagedUser/Invitation already join
+// display fields rather than forcing the UI to do a second lookup.
+export interface TeamSummary {
+  id: string
+  name: string
+  leadProfileId: string | null
+  leadName: string | null
+  memberCount: number
+  createdAt: string
+}
+
+// Composed shape for one row of an account's assignment list (joins the
+// assigned person's name for display).
+export interface AccountAssignmentRow {
+  id: string
+  orgId: string
+  profileId: string
+  profileName: string | null
+  role: AssignmentRole
+  isPrimary: boolean
+}
+
+export interface SavedView {
+  id: string
+  ownerProfileId: string
+  name: string
+  page: string
+  scope: SavedViewScope
+  scopeTarget: string | null // profiles.id when scope='person'; teams.id when scope='team_id'
+  filters: Record<string, unknown>
+  sort: Record<string, unknown> | null
+  columns: string[] | null
+  isDefault: boolean
+  pinned: boolean
+  createdAt: string
 }

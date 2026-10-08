@@ -1,0 +1,23 @@
+-- Phase 7.2a hotfix — restore service_role INSERT on audit_log.
+--
+-- 20261007000007_audit_log_extend.sql (D-064) revoked insert/update/delete on
+-- audit_log from both authenticated and service_role, on the stated assumption
+-- that "the ONLY writer of audit_log is the generic SECURITY DEFINER trigger".
+-- That assumption was wrong: the provisioning Edge Function's manual
+-- writeAudit() helper is still the audit path for tables that intentionally do
+-- NOT get the generic trigger (profiles, organizations, sub_roles,
+-- invitations — see D-063), and it writes via the service-role REST client,
+-- which is still subject to table GRANTs regardless of RLS bypass. The revoke
+-- silently broke every manual audit write (provision_org, invite_super_admin,
+-- assign_sub_role, set_title, set_user_status, accept_invite, owner_*) in both
+-- local and cloud, with no visible error.
+--
+-- The generic trigger is unaffected either way: a SECURITY DEFINER trigger
+-- function executes with its owner's (postgres) privileges, not the invoking
+-- role's, so it never needed service_role's own grant.
+--
+-- Fix: re-grant INSERT on audit_log to service_role only. authenticated stays
+-- revoked (that boundary — stopping client-side forgery — was correct) and
+-- UPDATE/DELETE stay revoked for both roles (audit_log remains append-only).
+
+grant insert on public.audit_log to service_role;

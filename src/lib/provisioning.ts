@@ -3,6 +3,7 @@
 // (D-025/D-029). The browser only ever sends the user's bearer (attached by
 // supabase.functions.invoke) plus an action payload.
 import { supabase } from '@/lib/supabase'
+import type { ProfileTitle } from '@/types'
 
 async function invoke<T>(body: Record<string, unknown>): Promise<T> {
   const { data, error } = await supabase.functions.invoke('provisioning', {
@@ -57,6 +58,12 @@ export function assignSubRole(userId: string, subRoleId: string | null) {
 
 export function setUserStatus(userId: string, status: 'active' | 'disabled') {
   return invoke<{ ok: true }>({ action: 'set_user_status', userId, status })
+}
+
+// 7.2a — profiles.title is only writable via this action (D-043 column-grant
+// lockdown blocks any direct client UPDATE on it).
+export function setTitle(userId: string, title: ProfileTitle | null) {
+  return invoke<{ ok: true }>({ action: 'set_title', userId, title })
 }
 
 export function acceptInvite() {

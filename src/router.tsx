@@ -17,6 +17,7 @@ import { NamespaceDetailPage } from '@/pages/NamespaceDetailPage'
 import { NamespaceOrgDetailPage } from '@/pages/NamespaceOrgDetailPage'
 import { FeatureFlagsPage } from '@/pages/FeatureFlagsPage'
 import { SuperAdminsPage } from '@/pages/SuperAdminsPage'
+import { TeamStructurePage } from '@/pages/TeamStructurePage'
 import { OrgUsersPage } from '@/pages/OrgUsersPage'
 import { DashboardPage } from '@/pages/DashboardPage'
 import { SettingsPage } from '@/pages/SettingsPage'
@@ -101,6 +102,11 @@ export const router = createBrowserRouter([
       {
         path: 'admin-users',
         element: <RouteGuard allowedRoles={['super_admin']}><SuperAdminsPage /></RouteGuard>,
+      },
+      {
+        // 7.2a — people, teams, assignments.
+        path: 'team-structure',
+        element: <RouteGuard allowedRoles={['super_admin']}><TeamStructurePage /></RouteGuard>,
       },
       {
         path: 'dashboard',

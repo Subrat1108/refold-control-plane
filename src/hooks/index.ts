@@ -31,3 +31,27 @@ export {
   updateOrgSubRole,
 } from './useProvisioning'
 export type { OrgSubRoleInput } from './useProvisioning'
+export {
+  useTeams,
+  createTeam,
+  updateTeam,
+  deleteTeam,
+  useTeamMemberIds,
+  addTeamMember,
+  removeTeamMember,
+  useAssignableAccounts,
+  useAccountAssignments,
+  addAccountAssignment,
+  setAccountAssignmentPrimary,
+  removeAccountAssignment,
+  resolveScopeAccountIds,
+  useScopedAccountIds,
+  useSavedViews,
+  saveView,
+  setSavedViewDefault,
+  setSavedViewPinned,
+  renameSavedView,
+  deleteSavedView,
+} from './useTeamStructure'
+export type { AccountListRow, SaveViewInput } from './useTeamStructure'
+export { useScope } from './useScope'
