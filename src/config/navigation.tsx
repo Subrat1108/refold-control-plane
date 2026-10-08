@@ -1,4 +1,4 @@
-import { LayoutDashboard, Users, Server, Flag, Settings, Layers, ShieldCheck, UsersRound, UserCog } from 'lucide-react'
+import { LayoutDashboard, Users, Server, Flag, Settings, Layers, ShieldCheck, UsersRound, UserCog, Briefcase } from 'lucide-react'
 import type { UserRole } from '@/types'
 
 export interface NavItem {
@@ -13,6 +13,7 @@ export interface NavItem {
 export const NAV_BY_ROLE: Record<UserRole, NavItem[]> = {
   super_admin: [
     { to: '/overview', label: 'Overview', icon: <LayoutDashboard size={16} /> },
+    { to: '/portfolio', label: 'Portfolio', icon: <Briefcase size={16} /> },
     { to: '/cloud-customers', label: 'Cloud Customers', icon: <Users size={16} /> },
     { to: '/onprem-customers', label: 'On-Prem Customers', icon: <Server size={16} /> },
     { to: '/feature-flags', label: 'Feature Flags', icon: <Flag size={16} /> },

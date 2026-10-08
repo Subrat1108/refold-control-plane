@@ -16,6 +16,65 @@ Template:
 
 ---
 
+## Session 29 — 2026-10-08 — 7.2b: Portfolio + Account 360
+**Built:** the two screens a CS person actually works in day to day
+(build-spec-v3 § 6; product-overview § 5.2–5.3), on top of 7.1's schema and
+7.2a's scope/saved-views plumbing.
+- **Portfolio** (`/portfolio`): Board tab is the account list — grouped by
+  segment, filterable (segment/health/lifecycle), `ScopeSwitcher` +
+  `SavedViewsMenu` wired in, each row showing health/lifecycle/deployment/
+  owner/open-escalations/next-milestone/last-engagement/coverage%. "Add
+  account" (no invite, direct `organizations` insert). Key milestones +
+  Recommendations+impact sections (`portfolio_notes`). Coverage tab: a
+  7-section (projects/milestones/risks/escalations/tickets/engagements/
+  metrics) current/stale/missing matrix per account.
+- **Account 360** (`/accounts/:orgId`): header + 6 tabs — Overview (health
+  with reason, mark verified, open escalations, next milestones, recent
+  activity from `audit_log`), Projects (project cards with nested
+  milestones/accomplishments/risks/asks, inline add/remove, an EDL/FDE/TA
+  assignment slide-over fulfilling 7.2a's deferred `project_members` UI —
+  D-077), Escalations (add/resolve), Tickets (manual add — sync is 7.5),
+  Engagements (log/timeline), Metrics (enter value per period, grouped by
+  category). Every row carries a `SourceBadge` (source + "verified Nd ago").
+- **Schema:** one migration — `organizations` gained `health_reason`,
+  `verified_at`, `updated_by` (the one real gap found planning this block;
+  every other table this screen touches already shipped in 7.1). New hook
+  file `usePortfolio.ts` (~40 functions: reads + direct-write CRUD across
+  accounts/projects/milestones/accomplishments/risks/asks/escalations/
+  tickets/engagements/metric_values/portfolio_notes/project_members), new
+  `SourceBadge` component, nav + router entries.
+**Verified:** fresh `db reset`; `rls_test.sql` all 4 blocks PASS (new block
+covers the `organizations` AAL2 gate on the 3 new columns + customer-role
+zero-rows on account-record tables not yet individually asserted —
+engagements/metric_values/portfolio_notes/milestones/accomplishments/asks);
+`smoke-login.ts` all 3 roles PASS; typecheck/lint (0 errors)/build green. A
+throwaway script exercised every write path in `usePortfolio.ts` against the
+real AAL2-protected API end to end (account → project → project_member →
+milestone → accomplishment → risk → ask → escalation + resolve → ticket →
+engagement → metric value → portfolio note), confirmed the generic audit
+trigger fires on the new writes, and confirmed the `organizations` columns
+round-trip correctly. **No browser-automation tool is available in this
+environment, so the UI itself was not click-tested end to end** — flagged
+explicitly rather than claimed; everything above the rendering layer (RLS,
+schema, the exact queries/mutations the components call) is verified
+directly against the real API.
+Cloud: `db push --dry-run` matched exactly 1 migration; `migration list`
+26/26 local=remote; no Edge Function changes this block, no redeploy needed.
+**Deviations:** two scope calls not spelled out in the spec, both logged as
+decisions rather than silently assumed — Portfolio's board *is* the account
+list (no separate "Accounts" screen this block), and the cross-account
+"Projects" nav item (product-overview § 5.6) is deferred, since it's not in
+build-spec-v3's 7.2b bullet list and Account 360's Projects tab covers
+per-account work already.
+**Decisions:** D-079
+**Next:** 7.3 — Approvals inbox + audit log screen.
+**Issues:** no browser-based manual QA this block (tooling gap — see
+Verified, above). "Pending approval" never shows in the coverage matrix yet
+(needs 7.3's proposals/approvals data). Standalone Projects screen and a
+distinct "Accounts" nav item remain deferred (D-079).
+
+---
+
 ## Session 28 — 2026-10-08 — 7.2a: people, teams, assignments, scoped views
 **Built:** the people-and-permissions foundation 7.2b builds on (build-spec-v3
 § 5 "People, teams and views"; docs/product-overview.md). Supersedes the

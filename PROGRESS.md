@@ -37,7 +37,7 @@
 
 - [x] 7.1 — Data model v3: migrations (enums, segments/metric_definitions, organizations extend, proposals/sync_state/sync_runs, projects+subtables, account records), RLS, generic audit trigger, provenance/dedupe, TS types, fictional local fixtures (D-055–D-065)
 - [x] 7.2a — People, teams, assignments, scoped views: titles, teams/team_members, account_assignments (+owner_profile_id derivation), project_members (replaces fdes/edl_profile_id), saved_views, scope helper functions, Team Structure screen (People/Teams/Accounts), ScopeSwitcher + SavedViewsMenu proof-wired into the Accounts list (D-069–D-077)
-- [ ] 7.2b — Portfolio + Account 360: Portfolio board + coverage tab, Account 360 (6 tabs), Add account (no invite), inline add/edit/delete, Mark verified, source badges — every list using 7.2a's scope switcher + saved views
+- [x] 7.2b — Portfolio + Account 360: Portfolio board (the account list, grouped by segment) + coverage tab, Account 360 (6 tabs: Overview/Projects/Escalations/Tickets/Engagements/Metrics), Add account (no invite), inline add/edit/delete, Mark verified, source badges — ScopeSwitcher + saved views wired into Portfolio (D-079)
 - [ ] 7.3 — Approvals inbox + audit log screen (scoped: Mine/My team/Everyone)
 - [ ] Home + per-team Standups + Team (FDE performance) — pulled ahead of Phase 8 (product-overview § 9)
 - [ ] 7.4 — Ingest API
@@ -74,6 +74,38 @@ Points, streaks, badges, team leaderboards — computed from the audit log + pro
 
 ## Last session
 (See docs/devlog.md for full session history — this is just the pointer.)
+
+Date: 2026-10-08 (later same day)
+Completed: 7.2b — Portfolio + Account 360. Portfolio board (grouped by
+segment, filters, Add account with no invite, key milestones/recommendations)
++ coverage tab (7-section current/stale/missing matrix); Account 360 with 6
+tabs (Overview incl. change-health-with-reason + mark-verified; Projects with
+nested milestones/accomplishments/risks/asks + the project_members
+assignment UI deferred from 7.2a; Escalations; Tickets; Engagements; Metrics),
+every row carrying a SourceBadge. One migration (organizations gained
+health_reason/verified_at/updated_by — the one real schema gap found during
+planning; D-079). Everything else (projects, milestones, escalations,
+tickets, engagements, metric_values, portfolio_notes) was already-shipped
+7.1 schema — this block is UI + hooks only.
+Verified: fresh db reset; rls_test.sql all 4 blocks PASS (new 7.2b block
+checks the organizations AAL2 gate on the new columns + customer-role
+zero-rows on the account-record tables not yet individually asserted);
+smoke-login.ts all 3 roles PASS; typecheck/lint (0 errors)/build all green;
+a throwaway script exercised every CRUD path in usePortfolio.ts against the
+real AAL2-protected API (account/project/milestone/accomplishment/risk/
+ask/escalation/ticket/engagement/metric-value/portfolio-note writes, plus
+confirming the generic audit trigger fires) — all passed. No browser-
+automation tool is available in this environment, so the UI itself was not
+click-tested end-to-end; this is flagged rather than claimed.
+Cloud: db push --dry-run matched exactly 1 migration; migration list 26/26
+local=remote; no Edge Function changes this block, so no redeploy needed.
+Decisions made: D-079
+Known issues: cross-account "Projects" screen and the "Accounts" nav item
+(distinct from Portfolio's board) are deferred — see D-079. "Pending
+approval" never appears in the coverage matrix yet (needs 7.3's proposals).
+No interactive browser verification (tooling gap, not a known defect).
+
+---
 
 Date: 2026-10-08
 Completed: 7.2a — people, teams, assignments, scoped views (titles; teams/

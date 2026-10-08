@@ -434,3 +434,51 @@ begin
 
   raise notice 'ALL PHASE 7.2a RLS + SCOPE TESTS PASSED';
 end $$;
+
+-- ── Phase 7.2b — Portfolio + Account 360 ──────────────────────────────────
+do $$
+declare
+  n int;
+  v_health text;
+  v_reason text;
+  v_verified timestamptz;
+begin
+  -- organizations' 3 new columns (health_reason, verified_at, updated_by)
+  -- respect the EXISTING organizations_update policy — super_admin + AAL2.
+  -- UPDATE's USING clause just filters rows (no exception on a non-match,
+  -- unlike INSERT's WITH CHECK) — so an AAL1 write against this policy
+  -- silently affects 0 rows rather than raising. Assert that instead.
+  set local role authenticated;
+  set local request.jwt.claims = '{"sub":"00000000-0000-0000-0000-000000001001","aal":"aal1"}';
+  update public.organizations set health_reason = 'should fail' where id = '00000000-0000-0000-0000-000000000002';
+  select health_reason into v_reason from public.organizations where id = '00000000-0000-0000-0000-000000000002';
+  assert v_reason is distinct from 'should fail', 'super_admin at AAL1 must NOT be able to set health_reason';
+  reset role;
+
+  set local role authenticated;
+  set local request.jwt.claims = '{"sub":"00000000-0000-0000-0000-000000001001","aal":"aal2"}';
+  update public.organizations
+    set health = 'caution', health_reason = 'RLS test reason', verified_at = now(), updated_by = '00000000-0000-0000-0000-000000001001'
+    where id = '00000000-0000-0000-0000-000000000002';
+  select health, health_reason, verified_at into v_health, v_reason, v_verified from public.organizations where id = '00000000-0000-0000-0000-000000000002';
+  assert v_health = 'caution', 'health must have been updated';
+  assert v_reason = 'RLS test reason', 'health_reason must have been updated';
+  assert v_verified is not null, 'verified_at must move on mark-verified';
+  -- restore (this transaction rolls back anyway, but keep intent explicit)
+  update public.organizations set health = 'active', health_reason = null, verified_at = null, updated_by = null where id = '00000000-0000-0000-0000-000000000002';
+  reset role;
+
+  -- customer roles see NONE of the account-record tables not yet individually
+  -- asserted (projects/tickets/escalations/risks already covered above).
+  set local role authenticated;
+  set local request.jwt.claims = '{"sub":"00000000-0000-0000-0000-000000001002","aal":"aal2"}'; -- Prism owner
+  select count(*) into n from public.engagements; assert n = 0, format('Prism owner must see 0 engagements, saw %s', n);
+  select count(*) into n from public.metric_values; assert n = 0, format('Prism owner must see 0 metric_values, saw %s', n);
+  select count(*) into n from public.portfolio_notes; assert n = 0, format('Prism owner must see 0 portfolio_notes, saw %s', n);
+  select count(*) into n from public.milestones; assert n = 0, format('Prism owner must see 0 milestones, saw %s', n);
+  select count(*) into n from public.accomplishments; assert n = 0, format('Prism owner must see 0 accomplishments, saw %s', n);
+  select count(*) into n from public.asks; assert n = 0, format('Prism owner must see 0 asks, saw %s', n);
+  reset role;
+
+  raise notice 'ALL PHASE 7.2b RLS TESTS PASSED';
+end $$;

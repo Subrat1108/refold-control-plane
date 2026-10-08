@@ -455,6 +455,9 @@ export interface Account {
   ownerProfileId: string | null
   dataAccessMode: DataAccessMode | null
   aliases: string[]
+  healthReason: string | null // 7.2b
+  verifiedAt: string | null // 7.2b
+  updatedBy: string | null // 7.2b
   createdAt: string
 }
 
@@ -712,4 +715,32 @@ export interface SavedView {
   isDefault: boolean
   pinned: boolean
   createdAt: string
+}
+
+// ── Phase 7.2b — Portfolio + Account 360 (build-spec-v3 § 6; product-overview
+// § 5.2–5.3). Composed row shapes the Portfolio board/Account 360 screens
+// read; the underlying tables (projects, milestones, escalations, …) already
+// shipped in 7.1 — nothing here is new schema beyond `Account`'s 3 new fields.
+
+export type CoverageSection = 'projects' | 'milestones' | 'risks' | 'escalations' | 'tickets' | 'engagements' | 'metrics'
+export type CoverageStatus = 'current' | 'stale' | 'missing'
+
+// One row of the Portfolio board: an Account plus the aggregates the board
+// and Account 360 header both show, computed client-side from the
+// per-table queries in usePortfolio.ts (no new SQL).
+export interface PortfolioAccountRow extends Account {
+  segmentName: string | null
+  ownerName: string | null
+  openEscalationCount: number
+  nextMilestone: { description: string; period: string } | null
+  lastEngagementAt: string | null
+  coveragePct: number
+}
+
+export interface ProjectMemberRow {
+  id: string
+  projectId: string
+  profileId: string
+  profileName: string | null
+  role: AssignmentRole
 }

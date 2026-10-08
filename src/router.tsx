@@ -18,6 +18,8 @@ import { NamespaceOrgDetailPage } from '@/pages/NamespaceOrgDetailPage'
 import { FeatureFlagsPage } from '@/pages/FeatureFlagsPage'
 import { SuperAdminsPage } from '@/pages/SuperAdminsPage'
 import { TeamStructurePage } from '@/pages/TeamStructurePage'
+import { PortfolioPage } from '@/pages/PortfolioPage'
+import { AccountDetailPage } from '@/pages/AccountDetailPage'
 import { OrgUsersPage } from '@/pages/OrgUsersPage'
 import { DashboardPage } from '@/pages/DashboardPage'
 import { SettingsPage } from '@/pages/SettingsPage'
@@ -52,6 +54,16 @@ export const router = createBrowserRouter([
       {
         path: 'overview',
         element: <RouteGuard allowedRoles={['super_admin']}><OverviewPage /></RouteGuard>,
+      },
+      {
+        // 7.2b — Portfolio board + coverage tab, the account list.
+        path: 'portfolio',
+        element: <RouteGuard allowedRoles={['super_admin']}><PortfolioPage /></RouteGuard>,
+      },
+      {
+        // 7.2b — Account 360 (6 tabs).
+        path: 'accounts/:orgId',
+        element: <RouteGuard allowedRoles={['super_admin']}><AccountDetailPage /></RouteGuard>,
       },
       {
         path: 'cloud-customers',

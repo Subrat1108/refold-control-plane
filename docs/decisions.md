@@ -845,6 +845,31 @@ previously-failing audit-row check — now passing with a real row), and
 `smoke-login.ts` (all 3 roles) all green. Both fixes pushed to cloud as part
 of this session's migration set, ahead of code.
 
+## D-079 — 7.2b scope: Portfolio *is* the account list; cross-account Projects deferred; organizations gets 3 provenance-style columns (2026-10-08)
+Three scope calls made while planning 7.2b (Portfolio + Account 360), stated
+here since the spec left them implicit. **(1)** product-overview's nav table
+lists "Portfolio" and "Accounts" as separate items, but §5.2 describes
+Portfolio's board as exactly an account list grouped by segment with
+health/owner/escalations/coverage — the same content a standalone "Accounts"
+list would show. Built one list (Portfolio's board tab), not two; every row
+links to Account 360. **(2)** product-overview §5.6's standalone cross-account
+"Projects" screen is NOT in build-spec-v3's 7.2b bullet list — Account 360's
+Projects tab covers per-account project work for now; the cross-account view
+is deferred to whenever the roadmap reaches it explicitly. **(3)** Account
+360's Overview tab needs "change health (with reason)" and "mark verified"
+(product-overview §5.3), but `organizations` (extended in 7.1) never got the
+provenance columns every CS record table has. Added
+`health_reason text`, `verified_at timestamptz`, `updated_by uuid` via one
+additive migration — no RLS change needed, the existing AAL2 `organizations_
+update` policy already covers it. Coverage is defined precisely as: 7 sections
+per account (projects, milestones, risks, escalations, tickets, engagements,
+metrics — contacts is Phase 8); a section is **current** if its most-recently-
+verified-or-created row is within 30 days, **stale** if older, **missing** if
+there are no rows; **"pending approval"** (the spec's 4th state) has no
+backing data until 7.3's proposals/approvals ship, so it's always absent for
+now — a known gap, not a silent drop. Portfolio's coverage % = (current
+sections) / 7.
+
 # Parked
 
 Out-of-scope ideas land here instead of derailing the current prompt block.
