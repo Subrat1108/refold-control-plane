@@ -34,6 +34,7 @@ export type { OrgSubRoleInput } from './useProvisioning'
 export {
   useAccountRoles,
   usePersonRoles,
+  usePersonActivity,
   useMyActiveAccountIds,
   addRole,
   endRole,
@@ -140,3 +141,16 @@ export {
   downloadCsv,
 } from './useApprovals'
 export type { ProposalFilters, AuditLogFilters } from './useApprovals'
+export {
+  useStandups,
+  useStandup,
+  useStandupEntries,
+  useRecentEntriesForPerson,
+  useDefaultParticipants,
+  resolveDefaultParticipants,
+  createStandup,
+  updateStandupEntry,
+  useActionItems,
+  createActionItem,
+  updateActionItem,
+} from './useStandups'

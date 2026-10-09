@@ -10,3 +10,9 @@ CLAUDE.local.md
 # Supabase local dev state (config.toml + migrations/seed ARE committed)
 supabase/.branches
 supabase/.temp
+
+# Playwright local run output
+test-results/
+playwright-report/
+blob-report/
+playwright/.cache/

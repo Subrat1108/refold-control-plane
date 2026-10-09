@@ -157,6 +157,17 @@ insert into public.account_roles (org_id, profile_id, role, started_at, ended_at
 -- (runs third — those project rows don't exist until phase7_demo_data.sql has
 -- run, which happens after this file; see config.toml's sql_paths order).
 
+-- ── e2e test auth (local only) ──────────────────────────────────────────────
+-- A PRE-VERIFIED TOTP factor for the super admin, with a fixed known secret,
+-- so tests/e2e/smoke.spec.ts can compute the 6-digit code itself and drive
+-- the real MFA challenge screen (not enrollment) through the real login UI —
+-- nothing about production auth is weakened, this is local fixture data like
+-- every other seed row. auth.mfa_factors.secret is plain text locally (no
+-- encryption-at-rest in this environment), confirmed by inspection.
+insert into auth.mfa_factors (id, user_id, friendly_name, factor_type, status, secret, created_at, updated_at) values
+  ('00000000-0000-0000-0000-000000009001', '00000000-0000-0000-0000-000000001001', 'e2e-fixed-totp', 'totp', 'verified', 'JBSWY3DPEHPK3PXPJBSWY3DPEHPK3PXP', now(), now())
+on conflict (id) do nothing;
+
 -- Phase 7.1 CS Hub fictional demo data lives in its own file
 -- (supabase/demo/phase7_demo_data.sql) — idempotent, creates no auth users, and
 -- can also be run standalone against the cloud project's SQL Editor. Loaded on

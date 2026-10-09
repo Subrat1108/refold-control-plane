@@ -272,7 +272,7 @@ Reports history and logged as an engagement.
   escalations, tickets, health changes, deletes): diff, evidence, edit-then-approve,
   reject with reason, bulk. Any logged-in super admin approves.
 - **Audit log:** who / on behalf of what / action / record / before → after /
-  when, with filters and CSV export (Head of CS).
+  when, with filters and CSV export — visible to every CS admin, read-only.
 
 ### 5.13 Ask the Hub (chat agent)
 
@@ -290,16 +290,24 @@ Slack, email, tickets and Refold metrics, plus platform read tools.
 
 ## 6. End-to-end journeys
 
-### J1 — Head of CS, Monday
+Every journey below is something **any CS admin** can run — there's no
+title that gates which one applies to whom. Several widen their scope to
+"My team" or "Everyone" where that's the natural thing to do (reviewing
+more than just your own accounts); none of that is a permission, just a
+scope switcher choice.
 
-1. Home shows: 2 accounts moved to *Caution*, 1 new escalation, 3 slipped
-   milestones, 14 pending approvals.
+### J1 — Monday morning
+
+1. Home (scope: Everyone, or My team if anyone reports to you) shows: 2
+   accounts moved to *Caution*, 1 new escalation, 3 slipped milestones, 14
+   pending approvals.
 2. Opens an account that turned *Caution*; Overview shows the reason and the Slack
    evidence from the overnight sync.
 3. Asks the Hub, "what changed here since last week?"
-4. Assigns a follow-up to the FDE as an action item.
+4. Assigns a follow-up as an action item, owned by whoever's actually
+   handling it.
 
-### J2 — FDE, daily
+### J2 — A CS admin's day
 
 1. Home shows overnight sync proposals on their accounts.
 2. Approves 5, edits 1, rejects 1.
@@ -307,27 +315,31 @@ Slack, email, tickets and Refold metrics, plus platform read tools.
    deck from Drive.
 4. Marks the metrics section verified.
 
-### J3 — Daily standup
+### J3 — A standup
 
-1. Each FDE's card is pre-drafted from yesterday's activity; the FDE tweaks it.
-2. The Head of CS runs live mode and walks through each FDE.
-3. Blockers become asks and action items with owners.
-4. Standup is saved; open items roll forward.
+1. The host starts one; participants default to their direct reports (if
+   any) or last time's set — one click.
+2. Each participant's card is pre-drafted from yesterday's activity; they
+   tweak it.
+3. The host runs live mode and walks through each participant.
+4. Blockers become asks and action items with owners.
+5. Standup is saved; open items roll forward.
 
 ### J4 — Customer lifecycle
 
 1. New prospect added on the Portfolio board.
 2. POC created with success criteria and tracked to **won**.
 3. The onboarding plan (air-gapped template) starts automatically.
-4. Project created with an EDL and FDEs.
+4. Project created with people in the EDL/FDE roles.
 5. Go-live: lifecycle becomes **live**, and the EBR/QBR cadence is set.
 
 ### J5 — QBR / EBR prep
 
 1. Reports → QBR → account → quarter.
 2. The hub assembles metrics, milestones, tickets and risks, and lists gaps.
-3. The FDE clicks Refresh on tickets and enters two metric values.
-4. AI drafts the narrative; the FDE edits it and the Head of CS reviews.
+3. Whoever holds a role on the account clicks Refresh on tickets and enters
+   two metric values.
+4. AI drafts the narrative; the author edits it and another admin reviews.
 5. Export; the meeting is logged as an engagement with the deck attached.
 
 ### J6 — Monthly status report
@@ -339,7 +351,7 @@ share.
 
 1. The overnight sync spots an escalation in a customer channel and files a
    proposal.
-2. The owner approves it, creating an escalation record.
+2. An admin approves it, creating an escalation record.
 3. It shows on Home, the Portfolio card, and the next standup.
 4. When resolved, a lesson is promoted to the KB.
 
@@ -349,18 +361,19 @@ Searches the KB ("air-gapped install prerequisites"), reads an article, opens
 the linked runbook in Documents. Asks the Hub a product question answered from
 KB + docs.
 
-### J9 — FDE coaching (Head of CS)
+### J9 — Coaching conversation
 
-1. Team → FDE profile.
-2. Reviews workload, owned-account health trend, on-time milestones, escalation
-   resolution, engagement cadence, and data freshness.
+1. People → a person's activity view.
+2. Reviews their active account roles, on-time milestones, escalation
+   resolution, engagement cadence, and data freshness — raw signals, not a
+   score (§5.8).
 3. Drills into the records behind any number.
 4. Discusses it in a 1:1.
 
-### J10 — Onboarding a new FDE
+### J10 — Onboarding a new CS admin
 
-Admin → invite → assign the *FDE* sub-role → assign accounts and projects → they
-log in, enroll MFA, and land on Home.
+Admin → invite → they log in, enroll MFA, land on Home → add them to their
+first few accounts (a role each: EDL/TA/FDE) from Portfolio or Account 360.
 
 ---
 

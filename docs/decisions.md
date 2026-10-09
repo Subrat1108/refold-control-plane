@@ -971,6 +971,84 @@ Settings; a collapsed-by-default "Admin" disclosure holds Audit Log, Users
 screens (Overview, Cloud/On-Prem Customers) — no visibility tiers, every
 admin can open it. Standups has no nav item yet (not built this session).
 
+## D-087 — Standups schema: standups/standup_entries/action_items, host-can-edit-any RLS, action items never auto-close (2026-10-09)
+Builds Part 3 as designed in D-085/product-overview.md §5.7 — no redesign.
+Three tables, same RLS/grant/audit shape as `account_roles` (select:
+`is_super_admin()`; writes: `+ is_aal2()`; generic trigger attached — these
+are operational records, not personal UI prefs). `standups` (host, date, no
+`org_id` — a standup spans whichever accounts its participants hold roles
+on, same `org_id = null` treatment as `portfolio_notes`/`sync_runs`).
+`standup_entries` (one per participant per standup, `unique(standup_id,
+profile_id)`) gets the one RLS policy in the whole schema that checks more
+than `is_super_admin()`/`is_aal2()`: a participant may write their own
+entry; the standup's host may write any entry in it; every other super
+admin can still **read** it (focus, not access control) but not write it.
+`action_items` (`standup_entry_id` nullable, `on delete set null` — an item
+outlives the entry it came from) are shared team artifacts like asks/
+escalations — any super admin at AAL2 can create/reassign/close one, not
+just its owner. "Carry over until done" means exactly that: no status
+auto-transition, ever; a `done` item simply stops being "open," nothing
+deletes or archives it.
+
+## D-088 — Remembered standup participants: reuses saved_views (page='standup_participants'), default resolution (2026-10-09)
+No new table for "the host's last-used set" — `saved_views` already
+anticipated this in its own column comment. One row per host
+(`owner_profile_id = host`, `page = 'standup_participants'`,
+`filters: {participantIds: [...]}`), upserted every time a standup starts.
+**Default when starting a new standup:** the remembered set if one exists
+→ else the host's direct reports (`reports_to`) → else empty — the
+remembered set wins once it exists and evolves with usage (every
+`createStandup()` call overwrites it with whoever was actually included).
+This resolves the one judgment call the design left open (the prompt
+described the *behavior* — "one click" — not which source wins on the very
+first use).
+
+## D-089 — Headless e2e smoke testing (Playwright) joins the shipping protocol; seeded-TOTP local auth test path (2026-10-09)
+Nothing existed before this session — no test runner, no Playwright, no
+browser automation at all. `@playwright/test` + headless Chromium added as
+a devDependency; `tests/e2e/smoke.spec.ts` drives the real login form and
+the real MFA **challenge** screen (not enrollment) by seeding a
+**pre-verified** TOTP factor for the fictional super admin with a fixed,
+known secret directly into `auth.mfa_factors` (local-only `seed.sql` fixture
+— confirmed by direct inspection that `secret` is a plain-text column
+locally, no encryption-at-rest to work around). Nothing about the app's
+auth logic is weakened or bypassed; only the test's knowledge of a seeded
+secret is new, same category as every other fictional seed row. `npm run
+e2e` joins the end-of-session protocol (CLAUDE.md): run it whenever a
+session changes UI, before pushing. **Side effect worth recording:** every
+other throwaway verification script this project has used to reach AAL2
+(enroll a fresh TOTP factor, verify it) now fails for `super@refold.internal`
+specifically after a fresh `db reset`, because a verified factor already
+exists — GoTrue requires AAL2 to enroll an *additional* factor once one is
+verified. Future ad hoc scripts for this user must challenge the seeded
+factor (list verified factors → challenge → verify with the known secret)
+rather than enroll a new one; this is now the pattern this session's own
+test file and ship-verification scripts use.
+
+## D-090 — PostgREST can't embed a self-referential FK even via the hint it itself suggests (found by the new e2e test, fixed) (2026-10-09)
+A real regression from last session, silently broken since it shipped: the
+People directory's `fetchPeopleDirectory()` (`usePeople.ts`) tried to embed
+`profiles!profiles_reports_to_fkey(full_name)` on a query against
+`profiles` itself, to show each person's `reports_to` name inline. Direct
+inspection: the unqualified embed correctly 300s as ambiguous (`profiles`
+has two self-FKs — `created_by` and `reports_to`) and PostgREST's own error
+*suggests* `profiles!profiles_reports_to_fkey` as the fix — but using that
+exact hint still 400s ("Could not find a relationship between 'profiles'
+and 'profiles' in the schema cache"). This is a genuine PostgREST
+self-join limitation, not a query-writing mistake — confirmed by testing
+the exact suggested hint directly against the API. **No UI testing tool
+existed last session to catch this** (the gap D-089's e2e suite now
+closes) — it had been 400ing in the browser console since 7.2a/equal-admins
+Parts 1–2 shipped, invisible because nothing rendered an error boundary
+for it (`reportsToName` just silently stayed `null`... except the whole
+query failed, so the entire People directory page was actually broken).
+Fixed by resolving `reports_to`'s name client-side instead: fetch the
+plain row (no embed) and look up each `reports_to` id against the same
+already-fetched result set (every super admin is in it). Extends the
+D-068 "Supabase / PostgREST queries" coding rule: self-referential FK
+embeds need this workaround, not a `!fkey` hint, even when PostgREST's own
+error message suggests one.
+
 # Parked
 
 Out-of-scope ideas land here instead of derailing the current prompt block.

@@ -109,16 +109,23 @@ export interface PersonRow extends ManagedUser {
 }
 
 async function fetchPeopleDirectory(): Promise<PersonRow[]> {
+  // PostgREST can't embed a self-referential FK here even with an explicit
+  // !fkey hint (profiles has two self-FKs — created_by and reports_to — and
+  // the hint it itself suggests on the ambiguity error still 400s; a known
+  // PostgREST limitation with self-joins, confirmed by direct inspection,
+  // not a query-writing mistake). Resolved client-side instead: fetch the
+  // rows plain, then look up each reports_to id's name from the same result
+  // set (every super_admin is already in it).
   const { data, error } = await supabase
     .from('profiles')
-    .select(
-      'id, email, full_name, account_type, role, status, sub_role_id, created_at, reports_to, profiles!profiles_reports_to_fkey(full_name), account_roles(count)',
-    )
+    .select('id, email, full_name, account_type, role, status, sub_role_id, created_at, reports_to, account_roles(count)')
     .eq('account_type', 'super_admin')
     .order('full_name', { ascending: true })
   if (error) throw new Error(error.message)
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  return (data ?? []).map((row: any) => ({
+  const rows = (data ?? []) as any[]
+  const nameById = new Map(rows.map((r) => [r.id, r.full_name as string | null]))
+  return rows.map((row) => ({
     id: row.id,
     email: row.email,
     fullName: row.full_name,
@@ -129,7 +136,7 @@ async function fetchPeopleDirectory(): Promise<PersonRow[]> {
     subRoleName: null,
     createdAt: row.created_at,
     reportsTo: row.reports_to,
-    reportsToName: firstOf<{ full_name: string | null }>(row.profiles)?.full_name ?? null,
+    reportsToName: row.reports_to ? nameById.get(row.reports_to) ?? null : null,
     activeRoleCount: firstOf<{ count: number }>(row.account_roles)?.count ?? 0,
   }))
 }
@@ -156,6 +163,31 @@ async function fetchMyReports(profileId: string): Promise<{ id: string; fullName
 
 export function useMyReports(profileId: string | null) {
   return useQuery({ queryKey: ['my-reports', profileId], queryFn: () => fetchMyReports(profileId!), enabled: !!profileId })
+}
+
+// ── People activity (equal-admins model Part 4) — raw signals only, no
+// scores/KPIs (those stay deferred per D-085's Parked note). ───────────────
+
+export interface PersonActivityRow {
+  id: string
+  action: string
+  recordTable: string | null
+  createdAt: string
+}
+
+async function fetchPersonActivity(profileId: string, limit = 10): Promise<PersonActivityRow[]> {
+  const { data, error } = await supabase
+    .from('audit_log')
+    .select('id, action, record_table, created_at')
+    .eq('actor_id', profileId)
+    .order('created_at', { ascending: false })
+    .limit(limit)
+  if (error) throw new Error(error.message)
+  return (data ?? []).map((row) => ({ id: row.id, action: row.action, recordTable: row.record_table, createdAt: row.created_at }))
+}
+
+export function usePersonActivity(profileId: string | null) {
+  return useQuery({ queryKey: ['person-activity', profileId], queryFn: () => fetchPersonActivity(profileId!), enabled: !!profileId })
 }
 
 // ── Scope helpers (focus only, never access control) ───────────────────────

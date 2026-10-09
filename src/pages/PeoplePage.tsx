@@ -4,9 +4,13 @@ import { Plus, X } from 'lucide-react'
 import {
   usePeopleDirectory,
   usePersonRoles,
+  usePersonActivity,
   useAccountsRaw,
   addRole,
   endRole,
+  useActionItems,
+  updateActionItem,
+  useRecentEntriesForPerson,
   type PersonRow,
 } from '@/hooks'
 import { setReportsTo } from '@/lib/provisioning'
@@ -16,6 +20,7 @@ import { SlideOver } from '@/components/SlideOver'
 import { Tooltip } from '@/components/Tooltip'
 import { CardSkeleton } from '@/components/SkeletonLoader'
 import { ErrorState } from '@/components/ErrorState'
+import { formatDate } from '@/utils/formatDate'
 import type { AssignmentRole } from '@/types'
 
 const ROLE_LABELS: Record<AssignmentRole, string> = { edl: 'EDL', ta: 'TA', fde: 'FDE' }
@@ -94,6 +99,9 @@ function RolesSlideOver({ person, onClose }: { person: PersonRow | null; onClose
   const qc = useQueryClient()
   const { data: roles, isLoading } = usePersonRoles(person?.id ?? null)
   const { data: accounts } = useAccountsRaw()
+  const { data: activity } = usePersonActivity(person?.id ?? null)
+  const { data: openItems } = useActionItems({ ownerProfileId: person?.id, status: 'open' })
+  const { data: recentEntries } = useRecentEntriesForPerson(person?.id ?? null)
   const [addOpen, setAddOpen] = useState(false)
   const [pickOrg, setPickOrg] = useState('')
   const [pickRole, setPickRole] = useState<AssignmentRole>('fde')
@@ -162,6 +170,40 @@ function RolesSlideOver({ person, onClose }: { person: PersonRow | null; onClose
               )}
             </div>
           )}
+
+          <div className="pt-3 border-t border-border space-y-1.5">
+            <p className="text-xs font-semibold text-muted-foreground uppercase">Open action items</p>
+            {(openItems ?? []).length === 0 ? <p className="text-sm text-muted-foreground">None.</p> : (
+              (openItems ?? []).map((item) => (
+                <div key={item.id} className="flex items-center justify-between gap-2 text-sm">
+                  <span>{item.description}{item.dueDate && <span className="text-muted-foreground"> (due {item.dueDate})</span>}</span>
+                  <button onClick={() => updateActionItem(item.id, { status: 'done' }).then(() => qc.invalidateQueries({ queryKey: ['action-items'] }))} className="text-xs text-primary hover:underline shrink-0">Mark done</button>
+                </div>
+              ))
+            )}
+          </div>
+
+          <div className="pt-3 border-t border-border space-y-1.5">
+            <p className="text-xs font-semibold text-muted-foreground uppercase">Recent standup entries</p>
+            {(recentEntries ?? []).length === 0 ? <p className="text-sm text-muted-foreground">None yet.</p> : (
+              (recentEntries ?? []).map((e) => (
+                <p key={e.id} className="text-xs text-muted-foreground">
+                  <span className="text-foreground">{e.standupDate}</span>{e.yesterday ? ` — ${e.yesterday}` : ''}
+                </p>
+              ))
+            )}
+          </div>
+
+          <div className="pt-3 border-t border-border space-y-1.5">
+            <p className="text-xs font-semibold text-muted-foreground uppercase">Recent activity</p>
+            {(activity ?? []).length === 0 ? <p className="text-sm text-muted-foreground">No activity yet.</p> : (
+              (activity ?? []).map((a) => (
+                <p key={a.id} className="text-xs text-muted-foreground">
+                  {a.action.replace(/_/g, ' ')} {a.recordTable?.replace(/_/g, ' ')} · {formatDate(a.createdAt)}
+                </p>
+              ))
+            )}
+          </div>
 
           {addOpen ? (
             <form onSubmit={handleAdd} className="space-y-3 pt-3 border-t border-border">

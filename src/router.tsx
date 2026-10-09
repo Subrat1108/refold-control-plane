@@ -18,6 +18,8 @@ import { NamespaceOrgDetailPage } from '@/pages/NamespaceOrgDetailPage'
 import { FeatureFlagsPage } from '@/pages/FeatureFlagsPage'
 import { SuperAdminsPage } from '@/pages/SuperAdminsPage'
 import { PeoplePage } from '@/pages/PeoplePage'
+import { StandupsPage } from '@/pages/StandupsPage'
+import { StandupDetailPage } from '@/pages/StandupDetailPage'
 import { HomePage } from '@/pages/HomePage'
 import { PortfolioPage } from '@/pages/PortfolioPage'
 import { AccountDetailPage } from '@/pages/AccountDetailPage'
@@ -122,6 +124,15 @@ export const router = createBrowserRouter([
         // Equal-admins model — directory of admins, reports_to, account roles.
         path: 'people',
         element: <RouteGuard allowedRoles={['super_admin']}><PeoplePage /></RouteGuard>,
+      },
+      {
+        // Equal-admins model Part 3 — anyone hosts, D-085.
+        path: 'standups',
+        element: <RouteGuard allowedRoles={['super_admin']}><StandupsPage /></RouteGuard>,
+      },
+      {
+        path: 'standups/:id',
+        element: <RouteGuard allowedRoles={['super_admin']}><StandupDetailPage /></RouteGuard>,
       },
       {
         path: 'home',

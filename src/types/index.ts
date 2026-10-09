@@ -748,3 +748,47 @@ export interface AuditLogEntry {
   proposalId: string | null
   createdAt: string
 }
+
+// ── Standups (equal-admins model Part 3; product-overview.md § 5.7).
+// Anyone hosts; participants are pre-filled from reports_to + a remembered
+// set (saved_views), not a fixed team roster.
+
+export type ActionItemStatus = 'open' | 'done'
+
+export interface Standup {
+  id: string
+  hostProfileId: string
+  standupDate: string
+  createdAt: string
+}
+
+export interface StandupRow extends Standup {
+  hostName: string | null
+  participantCount: number
+}
+
+export interface StandupEntry {
+  id: string
+  standupId: string
+  profileId: string
+  yesterday: string | null
+  today: string | null
+  blockers: string | null
+  createdAt: string
+}
+
+export interface StandupEntryRow extends StandupEntry {
+  profileName: string | null
+}
+
+export interface ActionItem {
+  id: string
+  standupEntryId: string | null
+  orgId: string | null
+  ownerProfileId: string | null
+  description: string
+  dueDate: string | null
+  status: ActionItemStatus
+  createdBy: string | null
+  createdAt: string
+}

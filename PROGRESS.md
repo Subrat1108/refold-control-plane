@@ -40,8 +40,7 @@
 - [x] 7.2b — Portfolio + Account 360: Portfolio board (the account list, grouped by segment) + coverage tab, Account 360 (6 tabs: Overview/Projects/Escalations/Tickets/Engagements/Metrics), Add account (no invite), inline add/edit/delete, Mark verified, source badges — ScopeSwitcher + saved views wired into Portfolio (D-079)
 - [x] 7.3 — Approvals inbox + audit log screen (scoped: My accounts/My team/Everyone): apply_proposal()/reject_proposal() SQL functions (approve actually applies the change via a fixed table allow-list + audits the decision itself), pending-count nav badge, CSV export on the audit log (D-080)
 - [x] Equal admins — people simplification (Part 1): `account_roles` (per-account role tag, record-keeping, history) replaces titles/teams/account_assignments/owner_profile_id; `reports_to` (optional, UX-only, cycle-checked); rewritten scope helpers; People directory screen; Portfolio/Account 360 "Add to my accounts"/"Leave account"; nav reorder + collapsed Admin group (D-081–D-086)
-- [x] Home (Part 2): personal "my day" — my accounts, needs attention, my reports, recent activity, all scoped
-- [ ] Standups (Part 3) + People activity/performance indexes (Part 4) — designed in docs (D-085, Parked), not built; was "Home + per-team Standups + Team (FDE performance)" before the equal-admins reversal
+- [x] Home + Standups + People activity (Parts 2–4): Home (personal "my day" — my accounts, needs attention, my reports, recent activity, all scoped); Standups (anyone hosts, standups/standup_entries/action_items, host-can-edit-any RLS, remembered participant set via saved_views, deterministic "since last standup" draft, live mode, blocker→ask/action-item); People activity (role history, recent activity, open action items, recent standup entries on the existing People directory) (D-087–D-090). Performance indexes/KPIs stay deferred — the data they need (account_roles history, project_members, audit actor, approvals, standups) is confirmed fully captured.
 - [ ] 7.4 — Ingest API
 - [ ] 7.5 — CS Sync Skill + runner + Refresh (was 6.5)
 - [ ] 7.6 — Ask the Hub (chat agent)
@@ -76,6 +75,53 @@ Points, streaks, badges, team leaderboards — computed from the audit log + pro
 
 ## Last session
 (See docs/devlog.md for full session history — this is just the pointer.)
+
+Date: 2026-10-09 (yet later same day)
+Completed: Standups (Part 3) + People activity (Part 4), as designed in
+D-081–D-086 — no redesign. One migration: standups/standup_entries (host
+can edit any entry in their own standup, a participant can edit their own,
+everyone else can still read — focus, not access control)/action_items
+(shared team artifacts, never auto-closed). Remembered participant set
+reuses saved_views (page='standup_participants'); default resolution:
+remembered → direct reports → empty. Deterministic "since last standup"
+draft (audit actor activity + new escalations/tickets + due milestones on
+the participant's active accounts, since their last entry). /standups +
+/standups/:id (board, live mode with a timer) added to primary nav.
+People's existing per-person slide-over extended with role history, recent
+activity, open action items, recent standup entries — no scores/KPIs
+(confirmed, not newly built: the data those will need is fully captured).
+Cleanup 1: product-overview.md §6's journeys rewritten off the old
+hierarchy framing; grepped both docs for lingering "Head of CS"/title/team
+references and fixed the one genuine contradiction found (§5.12's audit
+log gated "(Head of CS)").
+Cleanup 2 (required): added Playwright (nothing existed before — no test
+runner at all). tests/e2e/smoke.spec.ts signs in through the REAL login +
+MFA challenge screens via a seeded pre-verified TOTP factor (local-only
+fixture, secret confirmed plain-text locally) and clicks through Home/
+Portfolio/Account 360 (every tab + a write)/Approvals (approve)/Audit log/
+Standups (start, edit, live mode)/People (open activity view). **Caught and
+fixed a real regression from last session**: the People directory's
+reports_to-name lookup used a self-referential PostgREST embed
+(`profiles!profiles_reports_to_fkey(...)`) that 400s even with the hint
+PostgREST's own error suggests — a genuine PostgREST limitation, not a
+typo — confirmed by direct API testing. The whole People page had been
+silently broken since equal-admins Parts 1–2 shipped; no UI test existed
+then to catch it. Fixed by resolving the name client-side instead.
+Verified: fresh db reset; rls_test.sql's new standups block + all 5 prior
+blocks green; smoke-login.ts all 3 roles; `npm run e2e` green (ran twice
+for reliability, after hitting and fixing 3 real test/selector bugs along
+the way — see devlog); typecheck/lint/build green. The host machine's
+known memory pressure (11.3GB/12GB swap) caused one Vite dev-server hang
+mid-run — not retried blindly; confirmed via direct curl polling that the
+server had genuinely stalled, then it recovered on its own and every
+subsequent run was fast and stable.
+Cloud: db push --dry-run matched exactly 1 migration; migration list
+29/29 local=remote; no Edge Function changes, no redeploy needed.
+Decisions made: D-087–D-090
+Known issues: none outstanding from this session's own scope. Performance
+indexes/KPIs remain deferred (Phase 10, with gamification).
+
+---
 
 Date: 2026-10-09 (later same day)
 Completed: Equal admins — Parts 1–2 only (Standups/People-activity-KPIs

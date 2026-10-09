@@ -1,4 +1,4 @@
-import { LayoutDashboard, Users, Server, Flag, Settings, Layers, ShieldCheck, UsersRound, UserCog, Briefcase, CheckSquare, ScrollText, Home } from 'lucide-react'
+import { LayoutDashboard, Users, Server, Flag, Settings, Layers, ShieldCheck, UsersRound, UserCog, Briefcase, CheckSquare, ScrollText, Home, ClipboardList } from 'lucide-react'
 import type { UserRole } from '@/types'
 
 export interface NavItem {
@@ -18,6 +18,7 @@ export const NAV_BY_ROLE: Record<UserRole, NavItem[]> = {
     { to: '/portfolio', label: 'Portfolio', icon: <Briefcase size={16} /> },
     { to: '/approvals', label: 'Approvals', icon: <CheckSquare size={16} />, badgeKey: 'pending-proposals' },
     { to: '/people', label: 'People', icon: <UserCog size={16} /> },
+    { to: '/standups', label: 'Standups', icon: <ClipboardList size={16} /> },
     { to: '/settings', label: 'Settings', icon: <Settings size={16} /> },
     // Admin — collapsed by default (Sidebar renders these inside a disclosure).
     { to: '/audit-log', label: 'Audit Log', icon: <ScrollText size={16} />, group: 'admin' },

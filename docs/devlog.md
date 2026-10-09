@@ -16,6 +16,99 @@ Template:
 
 ---
 
+## Session 32 — 2026-10-09 — Standups (Part 3) + People activity (Part 4) + 2 cleanups
+**Built:** the design was already decided (D-081–D-086, product-overview.md
+§5.7/§12) — this session builds it, no redesign.
+- **Standups:** one migration — `standups` (host, date, no `org_id` — spans
+  whichever accounts its participants hold roles on), `standup_entries`
+  (one per participant, `unique(standup_id, profile_id)`; the one RLS
+  policy in the whole schema checking more than `is_super_admin()`/
+  `is_aal2()` — a participant writes their own entry, the host writes any
+  entry in their own standup, everyone else still reads it but can't
+  write), `action_items` (shared artifacts like asks/escalations — any
+  super admin can create/reassign/close one; "carry over until done" means
+  no auto-transition, ever). No Edge Function changes — same direct-client-
+  write-under-RLS pattern as `account_roles`.
+- **Remembered participants:** reuses `saved_views` (it already anticipated
+  `page='standups'` in its own column comment) — `page=
+  'standup_participants'`, `filters: {participantIds}`, upserted on every
+  standup start. Default: remembered set → direct reports → empty (the one
+  judgment call the design left open, stated explicitly as D-088).
+- **Deterministic "since last standup" draft:** per participant, since
+  their last entry (or 24h if none) — audit-actor activity, new
+  escalations/tickets, due milestones on their active accounts. Feeds
+  Yesterday only; Today/Blockers start blank.
+- `/standups` (history + "Start a standup") + `/standups/:id` (board, live
+  mode with a timer, "turn blocker into an ask/action item") — added to
+  primary nav.
+- **People activity:** extended the existing per-person slide-over
+  (`PeoplePage.tsx`) with recent activity (audit actor), open action items,
+  recent standup entries — role history was already there. No scores — and
+  confirmed, not newly built, that every input the future KPI block will
+  need is already captured (`account_roles` history, `project_members`,
+  audit actor, approvals, standups).
+- **Cleanup 1 (docs):** product-overview.md §6's journeys (J1–J10)
+  rewritten off "Head of CS"/"Team" framing into scenarios any CS admin
+  runs. Grepped both docs for `Head of CS`/`title`/`team lead`/`Team
+  structure`/`owner_profile_id`; found and fixed one genuine remaining
+  contradiction (§5.12 gated audit-log CSV export to "(Head of CS)",
+  contradicting the already-rewritten §8 permissions matrix).
+- **Cleanup 2 (required, net-new):** `@playwright/test` + headless Chromium
+  — nothing existed before (no test runner at all). `tests/e2e/
+  smoke.spec.ts` signs in through the real login form and the real MFA
+  **challenge** screen (not enrollment) using a pre-verified TOTP factor
+  seeded with a fixed, known secret directly into `auth.mfa_factors`
+  (confirmed plain-text locally by direct inspection — local-only fixture,
+  nothing about production auth weakened). Clicks through Home → Portfolio
+  → an Account 360 (every tab + adds a project) → Approvals (approves one)
+  → Audit log → Standups (starts one, edits an entry, opens live mode) →
+  People (opens a person's activity view). `npm run e2e` joins CLAUDE.md's
+  end-of-session protocol.
+**Deviations / real findings along the way:**
+- The e2e suite **caught a genuine regression from last session**: the
+  People directory's `fetchPeopleDirectory()` tried to embed
+  `profiles!profiles_reports_to_fkey(full_name)` — a self-referential FK
+  embed. Confirmed by direct API testing: PostgREST's own ambiguity error
+  *suggests* exactly that hint, then 400s when you actually use it ("could
+  not find a relationship... in the schema cache") — a genuine PostgREST
+  self-join limitation, not a typo. The whole People page had been
+  silently broken since equal-admins Parts 1–2 shipped; no UI test existed
+  then to catch it. Fixed by resolving the name client-side (logged as
+  D-090; extends the D-068 coding rule).
+- Seeding a verified TOTP factor has a side effect: every prior throwaway
+  verification script's `enroll()`-based AAL2 helper now fails for
+  `super@refold.internal` ("AAL2 required to enroll a new factor") since a
+  verified one already exists. Future ad hoc scripts for this user must
+  challenge the seeded factor instead (documented in D-089).
+- Three test-writing bugs surfaced and were fixed during the run itself (a
+  stale dev-server port, an unlabeled form input needing a positional
+  selector instead of `getByLabel`, and the Audit Log link being inside
+  the collapsed "Admin" disclosure) — normal test-authoring iteration, not
+  app bugs; none needed an app-code change except the PostgREST one above.
+- The host machine's documented memory pressure (11.3GB/12GB swap) caused
+  one Vite dev-server hang mid-run. Confirmed via direct `curl` polling
+  that the server had genuinely stalled rather than assuming the test was
+  broken; it recovered on its own and every subsequent run was fast (3–4s)
+  and stable. Not glossed over, not blindly retried either.
+**Verified:** fresh `db reset`; `rls_test.sql`'s new standups block (a
+participant can edit their own entry but not someone else's; the host can
+edit any entry in their own standup; an unrelated super admin can read but
+not write; action items default to `open` and persist through a `done`
+transition; customer roles see 0 rows across all 3 tables; the generic
+audit trigger fires on each) plus all 5 prior blocks, still green;
+`smoke-login.ts` all 3 roles; `npm run e2e` green (twice, for reliability);
+typecheck/lint/build all green.
+Cloud: `db push --dry-run` matched exactly 1 migration; `migration list`
+29/29 local=remote; no Edge Function changes, no redeploy needed.
+**Decisions:** D-087–D-090
+**Next:** 7.4 — Ingest API (or whichever the planning room picks next —
+Parts 1–4 of the equal-admins plan are now complete).
+**Issues:** none outstanding from this session's scope. Performance
+indexes/KPIs remain deferred to Phase 10 with gamification, per D-085's
+Parked note (now confirmed input-complete, not newly built).
+
+---
+
 ## Session 31 — 2026-10-09 — Equal admins: people simplification (Part 1) + Home (Part 2)
 **Built:** the Head of CS reversed 7.2a's hierarchy direction entirely — no
 internal org chart, no titles, no RBAC by role; a person's involvement in

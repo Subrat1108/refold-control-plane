@@ -3,11 +3,11 @@
 ## Current status
 <!-- Canonical state snapshot. The build room updates this block at the end of
      every session. The planning room reads it first. Keep it under ~10 lines. -->
-- Last session: 2026-10-09 — Equal admins, Parts 1–2 only (D-081–D-086; Standups/People-activity-KPIs deferred per the Head of CS's "ship 1–2, stop, report" instruction). Reverses 7.2a's hierarchy entirely: no titles, no teams, no RBAC by role. One migration — guarded drops (confirmed 0 rows on cloud first, read-only `db dump`) of `account_assignments`/`teams`/`team_members`/`organizations.owner_profile_id`/`profiles.title`; new `account_roles` (per-account role tag, record-keeping only, history via `ended_at`, no DELETE policy — history is permanent) + `profiles.reports_to` (optional, UX-only, cycle-checked by trigger); scope helpers rewritten (`my_account_ids`/`my_team_account_ids` now reports-based/`person_account_ids`; team-targeting helpers dropped). Edge Function: `set_title` → `set_reports_to`, redeployed. `/team-structure` → `/people` (directory: reports_to picker, active roles editable inline); Portfolio/Account 360 get "Add to my accounts"/"Leave account" + live EDL display (no more `ownerProfileId`); nav reordered (Home first) with a collapsed-by-default "Admin" group. New `/home` (Part 2): my accounts, needs attention, my reports, recent activity, all scoped. Both docs (build-spec-v3.md, product-overview.md) rewritten to the model in full. Verified: rls_test.sql all green (new block + 4 prior), smoke-login green, typecheck/lint/build green, migration list 28/28 local=remote, a throwaway script exercised set_reports_to (incl. cycle rejection) + add/end/change-role against the real API. Same no-browser-automation-tool gap as prior sessions.
-- Next up: Part 3 (Standups — anyone hosts, D-085) and Part 4 (People activity + deferred performance indexes/KPIs) — both designed in docs, not built.
+- Last session: 2026-10-09 — Standups (Part 3) + People activity (Part 4) + 2 cleanups (D-087–D-090), completing the equal-admins plan (D-081–D-086). One migration: `standups`/`standup_entries` (host can edit any entry in their own standup, a participant their own, everyone else still reads — focus, not access control)/`action_items` (shared artifacts, never auto-closed). Remembered participants reuse `saved_views`; default = remembered → direct reports → empty. `/standups` + `/standups/:id` (live mode) added to nav. People's slide-over gained recent activity/open action items/recent standup entries — no scores; confirmed (not built) that every future-KPI input is already captured. Docs cleanup: product-overview.md §6 journeys rewritten off the old hierarchy; one remaining contradiction found+fixed (§5.12). **Cleanup 2 (required, net-new):** added Playwright (nothing existed before) — `tests/e2e/smoke.spec.ts` drives the real login + MFA challenge screens via a seeded pre-verified TOTP factor (local-only fixture) and clicks through Home/Portfolio/Account 360/Approvals/Audit log/Standups/People; `npm run e2e` now in the shipping protocol. **The e2e run caught a real regression**: a self-referential PostgREST embed (`profiles!profiles_reports_to_fkey`) that 400s even via the hint PostgREST's own error suggests — the People directory had been silently broken since last session; fixed (D-090). Verified: rls_test.sql all green (new block + 5 prior), smoke-login green, `npm run e2e` green ×2, typecheck/lint/build green, migration list 29/29 local=remote. No Edge Function changes.
+- Next up: 7.4 — Ingest API (the equal-admins plan, Parts 1–4, is now complete).
 - Blockers: Refold MCP server details needed for 7.5. None for schema/deploy.
 - Deployed: YES — live at `refold-control-plane.netlify.app`, Netlify prod branch `dev` (single-env, D-066), backed by cloud Supabase `xwtxrdxktbogswxuuetp` (the only DB). All demo logins work.
-- Known issues: Standups and People activity/KPIs not built yet (Parked). The Approvals inbox will stay thin on real data until 7.5/7.6/7.8 ship actual proposal producers. Phase-7 demo data (fictional) has NOT been run against cloud yet — run `supabase/demo/phase7_demo_data.sql` in the cloud SQL Editor if you want sample data on the live site. Built-in Supabase email is capped at 2/hour — needs custom SMTP before inviting a real team (parked). product-overview.md's journeys (§6) still narrate "Head of CS"/"FDE"/"Team" scenarios — not rewritten this session (out of the docs addendum's explicitly listed sections). No interactive browser QA was possible this session (tooling gap, not a known defect).
+- Known issues: Performance indexes/KPIs remain deferred to Phase 10 with gamification (input data confirmed complete). The Approvals inbox will stay thin on real data until 7.5/7.6/7.8 ship actual proposal producers. Phase-7 demo data (fictional) has NOT been run against cloud yet. Built-in Supabase email is capped at 2/hour — needs custom SMTP before inviting a real team (parked). Seeding a verified TOTP factor for `super@refold.internal` means old `enroll()`-based throwaway-script AAL2 helpers now fail for that user — challenge the seeded factor instead (D-089).
 - Phase 7 note: Phase 7 is **super-admin only**; cloud/on-prem owner portals are **frozen**. Confidentiality rule (build-spec-v3 § 0) in Key coding rules: never commit real customer/people data; all fixtures fictional. A new "Supabase / PostgREST queries" coding rule (D-068) also covers teams/profiles embeds — always name the FK. TOTP in supabase/config.toml. Local dev needs a gitignored .env. Edge Functions: `npx supabase functions serve` (Mailpit http://127.0.0.1:54324)
 
 ## Session protocol (build room)
@@ -34,7 +34,14 @@ git clone -b dev https://github.com/Subrat1108/refold-control-plane.git && cd re
    (D-068 — PostgREST embeds go ambiguous the moment a table gains a second
    relationship to the same target, e.g. `organizations.owner_profile_id` vs
    `profiles.org_id`); this catches it locally instead of in production.
-7. Commit per the convention below and **push to `dev`**
+7. **If the session changed UI (pages, components, nav, routing), run
+   `npm run e2e`** (headless Playwright, `tests/e2e/smoke.spec.ts`) against a
+   fresh `supabase db reset` + a running `npm run dev`, before pushing. It
+   signs in through the real login + MFA challenge screens (a seeded,
+   pre-verified TOTP factor in `seed.sql` — local-only fixture data) and
+   clicks through Home/Portfolio/Account 360/Approvals/Audit log/Standups/
+   People. Report the actual run output, not a summary claim.
+8. Commit per the convention below and **push to `dev`**
 
 A session that doesn't push is invisible to the planning room.
 
@@ -161,6 +168,14 @@ a back button. Never silently redirect without telling the user why.
   this already happened once (D-068). Grep for `table_name(` inside every
   `.select(` in `src/` and `supabase/functions/` whenever a migration adds a
   profiles/organizations FK, not just in the file you're editing.
+- **Self-referential FKs (e.g. `profiles.reports_to → profiles.id`) can't be
+  embedded at all, even with the `!fkey` hint PostgREST's own ambiguity
+  error suggests** (D-090) — confirmed by direct inspection: the hint still
+  400s ("could not find a relationship... in the schema cache") on a
+  same-table self-join. Resolve it client-side instead — fetch the plain
+  column, then look up the referenced row's display field from an
+  already-fetched result set (or a second small query) rather than
+  embedding it.
 
 **Components**
 - Build each component once; use props and conditional rendering for role

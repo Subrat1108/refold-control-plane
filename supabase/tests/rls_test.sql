@@ -498,3 +498,91 @@ begin
 
   raise notice 'ALL EQUAL-ADMINS RLS TESTS PASSED';
 end $$;
+
+-- ── Standups (equal-admins model Part 3) ──────────────────────────────────
+-- Fixtures: Reza (2002) is Tomás's (2004) reports_to. Grace (2005) and
+-- Lena (2003) are unrelated third parties for this block's purposes.
+do $$
+declare
+  n int;
+  v_standup_id uuid;
+  v_tomas_entry_id uuid;
+  v_grace_entry_id uuid;
+  v_today_val text;
+  v_item_id uuid;
+  v_item_status text;
+begin
+  -- Reza hosts a standup with Tomás + Grace as participants.
+  set local role authenticated;
+  set local request.jwt.claims = '{"sub":"00000000-0000-0000-0000-000000002002","aal":"aal2"}'; -- Reza
+  insert into public.standups (host_profile_id, standup_date) values ('00000000-0000-0000-0000-000000002002', current_date) returning id into v_standup_id;
+  insert into public.standup_entries (standup_id, profile_id, yesterday) values (v_standup_id, '00000000-0000-0000-0000-000000002004', 'draft') returning id into v_tomas_entry_id;
+  insert into public.standup_entries (standup_id, profile_id, yesterday) values (v_standup_id, '00000000-0000-0000-0000-000000002005', 'draft') returning id into v_grace_entry_id;
+  reset role;
+
+  -- Tomás can edit his own entry.
+  set local role authenticated;
+  set local request.jwt.claims = '{"sub":"00000000-0000-0000-0000-000000002004","aal":"aal2"}'; -- Tomás
+  update public.standup_entries set today = 'tomas edited his own' where id = v_tomas_entry_id;
+  select today into v_today_val from public.standup_entries where id = v_tomas_entry_id;
+  assert v_today_val = 'tomas edited his own', 'a participant must be able to edit their own entry';
+
+  -- Tomás CANNOT edit Grace's entry (not his, and he isn't the host) — the
+  -- UPDATE's USING clause just excludes the row (0 rows affected), no
+  -- exception, same RLS-UPDATE behavior documented earlier this project.
+  update public.standup_entries set today = 'tomas should not be able to set this' where id = v_grace_entry_id;
+  select today into v_today_val from public.standup_entries where id = v_grace_entry_id;
+  assert v_today_val is distinct from 'tomas should not be able to set this', 'a participant must NOT be able to edit someone else''s entry';
+  reset role;
+
+  -- Reza, the HOST, can edit Grace's entry even though it isn't his own.
+  set local role authenticated;
+  set local request.jwt.claims = '{"sub":"00000000-0000-0000-0000-000000002002","aal":"aal2"}'; -- Reza
+  update public.standup_entries set today = 'host edited grace''s entry' where id = v_grace_entry_id;
+  select today into v_today_val from public.standup_entries where id = v_grace_entry_id;
+  assert v_today_val = 'host edited grace''s entry', 'the host must be able to edit any entry in their own standup';
+  reset role;
+
+  -- Lena is neither a participant nor the host of this standup — she CAN
+  -- read it (scope is focus, not access control — every super admin can
+  -- read) but CANNOT write Tomás's entry.
+  set local role authenticated;
+  set local request.jwt.claims = '{"sub":"00000000-0000-0000-0000-000000002003","aal":"aal2"}'; -- Lena
+  select count(*) into n from public.standup_entries where id = v_tomas_entry_id;
+  assert n = 1, 'an unrelated super admin must still be able to READ the entry (focus, not access control)';
+  update public.standup_entries set today = 'lena should not be able to set this' where id = v_tomas_entry_id;
+  select today into v_today_val from public.standup_entries where id = v_tomas_entry_id;
+  assert v_today_val is distinct from 'lena should not be able to set this', 'an unrelated super admin must NOT be able to write someone else''s entry in a standup they neither host nor participate in';
+  reset role;
+
+  -- Action items: default status is 'open'; marking done persists, nothing
+  -- auto-transitions it back — "carry over until done" means no silent
+  -- status change, not that the row disappears.
+  set local role authenticated;
+  set local request.jwt.claims = '{"sub":"00000000-0000-0000-0000-000000002002","aal":"aal2"}'; -- Reza
+  insert into public.action_items (standup_entry_id, owner_profile_id, description, created_by) values (v_tomas_entry_id, '00000000-0000-0000-0000-000000002004', 'a blocker turned into an action item', '00000000-0000-0000-0000-000000002002') returning id into v_item_id;
+  select status::text into v_item_status from public.action_items where id = v_item_id;
+  assert v_item_status = 'open', format('a new action item must default to open, saw %s', v_item_status);
+  update public.action_items set status = 'done' where id = v_item_id;
+  select status::text into v_item_status from public.action_items where id = v_item_id;
+  assert v_item_status = 'done', 'marking an action item done must persist';
+  reset role;
+
+  -- Generic audit trigger fires on all 3 new tables.
+  set local role authenticated;
+  set local request.jwt.claims = '{"sub":"00000000-0000-0000-0000-000000001001","aal":"aal2"}';
+  select count(*) into n from public.audit_log where record_table = 'standups'; assert n > 0, 'standups writes must be audited';
+  select count(*) into n from public.audit_log where record_table = 'standup_entries'; assert n > 0, 'standup_entries writes must be audited';
+  select count(*) into n from public.audit_log where record_table = 'action_items'; assert n > 0, 'action_items writes must be audited';
+  reset role;
+
+  -- customer roles see 0 rows across all 3 tables.
+  set local role authenticated;
+  set local request.jwt.claims = '{"sub":"00000000-0000-0000-0000-000000001002","aal":"aal2"}'; -- Prism owner
+  select count(*) into n from public.standups; assert n = 0, format('Prism owner must see 0 standups, saw %s', n);
+  select count(*) into n from public.standup_entries; assert n = 0, format('Prism owner must see 0 standup_entries, saw %s', n);
+  select count(*) into n from public.action_items; assert n = 0, format('Prism owner must see 0 action_items, saw %s', n);
+  reset role;
+
+  raise notice 'ALL STANDUPS RLS TESTS PASSED';
+end $$;
