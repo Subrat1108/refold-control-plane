@@ -16,6 +16,82 @@ Template:
 
 ---
 
+## Session 31 — 2026-10-09 — Equal admins: people simplification (Part 1) + Home (Part 2)
+**Built:** the Head of CS reversed 7.2a's hierarchy direction entirely — no
+internal org chart, no titles, no RBAC by role; a person's involvement in
+an account is a per-account role tag for record-keeping, with history;
+`reports_to` is optional and permission-free. Per the prompt's own escape
+valve ("if it's too large, ship Parts 1–2, stop, report"), this session
+shipped **Part 1** (people simplification) and **Part 2** (Home) only —
+Standups (Part 3) and People activity/KPIs (Part 4) are designed in docs
+but not built (Parked).
+- **Schema** (one migration, `20261009000002_equal_admins.sql`): read-only
+  `supabase db dump` confirmed `teams`/`team_members`/`account_assignments`/
+  `project_members`/`proposals` all 0 rows on cloud and every
+  `profiles.title`/`organizations.owner_profile_id` NULL — so every drop
+  below is a guarded assert-empty-then-drop (D-071's `projects.fdes`
+  precedent), not a conversion. Dropped: `account_assignments` + its 2
+  owner-derivation triggers + `compute_org_owner()`; `teams`/`team_members`;
+  `organizations.owner_profile_id`; `profiles.title` (+ its CHECK). Added:
+  `account_roles` (profile, org, role, started_at, ended_at — one active
+  per pair via a partial unique index, no DELETE policy at all — history is
+  permanent); `profiles.reports_to` (self-FK, CHECK + a cycle-detection
+  trigger). Scope helpers rewritten against both: `my_account_ids()`,
+  `my_team_account_ids()` (own + direct reports' active accounts),
+  `person_account_ids()`; `team_account_ids`/`team_project_ids`/
+  `my_team_project_ids` dropped (confirmed zero call sites first).
+- **Edge Function:** `set_title` removed, `set_reports_to` added (same
+  D-043 column-grant-lockdown slot, audited); redeployed.
+- **Frontend:** `usePeople.ts` + `useSavedViews.ts` replace
+  `useTeamStructure.ts`; `TeamStructurePage.tsx` → `PeoplePage.tsx`
+  (`/people` — directory, reports_to picker, active roles editable inline,
+  role history); `ScopeSwitcher` drops the "specific team" picker and
+  relabels "Mine" → "My accounts", "My team" shown only via `useHasReports`;
+  `SavedViewsMenu` drops pinning; Portfolio + Account 360 get "Add to my
+  accounts"/"Leave account" and an EDL column/header reading live from
+  `account_roles` (no more `ownerProfileId`); nav reordered (Home first,
+  `homeRoute()` follows) with a new collapsed-by-default "Admin" disclosure
+  in `Sidebar.tsx` (Audit Log, Users & Roles, Feature Flags, Deployments).
+- **Home** (`/home`, new `useHome.ts`): My accounts at a glance (health, my
+  role, "activity in last 24h" from `audit_log` — an honest proxy, not a
+  true health diff); Needs attention (pending approvals, milestones due/
+  overdue, open escalations, open P1/P2 tickets, 14+ day no-engagement,
+  30+ day stale coverage — each scoped by the page's own `ScopeSwitcher`);
+  My reports (only if `useHasReports`); Recent activity (last 24h,
+  scoped).
+- **Fixtures** (local, fictional): Prism gets two FDEs on one account
+  (overlap case) and an ended role for Owen (history case); Tomás
+  `reports_to` Reza. `rls_test.sql`'s now-obsolete 7.2a block (title/teams/
+  old scope helpers) removed outright rather than patched.
+**Verified:** fresh `db reset`; `rls_test.sql`'s new "equal admins" block
+PASS (one active role per pair enforced; changing role preserves history;
+delete is a no-op — no policy grants it; any super admin can manage anyone's
+roles; customer roles see 0 `account_roles`; the generic audit trigger
+fires; self-reference and a 2-cycle both rejected; `my_account_ids`/
+`my_team_account_ids`/`person_account_ids` return the right sets including
+the no-roles/no-reports empty case) alongside all 4 pre-existing blocks,
+still green; `smoke-login.ts` all 3 roles; typecheck/lint (0 errors)/build
+green. A throwaway script exercised `set_reports_to` (happy path, self-ref
+rejected, cycle rejected) through the real Edge Function, plus add/end/
+change-role and the Home page's underlying queries, against the real API.
+Cloud: `db push --dry-run` matched exactly 1 migration; applied cleanly
+(proving the 0-row guards held); `migration list` 28/28 local=remote;
+`provisioning` redeployed (its action set changed).
+**Deviations:** none from the approved plan. Docs addendum done in full
+(both files) regardless of the Part 3/4 deferral, per the prompt's explicit
+"required, not optional."
+**Decisions:** D-081–D-086
+**Next:** Part 3 (Standups) and Part 4 (People activity + deferred
+performance indexes/KPIs) — both designed in docs this session, not built.
+**Issues:** same no-browser-automation-tool gap as the last two sessions —
+UI not click-tested interactively. product-overview.md's journeys (§6,
+J1/J3/J9/J10) still narrate "Head of CS"/"FDE"/"Team" scenarios — out of
+the addendum's explicitly listed sections, left as illustrative prose
+rather than silently rewritten; flagged for a future pass if it reads as a
+contradiction.
+
+---
+
 ## Session 30 — 2026-10-09 — 7.3: Approvals inbox + audit log screen
 **Built:** closes the write-pipeline loop (build-spec-v3 § 3). The real
 design question was what "approve" does — the spec says it applies the

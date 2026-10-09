@@ -36,10 +36,12 @@
 ## Phase 7 — Refold CS Hub (docs/build-spec-v3.md; docs/product-overview.md)
 
 - [x] 7.1 — Data model v3: migrations (enums, segments/metric_definitions, organizations extend, proposals/sync_state/sync_runs, projects+subtables, account records), RLS, generic audit trigger, provenance/dedupe, TS types, fictional local fixtures (D-055–D-065)
-- [x] 7.2a — People, teams, assignments, scoped views: titles, teams/team_members, account_assignments (+owner_profile_id derivation), project_members (replaces fdes/edl_profile_id), saved_views, scope helper functions, Team Structure screen (People/Teams/Accounts), ScopeSwitcher + SavedViewsMenu proof-wired into the Accounts list (D-069–D-077)
+- [x] 7.2a — *Superseded* by the equal-admins model (D-081–D-086) — titles/teams/account_assignments were built, then reversed by the Head of CS. See below.
 - [x] 7.2b — Portfolio + Account 360: Portfolio board (the account list, grouped by segment) + coverage tab, Account 360 (6 tabs: Overview/Projects/Escalations/Tickets/Engagements/Metrics), Add account (no invite), inline add/edit/delete, Mark verified, source badges — ScopeSwitcher + saved views wired into Portfolio (D-079)
-- [x] 7.3 — Approvals inbox + audit log screen (scoped: Mine/My team/Everyone): apply_proposal()/reject_proposal() SQL functions (approve actually applies the change via a fixed table allow-list + audits the decision itself), pending-count nav badge, CSV export on the audit log (D-080)
-- [ ] Home + per-team Standups + Team (FDE performance) — pulled ahead of Phase 8 (product-overview § 9)
+- [x] 7.3 — Approvals inbox + audit log screen (scoped: My accounts/My team/Everyone): apply_proposal()/reject_proposal() SQL functions (approve actually applies the change via a fixed table allow-list + audits the decision itself), pending-count nav badge, CSV export on the audit log (D-080)
+- [x] Equal admins — people simplification (Part 1): `account_roles` (per-account role tag, record-keeping, history) replaces titles/teams/account_assignments/owner_profile_id; `reports_to` (optional, UX-only, cycle-checked); rewritten scope helpers; People directory screen; Portfolio/Account 360 "Add to my accounts"/"Leave account"; nav reorder + collapsed Admin group (D-081–D-086)
+- [x] Home (Part 2): personal "my day" — my accounts, needs attention, my reports, recent activity, all scoped
+- [ ] Standups (Part 3) + People activity/performance indexes (Part 4) — designed in docs (D-085, Parked), not built; was "Home + per-team Standups + Team (FDE performance)" before the equal-admins reversal
 - [ ] 7.4 — Ingest API
 - [ ] 7.5 — CS Sync Skill + runner + Refresh (was 6.5)
 - [ ] 7.6 — Ask the Hub (chat agent)
@@ -74,6 +76,34 @@ Points, streaks, badges, team leaderboards — computed from the audit log + pro
 
 ## Last session
 (See docs/devlog.md for full session history — this is just the pointer.)
+
+Date: 2026-10-09 (later same day)
+Completed: Equal admins — Parts 1–2 only (Standups/People-activity-KPIs
+deferred, per the Head of CS's own "ship 1–2, stop, report" instruction).
+Reverses 7.2a's hierarchy: no titles, no teams, no RBAC by role. One
+migration — guarded drops (confirmed 0 rows on cloud first, read-only) of
+account_assignments/teams/team_members/organizations.owner_profile_id/
+profiles.title; new account_roles (per-account role tag, record-keeping,
+history via ended_at, no DELETE policy) + profiles.reports_to (optional,
+cycle-checked); scope helpers rewritten. Edge Function: set_title →
+set_reports_to. Frontend: usePeople.ts/useSavedViews.ts replace
+useTeamStructure.ts; TeamStructurePage → PeoplePage (/people); Portfolio/
+Account 360 get Add-to-my-accounts/Leave-account + live EDL display; nav
+reordered with a collapsed Admin group. New Home page (/home): my accounts,
+needs attention, my reports, recent activity. Docs (build-spec-v3.md,
+product-overview.md) rewritten to the equal-admins model in full.
+Verified: fresh db reset; rls_test.sql's new block + all 4 prior blocks
+green; smoke-login.ts all 3 roles; typecheck/lint/build green; a throwaway
+script exercised set_reports_to (incl. cycle rejection) through the real
+Edge Function plus add/end/change-role against the real API.
+Cloud: db push --dry-run matched exactly 1 migration (applied cleanly,
+proving the 0-row guards held); migration list 28/28 local=remote;
+provisioning redeployed (action set changed).
+Decisions made: D-081–D-086
+Known issues: Standups and People activity/KPIs not built (Parked). No
+browser-automation tool available — UI not click-tested interactively.
+
+---
 
 Date: 2026-10-09
 Completed: 7.3 — Approvals inbox + audit log screen. `apply_proposal()`/

@@ -17,7 +17,7 @@ function mapManagedUser(row: any): ManagedUser {
     subRoleId: row.sub_role_id,
     subRoleName: firstOf<{ name: string }>(row.sub_roles)?.name ?? null,
     createdAt: row.created_at,
-    title: row.title ?? null,
+    reportsTo: row.reports_to ?? null,
   }
 }
 
@@ -29,7 +29,7 @@ function firstOf<T>(v: any): T | null {
 async function fetchSuperAdmins(): Promise<ManagedUser[]> {
   const { data, error } = await supabase
     .from('profiles')
-    .select('id, email, full_name, account_type, role, status, sub_role_id, created_at, title, sub_roles(name)')
+    .select('id, email, full_name, account_type, role, status, sub_role_id, created_at, reports_to, sub_roles(name)')
     .eq('account_type', 'super_admin')
     .order('created_at', { ascending: true })
   if (error) throw new Error(error.message)

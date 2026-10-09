@@ -892,6 +892,85 @@ Fixtures: 7.1's `phase7_demo_data.sql` already seeded 2 pending proposals
 (both 'create') — added 3 more, local-only (`seed_proposals.sql`), covering
 'update' and 'delete' so edit-then-approve and reject are exercisable too.
 
+## D-081 — Equal admins: no internal hierarchy, no titles, no RBAC by role (2026-10-09)
+Head-of-CS direction, reversing 7.2a. Every admin uses the platform the same
+way; there is no org chart on the platform. Supersedes D-069 (`set_title`),
+D-070 (`owner_profile_id` derivation), D-073 (title-based scope semantics),
+D-074 (title-based default scope), and D-076/D-079's references to titles/
+teams as a planning construct. `profiles.title` and the `profile_title`
+enum's column usage are dropped (the enum type itself is left in place —
+Postgres can't cleanly drop one enum value, and nothing references it once
+the column is gone); the provisioning Edge Function's `set_title` action is
+removed.
+
+## D-082 — account_roles replaces account_assignments/teams: per-account role tags, record-keeping only, with history (2026-10-09)
+A person's involvement in an account is a per-account role tag
+(`edl`/`ta`/`fde`, the unchanged `assignment_role` enum) for record-keeping
+only — it grants no permissions and feeds future performance indexes
+(Parked, below), not access control. `account_roles` (profile, org, role,
+`started_at`, `ended_at`) replaces `account_assignments`; at most one ACTIVE
+role (`ended_at is null`) per (profile, org) via a partial unique index;
+changing role ends the current row and inserts a new one (never an in-place
+swap), so history is permanent — there is no DELETE policy on the table at
+all. `teams`/`team_members` are dropped outright (no conversion needed —
+confirmed 0 rows on cloud via a read-only `supabase db dump` before
+dropping, same guarded-drop precedent as D-071's `projects.fdes`).
+`organizations.owner_profile_id` and its derivation triggers
+(`compute_org_owner`, `force_org_owner_profile_id`,
+`sync_org_owner_from_assignment`) are retired — confirmed NULL everywhere on
+cloud — since every account's EDL is now read live from its active
+`account_roles` rows rather than stored on the organizations row.
+`project_members` is unchanged (project-level assignment is orthogonal to
+this change). Fixtures (local-only): Prism gets two FDEs on one account
+(Tomás + Grace, the overlap case) and Owen has a role on Prism that ended
+(`ended_at` set, the history case).
+
+## D-083 — reports_to: optional, UX-only, never permissions (2026-10-09)
+`profiles.reports_to` (nullable self-FK) is a convenience only — it
+pre-fills standup participants (when standups ship) and powers the "My
+team" scope option (D-084). No self-reference (`CHECK`) and no cycle of any
+depth (a `BEFORE INSERT OR UPDATE` trigger walks the chain, bounded to 50
+hops, and raises if it would loop back to the row being changed) — both
+verified directly and via the provisioning Edge Function's new
+`set_reports_to` action (replacing `set_title` in the same D-043
+column-grant-lockdown slot).
+
+## D-084 — Scope: My accounts / My team (reports-based) / Everyone / Person; saved-view pinning dropped (2026-10-09)
+Rewrites D-073/D-074 for the equal-admins model. **My accounts** = the
+viewer's own active `account_roles`. **My team** = My accounts **union**
+the active accounts of everyone whose `reports_to` is the viewer (direct
+reports only, not transitive) — shown in the `ScopeSwitcher` only when the
+viewer actually has reports, so it's invisible to most people most of the
+time. **Everyone** = no filter. **A specific person** = unchanged
+(`person_account_ids`). The team-targeting `team_id` scope and its helpers
+(`team_account_ids`, `team_project_ids`, `my_team_project_ids`) are dropped
+— there are no teams to target; `saved_views.scope`'s now-unused `'team_id'`
+enum value is left in place at the DB level rather than forcing an
+enum-value removal for zero rows. Default resolution: saved default view →
+"My accounts" if the viewer holds any active role → else "Everyone".
+Saved-view sidebar pinning (`pinned`) is dropped from the UI — "save" + "set
+as default" only — kept simple; the unused `pinned` column stays in the
+schema rather than another drop-a-column migration for a cosmetic feature.
+
+## D-085 — Standups: anyone hosts, participants pre-filled from reports_to + remembered, not per-team (2026-10-09)
+Describes the target design for whenever Standups ships (not built this
+session — see Parked). There is no fixed team roster to run a standup
+against. Any admin can start one; participants default to their direct
+reports (if any) and otherwise to whoever they picked last time, so daily
+use is one click; several standups a day run by different hosts is normal.
+Supersedes build-spec-v3's earlier "per-team Standups" framing (D-079's
+roadmap mention, product-overview.md §5.7's prior "one per team" design).
+
+## D-086 — Navigation: Home/Portfolio/Approvals/People primary, Admin collapsed; People renamed from Team Structure (2026-10-09)
+`/team-structure` → `/people`: a directory of every admin (optional
+`reports_to`, active account roles, editable inline) replacing the former
+People/Teams/Accounts sections — no titles, no teams tab. Sidebar primary
+items: Home, Portfolio, Approvals (existing pending-count badge), People,
+Settings; a collapsed-by-default "Admin" disclosure holds Audit Log, Users
+& Roles (renamed label only), Feature Flags, and the existing Deployments
+screens (Overview, Cloud/On-Prem Customers) — no visibility tiers, every
+admin can open it. Standups has no nav item yet (not built this session).
+
 # Parked
 
 Out-of-scope ideas land here instead of derailing the current prompt block.
@@ -905,3 +984,15 @@ Format: one line each, with the session it came from.
 - Custom SMTP before inviting the real team (Session 28, 7.2a): Supabase's
   built-in email sender is capped at 2 emails/hour, too low for onboarding a
   real CS team via the invite flow.
+- Standups (Session 31, equal-admins Part 3): anyone-hosts model designed
+  (D-085) but not built — this session shipped only Parts 1–2 (people
+  simplification + Home), per the Head of CS's own "ship 1–2, stop, report"
+  instruction. Needs `standups`/`standup_entries`/`action_items` schema + a
+  screen.
+- People activity screen (Session 31, equal-admins Part 4): per-person
+  detail page (active roles, history, recent activity, standup entries) not
+  built this session — the People directory (D-086) covers roles/reports_to
+  only so far.
+- Performance indexes / KPIs (Session 31, equal-admins Part 4): explicitly
+  deferred to a later block, alongside gamification (Phase 10) — compute
+  from `account_roles` history + the audit log; no new tracking needed.

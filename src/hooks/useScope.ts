@@ -1,30 +1,26 @@
-// Phase 7.2a — persists the current scope selection per (page, person) in
-// localStorage; saved views themselves live in Postgres (useSavedViews).
+// Persists the current scope selection per (page, person) in localStorage;
+// saved views themselves live in Postgres (useSavedViews).
 //
-// Default resolution order (D-074): my saved default view for this page →
-// my title's default (FDE → Mine, EDL/TA → My team, Head of CS → Everyone) →
-// Everyone when title is null (so an untitled super admin never opens to an
+// Default resolution order (equal-admins model, item e): my saved default
+// view for this page → "My accounts" if I have any active account_roles →
+// else "Everyone" (so a person with no active roles yet never opens to an
 // empty screen). Once the person explicitly picks a scope, that choice is
 // remembered per-page and wins over the default on their next visit.
 import { useCallback, useEffect, useState } from 'react'
 import { useSupabaseAuth } from '@/lib/auth/AuthProvider'
-import { useSavedViews } from './useTeamStructure'
-import type { ProfileTitle, SavedViewScope } from '@/types'
+import { useSavedViews } from './useSavedViews'
+import { useMyActiveAccountIds } from './usePeople'
+import type { SavedViewScope } from '@/types'
 
 interface ScopeState {
   scope: SavedViewScope
   scopeTarget: string | null
 }
 
-function titleDefault(title: ProfileTitle | null): SavedViewScope {
-  if (title === 'fde') return 'mine'
-  if (title === 'edl' || title === 'ta') return 'team'
-  return 'everyone' // head_of_cs, or no title set
-}
-
 export function useScope(page: string) {
   const { profile } = useSupabaseAuth()
   const { data: savedViews } = useSavedViews(page)
+  const { data: myActiveAccountIds } = useMyActiveAccountIds()
   const storageKey = profile ? `scope:${page}:${profile.id}` : null
 
   const [state, setState] = useState<ScopeState | null>(null)
@@ -40,14 +36,14 @@ export function useScope(page: string) {
         } catch { /* fall through to the default chain below */ }
       }
     }
-    if (savedViews === undefined) return // wait for the saved-views query to settle
+    if (savedViews === undefined || myActiveAccountIds === undefined) return // wait for both queries to settle
     const defaultView = savedViews.find((v) => v.isDefault)
     if (defaultView) {
       setState({ scope: defaultView.scope, scopeTarget: defaultView.scopeTarget })
       return
     }
-    setState({ scope: titleDefault(profile.title), scopeTarget: null })
-  }, [profile, savedViews, state, storageKey])
+    setState({ scope: myActiveAccountIds.length > 0 ? 'mine' : 'everyone', scopeTarget: null })
+  }, [profile, savedViews, myActiveAccountIds, state, storageKey])
 
   const setScope = useCallback((scope: SavedViewScope, scopeTarget: string | null = null) => {
     setState({ scope, scopeTarget })

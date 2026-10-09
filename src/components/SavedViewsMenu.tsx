@@ -1,6 +1,6 @@
 import { useState } from 'react'
 import { useQueryClient } from '@tanstack/react-query'
-import { Bookmark, ChevronDown, Pin, Star, Trash2 } from 'lucide-react'
+import { Bookmark, ChevronDown, Star, Trash2 } from 'lucide-react'
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -12,7 +12,7 @@ import {
 import { Modal } from '@/components/Modal'
 import { Tooltip } from '@/components/Tooltip'
 import { useSavedViews, useSupabaseAuth } from '@/hooks'
-import { saveView, setSavedViewDefault, setSavedViewPinned, deleteSavedView } from '@/hooks'
+import { saveView, setSavedViewDefault, deleteSavedView } from '@/hooks'
 import type { SavedView, SavedViewScope } from '@/types'
 
 interface SavedViewsMenuProps {
@@ -23,10 +23,9 @@ interface SavedViewsMenuProps {
   onApply: (view: SavedView) => void
 }
 
-// Saved views pair with ScopeSwitcher as the 7.2a "proof" wiring — any
-// scope + filter combination can be named, pinned, set as default, and
-// reapplied later. Private per person (RLS), so no owner filter is needed
-// client-side.
+// Any scope + filter combination can be named, set as default, and
+// reapplied later (sidebar pinning dropped — equal-admins model item f).
+// Private per person (RLS), so no owner filter is needed client-side.
 export function SavedViewsMenu({ page, currentScope, currentScopeTarget, currentFilters, onApply }: SavedViewsMenuProps) {
   const { profile } = useSupabaseAuth()
   const qc = useQueryClient()
@@ -69,12 +68,6 @@ export function SavedViewsMenu({ page, currentScope, currentScopeTarget, current
     await refresh()
   }
 
-  async function handleTogglePin(v: SavedView, e: React.MouseEvent) {
-    e.stopPropagation()
-    await setSavedViewPinned(v.id, !v.pinned)
-    await refresh()
-  }
-
   async function handleDelete(v: SavedView, e: React.MouseEvent) {
     e.stopPropagation()
     await deleteSavedView(v.id)
@@ -107,16 +100,6 @@ export function SavedViewsMenu({ page, currentScope, currentScopeTarget, current
                       className="p-1 rounded hover:bg-muted text-muted-foreground hover:text-foreground"
                     >
                       <Star className={v.isDefault ? 'w-3.5 h-3.5 fill-current text-primary' : 'w-3.5 h-3.5'} />
-                    </span>
-                  </Tooltip>
-                  <Tooltip content={v.pinned ? 'Unpin' : 'Pin'}>
-                    <span
-                      role="button"
-                      tabIndex={0}
-                      onClick={(e) => handleTogglePin(v, e)}
-                      className="p-1 rounded hover:bg-muted text-muted-foreground hover:text-foreground"
-                    >
-                      <Pin className={v.pinned ? 'w-3.5 h-3.5 fill-current text-primary' : 'w-3.5 h-3.5'} />
                     </span>
                   </Tooltip>
                   <Tooltip content="Delete">

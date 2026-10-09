@@ -1,5 +1,6 @@
+import { useState } from 'react'
 import { NavLink, useNavigate } from 'react-router-dom'
-import { LogOut } from 'lucide-react'
+import { LogOut, ChevronRight } from 'lucide-react'
 import { useAuth } from '@/hooks/useAuth'
 import { useSupabaseAuth } from '@/lib/auth/AuthProvider'
 import { useMediaQuery } from '@/hooks/useMediaQuery'
@@ -16,14 +17,37 @@ function NavBadge({ badgeKey }: { badgeKey: NavItem['badgeKey'] }) {
   return <span className="ml-auto rounded-full bg-[#6366F1] px-1.5 py-0.5 text-[10px] font-semibold leading-none">{count}</span>
 }
 
+function NavLinkItem({ item, narrow }: { item: NavItem; narrow: boolean }) {
+  const link = (
+    <NavLink
+      to={item.to}
+      className={({ isActive }) =>
+        cn(
+          'flex items-center rounded-md text-sm font-medium transition-colors',
+          narrow ? 'justify-center h-10 w-10 mx-auto' : 'gap-3 px-3 py-2.5',
+          isActive ? 'bg-[#6366F1] text-white' : 'text-white/70 hover:text-white hover:bg-white/8'
+        )
+      }
+    >
+      {item.icon}
+      {!narrow && item.label}
+      {!narrow && <NavBadge badgeKey={item.badgeKey} />}
+    </NavLink>
+  )
+  return narrow ? <Tooltip content={item.label}>{link}</Tooltip> : link
+}
+
 export function Sidebar() {
   const { user, role } = useAuth()
   const { signOut, profile } = useSupabaseAuth()
   const navigate = useNavigate()
-  const collapsed = useMediaQuery('(max-width: 1200px)')
+  const narrow = useMediaQuery('(max-width: 1200px)')
+  const [adminOpen, setAdminOpen] = useState(false)
   // Owner-only items (6.4b user management) are hidden from members.
   const isOwner = profile?.role === 'owner'
-  const navItems = NAV_BY_ROLE[role].filter((item) => !item.ownerOnly || isOwner)
+  const allItems = NAV_BY_ROLE[role].filter((item) => !item.ownerOnly || isOwner)
+  const primaryItems = allItems.filter((item) => !item.group)
+  const adminItems = allItems.filter((item) => item.group === 'admin')
 
   async function handleSignOut() {
     await signOut()
@@ -36,13 +60,13 @@ export function Sidebar() {
     <aside
       className={cn(
         'fixed top-0 left-0 h-screen flex flex-col bg-[#0F1117] text-white z-10 transition-[width]',
-        collapsed ? 'w-16' : 'w-60'
+        narrow ? 'w-16' : 'w-60'
       )}
     >
       {/* Logo */}
-      <div className={cn('flex items-center h-16 border-b border-white/10 flex-shrink-0', collapsed ? 'justify-center px-0' : 'gap-2.5 px-5')}>
+      <div className={cn('flex items-center h-16 border-b border-white/10 flex-shrink-0', narrow ? 'justify-center px-0' : 'gap-2.5 px-5')}>
         <div className="w-7 h-7 rounded-md bg-[#6366F1] flex items-center justify-center font-bold text-sm flex-shrink-0">R</div>
-        {!collapsed && (
+        {!narrow && (
           <div className="min-w-0">
             <div className="font-semibold text-base tracking-tight leading-none">Refold</div>
             <div className="text-[11px] text-white/50 leading-none mt-0.5">Control Plane</div>
@@ -52,35 +76,29 @@ export function Sidebar() {
 
       {/* Nav */}
       <nav className="flex-1 px-3 py-4 space-y-0.5 overflow-y-auto">
-        {navItems.map((item) => {
-          const link = (
-            <NavLink
-              key={item.to}
-              to={item.to}
-              className={({ isActive }) =>
-                cn(
-                  'flex items-center rounded-md text-sm font-medium transition-colors',
-                  collapsed ? 'justify-center h-10 w-10 mx-auto' : 'gap-3 px-3 py-2.5',
-                  isActive ? 'bg-[#6366F1] text-white' : 'text-white/70 hover:text-white hover:bg-white/8'
-                )
-              }
-            >
-              {item.icon}
-              {!collapsed && item.label}
-              {!collapsed && <NavBadge badgeKey={item.badgeKey} />}
-            </NavLink>
-          )
-          return collapsed ? (
-            <Tooltip key={item.to} content={item.label}>{link}</Tooltip>
-          ) : (
-            link
-          )
-        })}
+        {primaryItems.map((item) => <NavLinkItem key={item.to} item={item} narrow={narrow} />)}
+
+        {adminItems.length > 0 && (
+          <div className="pt-2">
+            {narrow ? (
+              <div className="h-px bg-white/10 my-2" />
+            ) : (
+              <button
+                onClick={() => setAdminOpen((o) => !o)}
+                className="w-full flex items-center gap-2 px-3 py-2 rounded-md text-xs font-semibold uppercase tracking-wide text-white/50 hover:text-white/80 transition-colors"
+              >
+                <ChevronRight size={12} className={cn('transition-transform', adminOpen && 'rotate-90')} />
+                Admin
+              </button>
+            )}
+            {(narrow || adminOpen) && adminItems.map((item) => <NavLinkItem key={item.to} item={item} narrow={narrow} />)}
+          </div>
+        )}
       </nav>
 
       {/* User profile */}
-      <div className={cn('flex-shrink-0 border-t border-white/10 pt-3 pb-4', collapsed ? 'px-2' : 'px-3')}>
-        {!collapsed && (
+      <div className={cn('flex-shrink-0 border-t border-white/10 pt-3 pb-4', narrow ? 'px-2' : 'px-3')}>
+        {!narrow && (
           <div className="flex items-center gap-3 px-2 py-2 mb-2">
             <div className="w-8 h-8 rounded-full bg-[#6366F1]/30 flex items-center justify-center text-xs font-semibold text-[#a5b4fc] flex-shrink-0">
               {initials}
@@ -93,7 +111,7 @@ export function Sidebar() {
         )}
 
         {/* Sign out */}
-        {collapsed ? (
+        {narrow ? (
           <Tooltip content="Sign out">
             <button onClick={handleSignOut} className="flex items-center justify-center h-10 w-10 mx-auto mt-1 rounded-md text-white/60 hover:text-white hover:bg-white/8 transition-colors" aria-label="Sign out">
               <LogOut size={18} />

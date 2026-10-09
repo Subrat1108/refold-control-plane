@@ -32,29 +32,31 @@ export {
 } from './useProvisioning'
 export type { OrgSubRoleInput } from './useProvisioning'
 export {
-  useTeams,
-  createTeam,
-  updateTeam,
-  deleteTeam,
-  useTeamMemberIds,
-  addTeamMember,
-  removeTeamMember,
-  useAssignableAccounts,
-  useAccountAssignments,
-  addAccountAssignment,
-  setAccountAssignmentPrimary,
-  removeAccountAssignment,
+  useAccountRoles,
+  usePersonRoles,
+  useMyActiveAccountIds,
+  addRole,
+  endRole,
+  changeRole,
+  usePeopleDirectory,
+  useHasReports,
+  useMyReports,
   resolveScopeAccountIds,
   useScopedAccountIds,
+} from './usePeople'
+export type { PersonRow } from './usePeople'
+export {
   useSavedViews,
   saveView,
   setSavedViewDefault,
   setSavedViewPinned,
   renameSavedView,
   deleteSavedView,
-} from './useTeamStructure'
-export type { AccountListRow, SaveViewInput } from './useTeamStructure'
+} from './useSavedViews'
+export type { SaveViewInput } from './useSavedViews'
 export { useScope } from './useScope'
+export { useMilestonesDue, useOpenEscalationsAll, useOpenP1P2Tickets, useRecentActivityOrgIds } from './useHome'
+export type { MilestoneDue, EscalationOpen, TicketOpen } from './useHome'
 export {
   markVerified,
   useSegments,
@@ -65,6 +67,7 @@ export {
   useOpenEscalationCounts,
   useNextMilestones,
   useLastEngagements,
+  useEdlNamesByOrg,
   useCoverage,
   coverageStatusFor,
   coveragePct,

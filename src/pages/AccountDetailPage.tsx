@@ -11,8 +11,12 @@ import {
   useCoverage,
   coveragePct,
   useLastEngagements,
+  useEdlNamesByOrg,
   useOrgAuditLog,
   markVerified,
+  usePersonRoles,
+  addRole,
+  endRole,
   useProjects,
   createProject,
   deleteProject,
@@ -82,9 +86,12 @@ export function AccountDetailPage() {
   const { data: segments } = useSegments()
   const { data: people } = useSuperAdmins()
   const { data: lastEngagements } = useLastEngagements()
+  const { data: edlNamesByOrg } = useEdlNamesByOrg()
   const { data: coverage } = useCoverage()
   const [healthModalOpen, setHealthModalOpen] = useState(false)
+  const [roleModalOpen, setRoleModalOpen] = useState(false)
   const { profile } = useSupabaseAuth()
+  const { data: myRoles } = usePersonRoles(profile?.id ?? null)
   const qc = useQueryClient()
 
   if (!orgId) return null
@@ -92,14 +99,26 @@ export function AccountDetailPage() {
   if (isError || !account) return <div className="p-6"><ErrorState onRetry={() => refetch()} /></div>
 
   const segmentName = segments?.find((s) => s.id === account.segmentId)?.name ?? '—'
-  const ownerName = people?.find((p) => p.id === account.ownerProfileId)?.fullName ?? '—'
+  const edlNames = edlNamesByOrg?.[account.id] ?? '—'
   const lastEngagementAt = lastEngagements?.[account.id] ?? null
   const pct = coveragePct(coverage, account.id)
+  const myActiveRole = (myRoles ?? []).find((r) => r.orgId === account.id && !r.endedAt) ?? null
 
   async function handleMarkVerified() {
     if (!profile) return
     await markVerified('organizations', account!.id, profile.id)
     qc.invalidateQueries({ queryKey: ['account', orgId] })
+  }
+
+  function refreshMyRoles() {
+    qc.invalidateQueries({ queryKey: ['person-roles', profile?.id] })
+    qc.invalidateQueries({ queryKey: ['my-active-account-ids'] })
+  }
+
+  async function handleLeave() {
+    if (!myActiveRole) return
+    await endRole(myActiveRole.id)
+    refreshMyRoles()
   }
 
   return (
@@ -112,7 +131,7 @@ export function AccountDetailPage() {
         <div>
           <h1 className="text-xl font-semibold text-foreground">{account.name}</h1>
           <p className="text-sm text-muted-foreground mt-0.5">
-            {segmentName} · {(account.deploymentModel ?? '—').replace(/_/g, ' ')} · Owner: {ownerName}
+            {segmentName} · {(account.deploymentModel ?? '—').replace(/_/g, ' ')} · EDL: {edlNames}
           </p>
         </div>
         <div className="flex items-center gap-2 flex-wrap">
@@ -127,6 +146,11 @@ export function AccountDetailPage() {
             >
               View deployment →
             </Link>
+          )}
+          {myActiveRole ? (
+            <button onClick={handleLeave} className="text-xs font-medium text-muted-foreground hover:text-red-600">Leave account</button>
+          ) : (
+            <button onClick={() => setRoleModalOpen(true)} className="text-xs font-medium text-primary hover:underline">Add to my accounts</button>
           )}
           <Tooltip content="Coming in 7.5"><button disabled className="rounded-md border border-border px-3 py-1.5 text-xs font-medium text-muted-foreground opacity-50 cursor-not-allowed">Refresh</button></Tooltip>
           <Tooltip content="Coming in 7.6"><button disabled className="rounded-md border border-border px-3 py-1.5 text-xs font-medium text-muted-foreground opacity-50 cursor-not-allowed">Ask about this account</button></Tooltip>
@@ -145,7 +169,53 @@ export function AccountDetailPage() {
       {tab === 'metrics' && <MetricsTab orgId={account.id} />}
 
       <ChangeHealthModal account={account} open={healthModalOpen} onClose={() => setHealthModalOpen(false)} />
+      <AddMyRoleModal
+        orgId={account.id}
+        profileId={profile?.id ?? null}
+        open={roleModalOpen}
+        onClose={() => setRoleModalOpen(false)}
+        onDone={refreshMyRoles}
+      />
     </div>
+  )
+}
+
+function AddMyRoleModal({ orgId, profileId, open, onClose, onDone }: { orgId: string; profileId: string | null; open: boolean; onClose: () => void; onDone: () => void }) {
+  const [role, setRole] = useState<AssignmentRole>('fde')
+  const [busy, setBusy] = useState(false)
+  const [error, setError] = useState('')
+
+  async function submit(e: React.FormEvent) {
+    e.preventDefault()
+    if (!profileId) return
+    setBusy(true)
+    setError('')
+    try {
+      await addRole(orgId, profileId, role)
+      onDone()
+      onClose()
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Failed to add role')
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  return (
+    <Modal open={open} onClose={onClose} title="Add to my accounts">
+      <form onSubmit={submit} className="space-y-4">
+        <div>
+          <label className="block text-sm font-medium text-foreground mb-1.5">My role on this account</label>
+          <select value={role} onChange={(e) => setRole(e.target.value as AssignmentRole)} className="w-full rounded-md border border-border px-3 py-2 text-sm">
+            <option value="edl">EDL</option>
+            <option value="ta">TA</option>
+            <option value="fde">FDE</option>
+          </select>
+        </div>
+        {error && <p className="text-xs text-red-600">{error}</p>}
+        <button type="submit" disabled={busy} className="w-full rounded-md bg-primary px-3 py-2.5 text-sm font-medium text-white hover:bg-primary/90 disabled:opacity-40">{busy ? 'Adding…' : 'Add'}</button>
+      </form>
+    </Modal>
   )
 }
 

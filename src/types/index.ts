@@ -363,7 +363,7 @@ export interface Profile {
   subRoleId: string | null
   status: UserStatus
   org: ProfileOrg | null
-  title: ProfileTitle | null // 7.2a — super_admin only; drives useScope's default
+  reportsTo: string | null // optional, UX only — never permissions
 }
 
 // ── RBAC / provisioning (Phase 6.4 — matches the Postgres schema § 4) ──────────
@@ -390,7 +390,7 @@ export interface ManagedUser {
   subRoleId: string | null
   subRoleName: string | null
   createdAt: string
-  title: ProfileTitle | null // 7.2a — used by the Team Structure screen
+  reportsTo: string | null // optional, UX only — never permissions
 }
 
 export interface Invitation {
@@ -452,7 +452,6 @@ export interface Account {
   deploymentModel: DeploymentModel | null
   health: OrgHealth
   lifecycleStage: LifecycleStage
-  ownerProfileId: string | null
   dataAccessMode: DataAccessMode | null
   aliases: string[]
   healthReason: string | null // 7.2b
@@ -640,35 +639,25 @@ export interface SyncRun {
   cost: number | null
 }
 
-// ── Phase 7.2a — people, teams, assignments, scoped views (build-spec-v3 § 5;
-// product-overview.md § 12). Backend + Team Structure screen this session —
-// Portfolio/Account 360 (7.2b) wire these into their own list views next.
+// ── Equal-admins model (supersedes 7.2a's titles/teams/account_assignments;
+// build-spec-v3 § 5; product-overview.md § 12). Every admin is equal; a
+// person's involvement in an account is a per-account ROLE TAG for
+// record-keeping only, with history. reports_to is an optional, permission-
+// free UX convenience.
 
-export type ProfileTitle = 'head_of_cs' | 'edl' | 'ta' | 'fde'
-export type AssignmentRole = 'edl' | 'ta' | 'fde' // shared by account_assignments and project_members
+export type AssignmentRole = 'edl' | 'ta' | 'fde' // shared by account_roles and project_members
+// 'team_id' is a dead scope value at the DB level (unused, left in place —
+// Postgres can't cleanly drop one enum value) but no longer produced/accepted
+// by the app: no teams left to target. 'team' means "my team" (reports-based).
 export type SavedViewScope = 'mine' | 'team' | 'everyone' | 'person' | 'team_id'
 
-export interface Team {
+export interface AccountRole {
   id: string
-  name: string
-  leadProfileId: string | null
-  createdAt: string
-}
-
-export interface TeamMember {
-  id: string
-  teamId: string
   profileId: string
-  createdAt: string
-}
-
-export interface AccountAssignment {
-  id: string
   orgId: string
-  profileId: string
   role: AssignmentRole
-  isPrimary: boolean
-  createdAt: string
+  startedAt: string
+  endedAt: string | null
 }
 
 export interface ProjectMember {
@@ -679,27 +668,18 @@ export interface ProjectMember {
   createdAt: string
 }
 
-// Composed shape for the Team Structure screen's Teams list (joins the lead's
-// name + a member count), mirroring how ManagedUser/Invitation already join
-// display fields rather than forcing the UI to do a second lookup.
-export interface TeamSummary {
-  id: string
-  name: string
-  leadProfileId: string | null
-  leadName: string | null
-  memberCount: number
-  createdAt: string
-}
-
-// Composed shape for one row of an account's assignment list (joins the
-// assigned person's name for display).
-export interface AccountAssignmentRow {
+// Composed shape for one row of an account's active-roles list (joins the
+// assigned person's name for display) — used by Portfolio/Account 360's
+// "add to my accounts" UI and the People directory.
+export interface AccountRoleRow {
   id: string
   orgId: string
+  accountName: string | null
   profileId: string
   profileName: string | null
   role: AssignmentRole
-  isPrimary: boolean
+  startedAt: string
+  endedAt: string | null
 }
 
 export interface SavedView {
@@ -708,7 +688,7 @@ export interface SavedView {
   name: string
   page: string
   scope: SavedViewScope
-  scopeTarget: string | null // profiles.id when scope='person'; teams.id when scope='team_id'
+  scopeTarget: string | null // profiles.id when scope='person'
   filters: Record<string, unknown>
   sort: Record<string, unknown> | null
   columns: string[] | null
@@ -730,7 +710,7 @@ export type CoverageStatus = 'current' | 'stale' | 'missing'
 // per-table queries in usePortfolio.ts (no new SQL).
 export interface PortfolioAccountRow extends Account {
   segmentName: string | null
-  ownerName: string | null
+  edlNames: string | null // active account_roles where role='edl', joined for display
   openEscalationCount: number
   nextMilestone: { description: string; period: string } | null
   lastEngagementAt: string | null

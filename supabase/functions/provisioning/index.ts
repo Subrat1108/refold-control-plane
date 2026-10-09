@@ -285,30 +285,29 @@ async function assignSubRole(caller: Caller, body: Record<string, unknown>) {
   return json({ ok: true })
 }
 
-// ── set_title (7.2a) ──────────────────────────────────────────────────────────
-// profiles.title is only writable here: D-043's column-grant lockdown already
-// restricts `authenticated` direct UPDATEs to full_name alone, so this
-// service-role write (which bypasses column grants) is the only path in.
-const TITLES = ['head_of_cs', 'edl', 'ta', 'fde'] as const
-
-async function setTitle(caller: Caller, body: Record<string, unknown>) {
+// ── set_reports_to (equal-admins model) ───────────────────────────────────────
+// profiles.reports_to is only writable here: D-043's column-grant lockdown
+// already restricts `authenticated` direct UPDATEs to full_name alone, so
+// this service-role write (which bypasses column grants) is the only path
+// in. Optional, UX-only convenience — never grants or implies permissions.
+async function setReportsTo(caller: Caller, body: Record<string, unknown>) {
   const userId = body.userId as string
-  const title = (body.title as string) || null
+  const reportsTo = (body.reportsTo as string) || null
   if (!userId) return json({ error: 'userId is required' }, 400)
-  if (title !== null && !TITLES.includes(title as (typeof TITLES)[number])) {
-    return json({ error: `title must be one of ${TITLES.join(', ')}, or null` }, 400)
-  }
 
   const svc = caller.service
   const { data: target } = await svc.from('profiles').select('org_id, account_type').eq('id', userId).single()
   if (!target || target.account_type !== 'super_admin') {
-    return json({ error: 'title can only be set on a super_admin profile' }, 400)
+    return json({ error: 'reports_to can only be set on a super_admin profile' }, 400)
   }
 
-  const { error } = await svc.from('profiles').update({ title }).eq('id', userId)
+  // The DB trigger (prevent_reports_to_cycle) rejects a self-reference or a
+  // deeper cycle by raising inside the transaction — its message surfaces
+  // here as a normal 400.
+  const { error } = await svc.from('profiles').update({ reports_to: reportsTo }).eq('id', userId)
   if (error) return json({ error: error.message }, 400)
 
-  await writeAudit(svc, caller.id, 'set_title', 'profile', userId, target.org_id ?? null, { title })
+  await writeAudit(svc, caller.id, 'set_reports_to', 'profile', userId, target.org_id ?? null, { reportsTo })
   return json({ ok: true })
 }
 
@@ -467,7 +466,7 @@ async function ownerSetUserStatus(caller: Caller, body: Record<string, unknown>)
   return json({ ok: true })
 }
 
-const SUPER_ACTIONS = new Set(['provision_org', 'invite_super_admin', 'assign_sub_role', 'set_user_status', 'set_title'])
+const SUPER_ACTIONS = new Set(['provision_org', 'invite_super_admin', 'assign_sub_role', 'set_user_status', 'set_reports_to'])
 const OWNER_ACTIONS = new Set(['owner_invite_user', 'owner_assign_sub_role', 'owner_set_user_status'])
 
 Deno.serve(async (req: Request) => {
@@ -503,8 +502,8 @@ Deno.serve(async (req: Request) => {
         return assignSubRole(caller, body)
       case 'set_user_status':
         return setUserStatus(caller, body)
-      case 'set_title':
-        return setTitle(caller, body)
+      case 'set_reports_to':
+        return setReportsTo(caller, body)
     }
   }
 

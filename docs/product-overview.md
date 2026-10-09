@@ -30,31 +30,33 @@ It answers three questions at any moment:
 
 ## 2. Who uses it
 
+**Every CS admin is a peer — there is no internal hierarchy on the
+platform.** Everyone has the same `super_admin` access and uses the hub the
+same way; no title-based behavior, no RBAC by role.
+
 | Persona | Role in the system | What they mainly do |
 |---|---|---|
-| **Head of CS** | super_admin, *Head of CS* title | Whole portfolio, every team, FDE performance, approvals, monthly status report, sign-off on EBR/QBRs |
-| **EDL / TA (team lead)** | super_admin, *EDL* or *TA* title | Owns a set of accounts and leads a team of FDEs; runs **their team's** standup; reviews their team's accounts and performance |
-| **FDE** | super_admin, *FDE* title | Works the accounts and projects assigned to them; keeps records current; approves sync proposals; logs engagements; prepares EBR/QBR inputs; writes knowledge articles |
+| **CS admin** | super_admin | Works the accounts they hold a role on (EDL / TA / FDE, per account — see below); approves sync proposals; logs engagements; prepares EBR/QBR inputs; writes knowledge articles. Anyone can also just look at the whole portfolio — scope is focus, not a permission tier. |
 | **Refold member** (sales, product, engineering, leadership) | **new read-only internal role** | Search and read the knowledge base and team docs; view account summaries (scope to confirm, §11) |
 | Customer admins (cloud / on-prem owners) | existing, frozen | Unchanged; no new work |
 
 Notes:
 
-- **Team structure:** Head of CS → EDLs and TAs (team leads) → FDEs. Each lead has
-  a set of accounts and a set of FDEs. An account can have an EDL, a TA and
-  several FDEs assigned. All of them are **linked people (profiles)**, not text
-  names, which is what makes "my accounts", per-team standups and performance
-  trackable (see §10 and §12).
-- "Super admin" stays the access level for everyone on the CS team. A **title**
-  (Head of CS / EDL / TA / FDE) plus **reporting lines** decide default views and
-  what performance data each person sees.
+- **Account roles, not job titles.** EDL / TA / FDE is a role on a specific
+  account (an account can have an EDL, a TA, and several FDEs, each a
+  **linked person**, not a text name) — it's record-keeping, feeding future
+  performance indexes (§13), and grants no permissions. A person can hold
+  different roles on different accounts.
+- **`reports_to` is optional and permission-free.** It's a UX convenience
+  only — pre-fills standup participants and powers the "My team" scope
+  option (§12) — never a factor in what someone can see or do.
 
 ---
 
 ## 3. What the hub holds
 
 ```
-Account  (segment, deployment model, health, lifecycle stage, owner)
+Account  (segment, deployment model, health, lifecycle stage, active EDL/TA/FDE roles)
  ├─ Contacts            customer people, roles, champion / decision maker
  ├─ POCs                success criteria, dates, stakeholders, outcome
  ├─ Onboarding plan     from a template: tasks, owners, due dates, progress
@@ -69,9 +71,9 @@ Account  (segment, deployment model, health, lifecycle stage, owner)
  ├─ Reports             generated EBR / QBR / status slides (history)
  └─ Deployment          clusters → namespaces → orgs → tenants (existing)
 
-Team
- ├─ People (FDEs/EDLs)  accounts owned, projects, workload, performance
- └─ Standups            daily entries, blockers, action items
+People
+ ├─ Directory           reports_to (optional), active account roles, recent activity
+ └─ Standups            daily entries, blockers, action items — anyone can host
 
 Knowledge
  ├─ Knowledge base      articles: product, deployment, connectors, playbooks, lessons
@@ -89,22 +91,30 @@ and **when it was last verified**.
 
 ## 4. Navigation
 
-| Sidebar item | Who sees it | What it is |
-|---|---|---|
-| **Home** | everyone | Personal "my day" (§5.1) |
-| **Portfolio** | super admins | All accounts by segment and health; coverage tab |
-| **Accounts** | super admins (members: read, scope TBC) | List → **Account 360** |
-| **POCs** | super admins | POC pipeline board |
-| **Onboarding** | super admins | Active onboarding plans across accounts |
-| **Projects** | super admins | Cross-account project list and timeline |
-| **Standups** | super admins | Daily standup board + history |
-| **Team** | Head of CS (FDEs: own profile) | FDE workload and performance |
-| **Reports** | super admins | Monthly status, EBR, QBR builder + history |
-| **Approvals** | super admins | One inbox for every pending proposal (badge) |
-| **Documents** | everyone (permissioned) | Drive-backed document base |
-| **Knowledge base** | everyone | Articles + search |
-| **Ask the Hub** | everyone (scoped) | Chat panel, available from any screen |
-| **Admin** → Users & roles, Deployments (existing god view, clusters), Feature flags, Sync status, Audit log, Settings | super admins (audit: Head of CS) | Existing admin portal |
+Primary items — every CS admin sees the same nav, no admin-tier
+distinctions:
+
+| Sidebar item | What it is |
+|---|---|
+| **Home** | Personal "my day" (§5.1) |
+| **Portfolio** | All accounts by segment and health; coverage tab |
+| **Approvals** | One inbox for every pending proposal (badge) |
+| **Standups** | Daily standup board + history |
+| **People** | Directory: who reports to whom (optional), active account roles, link to recent activity |
+| **Reports** | Monthly status, EBR, QBR builder + history |
+| **Documents** | Drive-backed document base |
+| **Knowledge base** | Articles + search |
+| **Ask the Hub** | Chat panel, available from any screen |
+
+Plus, not yet built this round: **Accounts** (list → Account 360, folded
+into Portfolio's board for now), **POCs**/**Onboarding**/**Projects**
+(Phase 8), **People activity** (§5.8, per-person detail reached from
+People).
+
+**Admin** — a collapsed-by-default group, same screens as the existing
+admin portal: Audit log, Users & roles, Feature flags, Deployments
+(existing god view, clusters), Settings. No visibility tiers — every CS
+admin can open it.
 
 ---
 
@@ -112,22 +122,26 @@ and **when it was last verified**.
 
 ### 5.1 Home ("my day")
 
-- **For an FDE:** my accounts with health changes since yesterday; my pending
-  approvals; my milestones due or overdue this week; my open escalations and P1/P2
-  tickets; accounts with no engagement in N days; stale records on my accounts;
-  today's standup entry (pre-drafted).
-- **For the Head of CS:** the same, plus portfolio deltas (accounts that changed
-  health, new escalations, slipped milestones), team approvals backlog, and FDEs
-  with overdue items.
+One Home for every CS admin — no per-title variants:
+
+- My accounts at a glance, with my role on each and what changed since
+  yesterday; my pending approvals; my milestones due or overdue this week;
+  my open escalations and P1/P2 tickets; accounts with no engagement in N
+  days; stale records on my accounts; today's standup entry (pre-drafted).
+- A compact row per direct report, if anyone reports to me (optional,
+  `reports_to`): their overdue items and open escalations.
+- A scope switcher (§12) lets anyone widen Home to their team or the whole
+  portfolio — it's the same screen, not a different one for a different
+  tier.
 - **For a Refold member:** knowledge base search, recently updated articles, team
   docs.
 
 ### 5.2 Portfolio
 
 - **Board tab:** accounts grouped by segment (Enterprise / SMB / …), each showing
-  health, lifecycle stage, deployment model, owner, open escalations, next
+  health, lifecycle stage, deployment model, active EDL(s), open escalations, next
   milestone, last engagement, and coverage %. Filters: segment, health, lifecycle,
-  owner, deployment model. Sections for **monthly key milestones** and
+  deployment model. Sections for **monthly key milestones** and
   **recommendations + impact** (editable; they feed the status report). **Add
   account** creates a record directly, with no invite (prospects, POCs,
   air-gapped customers).
@@ -138,9 +152,9 @@ and **when it was last verified**.
 
 ### 5.3 Account 360
 
-Header: name, segment, health, lifecycle stage, deployment model, owner, last
-engagement, coverage %, **Refresh** (sync this account), **Ask about this
-account**, and "View deployment →" when one exists.
+Header: name, segment, health, lifecycle stage, deployment model, active
+EDL(s), last engagement, coverage %, **Refresh** (sync this account), **Ask
+about this account**, and "View deployment →" when one exists.
 
 | Tab | Shows | Actions |
 |---|---|---|
@@ -175,43 +189,47 @@ onboarding moves the account to **live**.
 Cross-account list and timeline: health, go-live, EDL/FDEs, next milestone,
 slippage. Filters by FDE, health, and go-live month.
 
-### 5.7 Standups (one per team)
+### 5.7 Standups
 
-- **There is no single standup.** Each EDL/TA runs their own team's standup:
-  their FDEs, over their accounts. The Head of CS can open any team's standup and
-  sees a cross-team roll-up of blockers and action items.
-- **Board for a team and date:** one card per team member.
-- **Auto-drafted "since last standup":** records they changed, approvals done, new
-  escalations and tickets on their accounts, milestones hit or slipped, metrics
-  updated.
-- Each FDE edits **Yesterday / Today / Blockers** before or during the call.
-- **Live mode:** steps through FDEs one by one with a timer.
+- **Anyone can start a standup** — there's no fixed team roster. The host
+  picks participants, pre-filled from their direct reports (`reports_to`,
+  if any) and defaulting to whoever they picked last time, so daily use is
+  one click. Several standups a day, run by different hosts, is normal —
+  not one team's board.
+- **Board for a host and date:** one card per participant, covering their
+  active accounts and their own actions.
+- **Auto-drafted "since last standup":** records they changed, approvals
+  done, new escalations and tickets on their accounts, milestones hit or
+  slipped, metrics updated.
+- Each participant edits **Yesterday / Today / Blockers** before or during
+  the call; the host can edit any entry.
+- **Live mode:** steps through participants one by one with a timer.
 - Blockers can be turned into **asks** on an account and **action items** with an
-  owner and due date.
-- History is searchable; open action items carry over to the next day.
+  owner and due date; open action items carry over until done.
+- History is searchable by date.
 
-### 5.8 Team (FDE performance)
+### 5.8 People activity
 
-Per FDE profile, from data the hub already holds:
+Per person, from data the hub already holds — **a profile, not a
+performance tier**:
 
 | Signal | From |
 |---|---|
-| Accounts and projects owned, workload | ownership, project members |
-| Health of owned accounts (now + trend) | account health history |
+| Active account roles, with since-dates, and role history | `account_roles` |
+| Health of accounts they hold a role on (now + trend) | account health history |
 | Milestones delivered on time vs. slipped | milestones |
-| POC win rate *(Phase 8)* | POCs |
 | Escalations: count, time to resolve | escalations |
 | Ticket SLA adherence (P1/P2) | tickets |
 | Engagement cadence (days since last touch per account) | engagements |
 | Data freshness on their accounts (coverage %) | provenance |
 | Approval turnaround | proposals |
-| EBR/QBRs delivered on schedule | reports |
 | Standup commitments completed | standups |
 
-These are **signals for coaching conversations, not automatic verdicts**. Each
-metric links to the records behind it. Visibility: the Head of CS sees everyone;
-an EDL/TA sees their team; an FDE sees their own. These same signals later feed
-**gamification** (§13).
+These are **signals for coaching conversations, not automatic verdicts**,
+visible to every CS admin (no visibility tiers — everyone's a peer). Each
+metric links to the records behind it. **Performance indexes / KPIs
+computed from these signals are deferred to a later block**, alongside
+gamification (§13) — this screen just surfaces the raw signals for now.
 
 ### 5.9 Reports
 
@@ -361,17 +379,19 @@ log in, enroll MFA, and land on Home.
 
 ## 8. Permissions
 
-| Capability | Head of CS | FDE | Refold member | Customer admin |
-|---|---|---|---|---|
-| View all accounts | ✅ | ✅ | summary only (TBC) | own org only (frozen) |
-| Edit records, approve proposals | ✅ | ✅ | — | — |
-| Team: all FDEs' performance | ✅ | own only | — | — |
-| Audit log | ✅ | own changes (TBC) | — | — |
-| Standups | run + edit all | edit own | — | — |
-| Reports | ✅ | ✅ | view shared (TBC) | — |
-| Documents | ✅ | ✅ | team docs (account docs TBC) | — |
-| Knowledge base | edit | edit | read | — |
-| Admin (users, flags, deployments) | ✅ | ✅ (TBC) | — | — |
+Every CS admin is a peer — one column, not a tier per title:
+
+| Capability | CS admin | Refold member | Customer admin |
+|---|---|---|---|
+| View all accounts | ✅ | summary only (TBC) | own org only (frozen) |
+| Edit records, approve proposals | ✅ | — | — |
+| People activity (§5.8) | ✅ (everyone's) | — | — |
+| Audit log | ✅ | — | — |
+| Standups | host + edit any | — | — |
+| Reports | ✅ | view shared (TBC) | — |
+| Documents | ✅ | team docs (account docs TBC) | — |
+| Knowledge base | edit | read | — |
+| Admin (users, flags, deployments) | ✅ | — | — |
 
 ---
 
@@ -379,89 +399,107 @@ log in, enroll MFA, and land on Home.
 
 | Phase | Blocks | Outcome |
 |---|---|---|
-| **7 — Account intelligence** | 7.1 ✅ data model · **7.2a People, teams, assignments, scoped views** · **7.2b Portfolio + Account 360** · 7.3 Approvals + Audit screen · then **Home + per-team Standups + Team** · 7.4 Ingest API · 7.5 CS Sync Skill + Refresh + daily · 7.6 Ask the Hub · 7.7 Reports (monthly, EBR, QBR) · 7.8 Air-gapped import | Every person works their own accounts; complete, current records + reports |
+| **7 — Account intelligence** | 7.1 ✅ data model · 7.2a *(superseded — see below)* · **7.2b Portfolio + Account 360** · 7.3 Approvals + Audit screen · then **Home + Standups + People activity** · 7.4 Ingest API · 7.5 CS Sync Skill + Refresh + daily · 7.6 Ask the Hub · 7.7 Reports (monthly, EBR, QBR) · 7.8 Air-gapped import | Every person works their own accounts; complete, current records + reports |
 | **8 — Lifecycle** | Contacts · POCs · Onboarding templates/plans · Engagement cadence · Project timeline | Prospect → POC → onboarding → live, tracked |
 | **9 — Knowledge** | Documents (Drive) · Knowledge base · Refold member role · global search | Company knowledge layer |
 | **10 — Gamification** | Points, streaks, badges, leaderboards (§13) | Habits that keep the hub current |
 
-Home, standups and the Team view move ahead of Phase 8 (default chosen, since the
-team structure is central to daily use).
+Home, Standups and People activity move ahead of Phase 8 (default chosen,
+since account roles and reporting lines are central to daily use).
 
 ---
 
 ## 10. Changes this implies for what's already planned
 
-1. **People, teams and assignments (7.2a).** 7.1 stored FDEs as text names
-   (`projects.fdes text[]`) and a single `owner_profile_id`. Replace with linked
-   people: titles, teams (lead + members), account assignments (EDL / TA / FDE)
-   and project members. This is a migration, so push it to cloud before the code.
-2. **Titles:** Head of CS / EDL / TA / FDE on each profile; add a new **Refold
-   member** account type (read-only internal) in Phase 9.
+1. **People and account roles.** 7.1 stored FDEs as text names
+   (`projects.fdes text[]`) and a single `owner_profile_id`. 7.2a first
+   replaced these with titles + teams + account assignments — then the Head
+   of CS reversed that direction: no internal hierarchy. The final shape is
+   `account_roles` (per-account role tag, record-keeping, with history) +
+   optional `reports_to` + unchanged `project_members`. This is a migration,
+   so push it to cloud before the code.
+2. **No titles.** `profiles.title` was built in 7.2a and then dropped. Add a
+   new **Refold member** account type (read-only internal) in Phase 9.
 3. **Health history:** keep a history of account and project health changes (the
-   audit log already captures them; Team trends read from it, or a light history
-   table).
+   audit log already captures them; People activity trends read from it, or a
+   light history table).
 4. **QBR** joins EBR in 7.7 (old plan only had EBR).
-5. **Navigation** in 7.2 should match §4 (Portfolio + Accounts), so later items
-   slot in without reshuffling.
+5. **Navigation** should match §4 (Home/Portfolio/Approvals/Standups/People,
+   Admin collapsed), so later items slot in without reshuffling.
 
 ---
 
 ## 11. Questions for the Head of CS
 
 Defaults assumed until answered: documents stay in Google Drive; Refold members
-get KB + team docs only; performance visibility is Head of CS → all, lead → team,
-FDE → own; Home + Standups + Team follow 7.3.
+get KB + team docs only; Home + Standups + People activity follow 7.3.
 
 1. **Refold member access:** knowledge base + team docs only, or also read-only
    account summaries (health, projects)? Any accounts or fields that should stay
    CS-only?
 2. **Documents:** Drive-backed as described (files stay in Google Drive), or files
    stored in the hub itself?
-3. **FDE performance visibility:** Head of CS sees all, FDE sees own — right? Is the
-   signal list in §5.8 right?
-4. **Standups:** daily? Live call, async, or both? Roughly how many FDEs?
+3. **People activity signals:** is the list in §5.8 right, now that it's informational
+   for everyone rather than a Head-of-CS-only view?
+4. **Standups:** daily? Live call, async, or both? Roughly how many CS admins
+   per typical standup?
 5. **EBR vs. QBR:** is the split in §5.9 right? And the export format (Google
    Slides, PPTX, PDF)?
-6. **Sequencing:** pull Home + Standups (+ Team) ahead of Phase 8?
+6. **Sequencing:** pull Home + Standups (+ People activity) ahead of Phase 8?
 7. **Notifications:** Slack DM digests for pending approvals and overdue items, or
    in-app only?
 8. The third segment group in the status deck — what is it called?
+9. **Performance indexes / KPIs** (§5.8, §13): deferred for now — when should
+   this come back on the roadmap?
 
 ---
 
 ## 12. Personal workspaces and views
 
 Every person on the CS team logs into **their own book of business**, not a
-generic list.
+generic list — built from per-account roles, not a job title or team roster.
 
-- **Assignments:** each account can have an EDL, a TA and one or more FDEs
-  assigned; each project has its own members. An account appears in someone's
-  workspace through these assignments.
-- **Teams:** each EDL/TA leads a team of FDEs. A person can belong to more than
-  one team if needed.
-- **Scope switcher** on every list screen (Portfolio, Accounts, Projects,
-  Approvals, Standups, Team):
-  - **Mine** — accounts and projects I'm assigned to (default for FDEs);
-  - **My team** — everything my team members are assigned to (default for
-    EDL/TA);
-  - **Everyone** — the whole portfolio (default for Head of CS);
-  - **A specific person or team** — e.g. "show me what this FDE owns".
+- **My accounts = my active account roles.** Each account can have an EDL,
+  a TA and one or more FDEs — each a role tag on that specific account, not
+  a position. An account appears in someone's workspace because they hold
+  an active role on it (added via "Add to my accounts" from Portfolio or
+  Account 360, ended via "Leave account" — history is kept, never deleted).
+  Each project has its own members the same way.
+- **`reports_to` (optional):** a person can optionally mark who they report
+  to — purely a UX convenience (pre-fills standup participants, powers "My
+  team" below), never a permission.
+- **Scope switcher** on every list screen (Home, Portfolio, Approvals,
+  Standups):
+  - **My accounts** — accounts/projects I hold an active role on;
+  - **My team** — my own accounts **union** the active accounts of anyone
+    who reports to me (shown only if someone does — most people won't see
+    this option);
+  - **Everyone** — the whole portfolio;
+  - **A specific person** — e.g. "show me what this person holds roles on".
   All super admins *can* view everything; the switcher sets focus, it doesn't
   restrict access.
+- **Default scope:** my saved default view, if I have one → else "My
+  accounts" if I hold any active role → else "Everyone" (so someone with no
+  roles yet never opens to an empty screen).
 - **Saved views:** any combination of scope + filters (segment, health,
   lifecycle, deployment model) + sort + visible columns can be saved, named,
-  pinned to the sidebar, and set as **my default landing view**.
+  and set as **my default landing view** (sidebar pinning dropped — kept
+  simple).
 - **Home** always opens in the person's default scope.
-- **Standups** pick a team; each lead's standup covers their members and their
-  accounts.
+- **Standups** pick participants, not a team — pre-filled from `reports_to`
+  and a remembered set.
 
 ## 13. Gamification (later)
 
 Planned for Phase 10 and built on data the hub already records: the audit log
-(who updated what, when), approvals turnaround, data freshness, on-time
-milestones, engagement cadence, standup completion. Likely mechanics: points for
-keeping accounts verified and current, streaks for standup and update habits,
-badges (e.g. "zero stale accounts this month"), and team (not just individual)
-leaderboards. The rule for now: record every meaningful action with actor and
-timestamp (the audit log and proposals already do), so gamification can be
-computed later without new tracking.
+(who updated what, when), `account_roles` history, approvals turnaround, data
+freshness, on-time milestones, engagement cadence, standup completion. No
+internal hierarchy to build leaderboards around — mechanics would be
+individual (points for keeping accounts verified and current, streaks for
+standup and update habits, badges e.g. "zero stale accounts this month") and
+ad hoc group leaderboards (e.g. by standup, by whoever opts into one),
+rather than assuming a fixed team roster. **Performance indexes / KPIs**
+(§5.8) are the more immediate deferred item — both are on hold for the same
+reason: nothing new to track, just not built yet. The rule for now: record
+every meaningful action with actor and timestamp (the audit log and
+proposals already do), so both can be computed later without new tracking.

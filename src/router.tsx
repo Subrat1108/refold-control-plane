@@ -17,7 +17,8 @@ import { NamespaceDetailPage } from '@/pages/NamespaceDetailPage'
 import { NamespaceOrgDetailPage } from '@/pages/NamespaceOrgDetailPage'
 import { FeatureFlagsPage } from '@/pages/FeatureFlagsPage'
 import { SuperAdminsPage } from '@/pages/SuperAdminsPage'
-import { TeamStructurePage } from '@/pages/TeamStructurePage'
+import { PeoplePage } from '@/pages/PeoplePage'
+import { HomePage } from '@/pages/HomePage'
 import { PortfolioPage } from '@/pages/PortfolioPage'
 import { AccountDetailPage } from '@/pages/AccountDetailPage'
 import { ApprovalsPage } from '@/pages/ApprovalsPage'
@@ -118,9 +119,13 @@ export const router = createBrowserRouter([
         element: <RouteGuard allowedRoles={['super_admin']}><SuperAdminsPage /></RouteGuard>,
       },
       {
-        // 7.2a — people, teams, assignments.
-        path: 'team-structure',
-        element: <RouteGuard allowedRoles={['super_admin']}><TeamStructurePage /></RouteGuard>,
+        // Equal-admins model — directory of admins, reports_to, account roles.
+        path: 'people',
+        element: <RouteGuard allowedRoles={['super_admin']}><PeoplePage /></RouteGuard>,
+      },
+      {
+        path: 'home',
+        element: <RouteGuard allowedRoles={['super_admin']}><HomePage /></RouteGuard>,
       },
       {
         // 7.3 — Approvals inbox + audit log screen.

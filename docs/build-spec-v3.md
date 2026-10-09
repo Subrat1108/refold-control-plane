@@ -108,9 +108,9 @@ pending item; the approver is recorded.
 
 One screen for every pending kind: metrics, updates (milestones,
 accomplishments), risks, escalations, tickets, health changes, deletes. Filters
-by type, account, source, age, "accounts I own". Each item: field-level diff,
-evidence (link + short excerpt), proposer. Actions: approve, edit-then-approve,
-reject with reason, bulk. Pending count badge in the nav.
+by type, account, source, age, "my active roles" ("My accounts"). Each item:
+field-level diff, evidence (link + short excerpt), proposer. Actions: approve,
+edit-then-approve, reject with reason, bulk. Pending count badge in the nav.
 
 ### 3.2 Audit log screen
 
@@ -220,8 +220,11 @@ trigger attached.
   (`cloud` | `onprem_managed` | `onprem_airgapped`), `health`
   (`active` | `caution` | `risk`), `lifecycle_stage`
   (`prospect` | `poc` | `onboarding` | `live` | `expansion` | `renewal` |
-  `churned`), `owner_profile_id` (EDL), `data_access_mode`
-  (`api` | `manual` | `mixed`), `aliases text[]`.
+  `churned`), `data_access_mode` (`api` | `manual` | `mixed`),
+  `aliases text[]`. **`owner_profile_id` retired** (equal-admins model,
+  superseding 7.2a's derivation design) — the account's EDL is read live
+  from its active `account_roles` rows (§5 "People and account roles"), not
+  stored on the organizations row.
 - `projects`: org, name, release_no, start / go-live / expected-end dates,
   health (`completed` | `on_schedule` | `caution` | `at_risk`), live_tenants,
   dev_uat_tenants, goals text[], fdes text[], edl_profile_id,
@@ -252,34 +255,47 @@ trigger attached.
 - `audit_log` (extend): `on_behalf_of`, `record_table`, `record_id`,
   `before jsonb`, `after jsonb`, `proposal_id`; written by a generic trigger.
 
-**People, teams and views (block 7.2a):**
+**People and account roles (equal-admins model — supersedes 7.2a's titles/
+teams/account_assignments design):**
 
-- `profiles` (extend): `title` (`head_of_cs` | `edl` | `ta` | `fde`), editable
-  by super admins.
-- `teams`: name, `lead_profile_id` (an EDL or TA). `team_members`: team,
-  profile (a person may be in more than one team).
-- `account_assignments`: org, profile, role (`edl` | `ta` | `fde`), primary
-  flag. Replaces the single `organizations.owner_profile_id` as the source of
-  "my accounts" (keep the column as the primary owner, kept in sync, or retire it
-  — decide in the 7.2a plan).
-- `project_members`: project, profile, role (`edl` | `fde` | `ta`). Replaces
-  `projects.fdes text[]` and `projects.edl_profile_id` (migrate any existing
-  values).
+Every admin is a peer — no internal org chart on the platform, no titles, no
+RBAC by role. A person's involvement in an account is a per-account **role
+tag**, for record-keeping only (feeds future performance indexes, §13 of
+product-overview.md); it grants no permissions.
+
+- `account_roles`: profile, org, role (`edl` | `ta` | `fde`), `started_at`,
+  `ended_at` (null = active). At most one ACTIVE role per (profile, org);
+  changing role ends the current row and inserts a new one — history is
+  never hard-deleted (no DELETE policy at all). Replaces
+  `account_assignments` and the `organizations.owner_profile_id` derivation
+  it fed — the account's EDL is read live from its active `edl` rows.
+- `profiles.reports_to` (nullable, self-FK): an **optional UX convenience**
+  — pre-fills standup participants and powers the "My team" scope option —
+  **never permissions**. No self-reference, no cycles (enforced by a
+  trigger that walks the chain).
+- `project_members`: project, profile, role (`edl` | `fde` | `ta`) —
+  unchanged from 7.2a. Still replaces `projects.fdes text[]` and
+  `projects.edl_profile_id`.
 - `saved_views`: owner profile, name, page, scope
-  (`mine` | `team` | `everyone` | `person` | `team_id`), scope target, filters
-  jsonb, sort, columns, `is_default`, pinned.
-- Scope helpers (SQL functions): `my_account_ids()`, `team_account_ids(team)`,
-  `person_account_ids(profile)` — used by every list query so "Mine / My team /
-  Everyone / person" behave identically everywhere.
+  (`mine` | `team` | `everyone` | `person`), scope target, filters jsonb,
+  sort, columns, `is_default` ("set as default" only — sidebar pinning
+  dropped).
+- Scope helpers (SQL functions): `my_account_ids()`, `my_team_account_ids()`
+  (my own active roles **union** my direct reports' — via `reports_to`, not
+  a team), `person_account_ids(profile)` — used by every list query so
+  "My accounts / My team / Everyone / person" behave identically everywhere.
+  Scope is focus only, never access control.
 - Every new table: super-admin RLS + AAL2 writes + audit trigger, same as 7.1.
 
 See also docs/product-overview.md §12 (personal workspaces) and §13
-(gamification — no new tracking needed, the audit log already records actor +
-time for every change).
+(gamification — performance indexes/KPIs deferred to a later block; no new
+tracking needed, the audit log + `account_roles` history already capture
+what's needed).
 
 Phase 8 adds: `contacts`, `pocs` (+ success criteria), `onboarding_templates`,
-`onboarding_plans`, `onboarding_tasks`, renewals. The team phase adds
-`standups` (per team per date), `standup_entries`, `action_items`.
+`onboarding_plans`, `onboarding_tasks`, renewals. The standups block adds
+`standups` (host + a remembered participant set, not per-team),
+`standup_entries`, `action_items`.
 
 ---
 
@@ -288,10 +304,11 @@ Phase 8 adds: `contacts`, `pocs` (+ success criteria), `onboarding_templates`,
 | Block | Scope |
 |---|---|
 | **7.1 Data model v3** | Migrations for §5 (not ingest_tokens), lookup seeds, metric catalog seed, RLS, audit trigger, provenance columns, TS types, fictional local fixtures. No UI. |
-| **7.2a People, teams, assignments, scoped views** | Titles, teams, team members, account assignments, project members (migrating 7.1's text fields), saved views, scope helper functions; Admin → Team structure screen to set titles, teams and assignments; scope switcher + saved-view component wired into one existing list as proof. |
-| **7.2b Portfolio + Account 360** | Portfolio board + coverage tab, Account 360 (6 tabs), Add account (no invite), inline add / edit / delete, Mark verified, source badges, last-verified — every list using the scope switcher and saved views from 7.2a. |
-| **7.3 Approvals inbox + audit log screen** | §3.1 and §3.2, scoped (Mine / My team / Everyone). |
-| **7.3+ Home + per-team Standups + Team** | Personal Home in default scope; standups per team (lead runs theirs; Head of CS sees all + roll-up); Team/FDE performance (Head of CS → all, lead → team, FDE → own). |
+| **7.2a People, teams, assignments, scoped views** | *Superseded* by the equal-admins model (see "People and account roles" above) — titles/teams/account_assignments were built, then reversed. `account_roles` + `reports_to` + the Team Structure screen (now "People") replaced them in the same phase slot. |
+| **7.2b Portfolio + Account 360** | Portfolio board + coverage tab, Account 360 (6 tabs), Add account (no invite), inline add / edit / delete, Mark verified, source badges, last-verified — every list using the scope switcher and saved views. |
+| **7.3 Approvals inbox + audit log screen** | §3.1 and §3.2, scoped (My accounts / My team / Everyone). |
+| **Home + Standups + People activity** | Personal Home in default scope ("my day"); Standups — anyone can host, participants pre-filled from `reports_to` + a remembered set, several per day is normal; People activity — per-person active roles, history, recent activity (replaces the earlier "Team/FDE performance" framing, which assumed a hierarchy). |
+| **Performance indexes / KPIs** | Deferred to a later block, alongside gamification (Phase 10) — computed from `account_roles` history + the audit log; no new tracking needed. |
 | **7.4 Ingest API** | §4.3 endpoint, tokens, validation against schemas, account alias resolution, dedupe. |
 | **7.5 CS Sync Skill + runner + Refresh** | `skills/cs-sync`, Edge Function runner calling Claude with the Refold Server URL, `sync_state`, Refresh buttons, daily pg_cron job, run logs, kill switch. |
 | **7.6 Chat agent** | §4.5. |
@@ -325,10 +342,16 @@ sync (new record types added to the CS Sync Skill).
    one code path.
 6. "Project" = delivery workstream, "engagement" = touchpoint.
 7. Old 6.5 → 7.5 (Refold platform metrics via MCP), old 6.6 → 7.7.
-8. Team structure: Head of CS → EDL/TA leads → FDEs; accounts and projects are
-   assigned to linked people; every list has a Mine / My team / Everyone /
-   person scope and saved views; standups are per team. Gamification comes
-   later and is computed from the audit log.
+8. Equal admins, no internal hierarchy: every admin is a peer; involvement in
+   an account is a per-account role tag (`account_roles`, record-keeping
+   only, with history) rather than a title or team membership;
+   `reports_to` is an optional, permission-free UX convenience. Every list
+   has a My accounts / My team / Everyone / person scope and saved views
+   (sidebar pinning dropped). Standups: anyone hosts, participants
+   pre-filled from `reports_to` + remembered. Performance indexes / KPIs
+   deferred to a later block with gamification, computed from the audit log
+   + `account_roles` history. (Supersedes the earlier "Head of CS → EDL/TA
+   leads → FDEs" team-structure item.)
 
 ## 9. Open questions (non-blocking for 7.1)
 

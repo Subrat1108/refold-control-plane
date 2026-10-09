@@ -40,12 +40,11 @@ const AuthContext = createContext<AuthContextState | null>(null)
 async function loadProfile(userId: string): Promise<Profile | null> {
   const { data, error } = await supabase
     .from('profiles')
-    // Explicit FK hint required (PGRST201): organizations has TWO relationships
-    // to profiles since 7.1 added organizations.owner_profile_id — profiles.org_id
-    // (the one we want here) and organizations.owner_profile_id (the EDL). The
-    // `!fkey` hint only disambiguates which relationship PostgREST follows; the
-    // response key stays `organizations` either way (verified empirically).
-    .select('id, email, full_name, org_id, account_type, role, sub_role_id, status, title, organizations!profiles_org_id_fkey(name, deployment_type, external_ref)')
+    // Explicit FK hint kept defensively (D-068): organizations.owner_profile_id
+    // (which made this ambiguous, PGRST201) was retired with the equal-admins
+    // model, but naming the relationship costs nothing and guards against a
+    // future second FK doing the same thing again.
+    .select('id, email, full_name, org_id, account_type, role, sub_role_id, status, reports_to, organizations!profiles_org_id_fkey(name, deployment_type, external_ref)')
     .eq('id', userId)
     .single()
   if (error || !data) return null
@@ -61,7 +60,7 @@ async function loadProfile(userId: string): Promise<Profile | null> {
     role: row.role,
     subRoleId: row.sub_role_id,
     status: row.status,
-    title: row.title ?? null,
+    reportsTo: row.reports_to ?? null,
     org: org ? { name: org.name, deploymentType: org.deployment_type, externalRef: org.external_ref } : null,
   }
 }

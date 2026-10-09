@@ -43,12 +43,10 @@ begin
 
   -- Phase 7 fields (health/lifecycle were already backfilled to 'active'/'live'
   -- by the organizations_extend migration for rows that pre-date it; these add
-  -- variety + the fields that migration couldn't guess). owner_profile_id is
-  -- NOT set here (7.2a, D-070): it's a derived column now — only the primary
-  -- EDL/TA assignment in account_assignments can produce a value, and a
-  -- direct write like this one would just be silently overridden back to
-  -- whatever that derivation computes (NULL here on cloud, since this script
-  -- never creates people — "do not add people to the cloud demo-data script").
+  -- variety + the fields that migration couldn't guess). The account's EDL/TA/
+  -- FDE is read from account_roles now (equal-admins model) — not set here,
+  -- since this script never creates people ("do not add people to the cloud
+  -- demo-data script").
   update public.organizations set
     segment_id = (select id from public.segments where name = 'Enterprise'),
     data_access_mode = 'api',

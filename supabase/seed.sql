@@ -81,11 +81,11 @@ insert into public.profiles (id, email, full_name, org_id, account_type, role, s
    '00000000-0000-0000-0000-000000000202', 'active', '00000000-0000-0000-0000-000000001002')
 on conflict (id) do nothing;
 
--- ── Phase 7.2a — CS team people (local only, FICTIONAL, public repo — D-069) ──
--- Head of CS, 1 EDL, 1 TA, 3 FDEs. Same auth.users + identities + profiles
--- pattern as the demo users above. All super_admin/role=member (only Priya
--- Sharma is 'owner'); each gets a title. Do NOT add these to the cloud
--- demo-data script — real team setup happens in the UI.
+-- ── CS team people (local only, FICTIONAL, public repo) ────────────────────
+-- Equal admins (no titles, no teams — superseded 7.2a's hierarchy model).
+-- Same auth.users + identities + profiles pattern as the demo users above.
+-- All super_admin/role=member (only Priya Sharma is 'owner'). Do NOT add
+-- these to the cloud demo-data script — real team setup happens in the UI.
 insert into auth.users
   (instance_id, id, aud, role, email, encrypted_password, email_confirmed_at,
    created_at, updated_at, raw_app_meta_data, raw_user_meta_data,
@@ -127,42 +127,31 @@ values
    '{"sub":"00000000-0000-0000-0000-000000002006","email":"fde3@refold.internal","email_verified":true,"phone_verified":false}', 'email', now(), now(), now())
 on conflict (provider_id, provider) do nothing;
 
-insert into public.profiles (id, email, full_name, org_id, account_type, role, status, created_by, title) values
-  ('00000000-0000-0000-0000-000000002001', 'headofcs@refold.internal', 'Dana Whitfield', '00000000-0000-0000-0000-000000000001', 'super_admin', 'member', 'active', '00000000-0000-0000-0000-000000001001', 'head_of_cs'),
-  ('00000000-0000-0000-0000-000000002002', 'edl@refold.internal',      'Reza Karimi',     '00000000-0000-0000-0000-000000000001', 'super_admin', 'member', 'active', '00000000-0000-0000-0000-000000001001', 'edl'),
-  ('00000000-0000-0000-0000-000000002003', 'ta@refold.internal',       'Lena Novak',      '00000000-0000-0000-0000-000000000001', 'super_admin', 'member', 'active', '00000000-0000-0000-0000-000000001001', 'ta'),
-  ('00000000-0000-0000-0000-000000002004', 'fde1@refold.internal',     'Tomás Rivera',    '00000000-0000-0000-0000-000000000001', 'super_admin', 'member', 'active', '00000000-0000-0000-0000-000000001001', 'fde'),
-  ('00000000-0000-0000-0000-000000002005', 'fde2@refold.internal',     'Grace Mwangi',    '00000000-0000-0000-0000-000000000001', 'super_admin', 'member', 'active', '00000000-0000-0000-0000-000000001001', 'fde'),
-  ('00000000-0000-0000-0000-000000002006', 'fde3@refold.internal',     'Owen Baptiste',   '00000000-0000-0000-0000-000000000001', 'super_admin', 'member', 'active', '00000000-0000-0000-0000-000000001001', 'fde')
+insert into public.profiles (id, email, full_name, org_id, account_type, role, status, created_by) values
+  ('00000000-0000-0000-0000-000000002001', 'headofcs@refold.internal', 'Dana Whitfield', '00000000-0000-0000-0000-000000000001', 'super_admin', 'member', 'active', '00000000-0000-0000-0000-000000001001'),
+  ('00000000-0000-0000-0000-000000002002', 'edl@refold.internal',      'Reza Karimi',     '00000000-0000-0000-0000-000000000001', 'super_admin', 'member', 'active', '00000000-0000-0000-0000-000000001001'),
+  ('00000000-0000-0000-0000-000000002003', 'ta@refold.internal',       'Lena Novak',      '00000000-0000-0000-0000-000000000001', 'super_admin', 'member', 'active', '00000000-0000-0000-0000-000000001001'),
+  ('00000000-0000-0000-0000-000000002004', 'fde1@refold.internal',     'Tomás Rivera',    '00000000-0000-0000-0000-000000000001', 'super_admin', 'member', 'active', '00000000-0000-0000-0000-000000001001'),
+  ('00000000-0000-0000-0000-000000002005', 'fde2@refold.internal',     'Grace Mwangi',    '00000000-0000-0000-0000-000000000001', 'super_admin', 'member', 'active', '00000000-0000-0000-0000-000000001001'),
+  ('00000000-0000-0000-0000-000000002006', 'fde3@refold.internal',     'Owen Baptiste',   '00000000-0000-0000-0000-000000000001', 'super_admin', 'member', 'active', '00000000-0000-0000-0000-000000001001')
 on conflict (id) do nothing;
 
--- ── Teams ────────────────────────────────────────────────────────────────────
--- Grace Mwangi (FDE2) is deliberately in BOTH teams, exercising the
--- "a person may belong to more than one team" case. Owen Baptiste is left
--- off Enterprise Pod for variety.
-insert into public.teams (id, name, lead_profile_id) values
-  ('00000000-0000-0000-0000-000000003001', 'Enterprise Pod', '00000000-0000-0000-0000-000000002002'),
-  ('00000000-0000-0000-0000-000000003002', 'SMB Pod',        '00000000-0000-0000-0000-000000002003')
-on conflict (id) do nothing;
+-- reports_to is optional and permission-free (UX convenience only) — one
+-- example line: Tomás reports to Reza.
+update public.profiles set reports_to = '00000000-0000-0000-0000-000000002002' where id = '00000000-0000-0000-0000-000000002004';
 
-insert into public.team_members (team_id, profile_id) values
-  ('00000000-0000-0000-0000-000000003001', '00000000-0000-0000-0000-000000002004'), -- Tomás -> Enterprise Pod
-  ('00000000-0000-0000-0000-000000003001', '00000000-0000-0000-0000-000000002005'), -- Grace -> Enterprise Pod
-  ('00000000-0000-0000-0000-000000003002', '00000000-0000-0000-0000-000000002005'), -- Grace -> SMB Pod too
-  ('00000000-0000-0000-0000-000000003002', '00000000-0000-0000-0000-000000002006')  -- Owen -> SMB Pod
-on conflict (team_id, profile_id) do nothing;
-
--- ── Account assignments ──────────────────────────────────────────────────────
--- Prism Analytics (Enterprise segment): EDL=Reza (primary), FDE=Tomás (primary).
--- Meridian Laboratories (SMB segment): TA=Lena (primary), FDE=Owen (primary).
--- organizations.owner_profile_id derives from the primary EDL/TA rows below
--- (D-070) — nothing sets it directly.
-insert into public.account_assignments (org_id, profile_id, role, is_primary) values
-  ('00000000-0000-0000-0000-000000000002', '00000000-0000-0000-0000-000000002002', 'edl', true),
-  ('00000000-0000-0000-0000-000000000002', '00000000-0000-0000-0000-000000002004', 'fde', true),
-  ('00000000-0000-0000-0000-000000000003', '00000000-0000-0000-0000-000000002003', 'ta',  true),
-  ('00000000-0000-0000-0000-000000000003', '00000000-0000-0000-0000-000000002006', 'fde', true)
-on conflict (org_id, profile_id, role) do nothing;
+-- ── Account roles (record-keeping only — no permissions, no "primary") ──────
+-- Prism Analytics: Reza=edl, Tomás=fde AND Grace=fde (two FDEs on one
+-- account, exercising the overlap case). Meridian Laboratories: Lena=ta,
+-- Owen=fde. Owen also previously worked Prism as fde and left — an ended
+-- role, exercising the history/ended_at case.
+insert into public.account_roles (org_id, profile_id, role, started_at, ended_at) values
+  ('00000000-0000-0000-0000-000000000002', '00000000-0000-0000-0000-000000002002', 'edl', now() - interval '60 days', null),
+  ('00000000-0000-0000-0000-000000000002', '00000000-0000-0000-0000-000000002004', 'fde', now() - interval '60 days', null),
+  ('00000000-0000-0000-0000-000000000002', '00000000-0000-0000-0000-000000002005', 'fde', now() - interval '30 days', null),
+  ('00000000-0000-0000-0000-000000000003', '00000000-0000-0000-0000-000000002003', 'ta',  now() - interval '60 days', null),
+  ('00000000-0000-0000-0000-000000000003', '00000000-0000-0000-0000-000000002006', 'fde', now() - interval '60 days', null),
+  ('00000000-0000-0000-0000-000000000002', '00000000-0000-0000-0000-000000002006', 'fde', now() - interval '120 days', now() - interval '65 days');
 
 -- Project members referencing the fixture projects live in seed_team_links.sql
 -- (runs third — those project rows don't exist until phase7_demo_data.sql has

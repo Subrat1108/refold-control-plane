@@ -10,11 +10,12 @@ import {
   DropdownMenuSubTrigger,
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu'
-import { useSuperAdmins, useTeams } from '@/hooks'
+import { useSuperAdmins, useHasReports } from '@/hooks'
+import { useSupabaseAuth } from '@/lib/auth/AuthProvider'
 import type { SavedViewScope } from '@/types'
 
 const BASE_LABELS: Record<'mine' | 'team' | 'everyone', string> = {
-  mine: 'Mine',
+  mine: 'My accounts',
   team: 'My team',
   everyone: 'Everyone',
 }
@@ -28,17 +29,14 @@ interface ScopeSwitcherProps {
 // Focus only — never access control (product-overview.md § 12): this just
 // narrows what a list SHOWS, every super admin can already see everything.
 export function ScopeSwitcher({ scope, scopeTarget, onChange }: ScopeSwitcherProps) {
+  const { profile } = useSupabaseAuth()
   const { data: people } = useSuperAdmins()
-  const { data: teams } = useTeams()
+  const { data: hasReports } = useHasReports(profile?.id ?? null)
 
   const label = (() => {
     if (scope === 'person') {
       const person = people?.find((p) => p.id === scopeTarget)
       return person ? `Person: ${person.fullName ?? person.email}` : 'A specific person'
-    }
-    if (scope === 'team_id') {
-      const team = teams?.find((t) => t.id === scopeTarget)
-      return team ? `Team: ${team.name}` : 'A specific team'
     }
     return BASE_LABELS[scope as 'mine' | 'team' | 'everyone'] ?? 'Everyone'
   })()
@@ -53,8 +51,8 @@ export function ScopeSwitcher({ scope, scopeTarget, onChange }: ScopeSwitcherPro
         </button>
       </DropdownMenuTrigger>
       <DropdownMenuContent align="start" className="w-56">
-        <DropdownMenuItem onClick={() => onChange('mine')}>Mine</DropdownMenuItem>
-        <DropdownMenuItem onClick={() => onChange('team')}>My team</DropdownMenuItem>
+        <DropdownMenuItem onClick={() => onChange('mine')}>My accounts</DropdownMenuItem>
+        {hasReports && <DropdownMenuItem onClick={() => onChange('team')}>My team</DropdownMenuItem>}
         <DropdownMenuItem onClick={() => onChange('everyone')}>Everyone</DropdownMenuItem>
         <DropdownMenuSeparator />
         <DropdownMenuSub>
@@ -66,20 +64,6 @@ export function ScopeSwitcher({ scope, scopeTarget, onChange }: ScopeSwitcherPro
               people.map((p) => (
                 <DropdownMenuItem key={p.id} onClick={() => onChange('person', p.id)}>
                   {p.fullName ?? p.email}
-                </DropdownMenuItem>
-              ))
-            )}
-          </DropdownMenuSubContent>
-        </DropdownMenuSub>
-        <DropdownMenuSub>
-          <DropdownMenuSubTrigger>A specific team…</DropdownMenuSubTrigger>
-          <DropdownMenuSubContent className="max-h-72 overflow-y-auto">
-            {!teams || teams.length === 0 ? (
-              <DropdownMenuLabel className="text-muted-foreground font-normal">No teams yet</DropdownMenuLabel>
-            ) : (
-              teams.map((t) => (
-                <DropdownMenuItem key={t.id} onClick={() => onChange('team_id', t.id)}>
-                  {t.name}
                 </DropdownMenuItem>
               ))
             )}

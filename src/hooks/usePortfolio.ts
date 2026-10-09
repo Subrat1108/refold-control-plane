@@ -84,7 +84,6 @@ function mapAccount(row: any): Account {
     deploymentModel: row.deployment_model,
     health: row.health,
     lifecycleStage: row.lifecycle_stage,
-    ownerProfileId: row.owner_profile_id,
     dataAccessMode: row.data_access_mode,
     aliases: row.aliases ?? [],
     healthReason: row.health_reason,
@@ -95,7 +94,7 @@ function mapAccount(row: any): Account {
 }
 
 const ACCOUNT_COLUMNS =
-  'id, name, deployment_type, plan, status, external_ref, segment_id, deployment_model, health, lifecycle_stage, owner_profile_id, data_access_mode, aliases, health_reason, verified_at, updated_by, created_at'
+  'id, name, deployment_type, plan, status, external_ref, segment_id, deployment_model, health, lifecycle_stage, data_access_mode, aliases, health_reason, verified_at, updated_by, created_at'
 
 async function fetchAccounts(): Promise<Account[]> {
   const { data, error } = await supabase.from('organizations').select(ACCOUNT_COLUMNS).neq('id', INTERNAL_ORG_ID).order('name', { ascending: true })
@@ -149,7 +148,6 @@ export interface UpdateAccountInput {
   segmentId?: string | null
   deploymentModel?: Account['deploymentModel']
   lifecycleStage?: LifecycleStage
-  ownerProfileId?: string | null
   health?: OrgHealth
   healthReason?: string | null
 }
@@ -160,7 +158,6 @@ export async function updateAccount(orgId: string, patch: UpdateAccountInput, ac
   if (patch.segmentId !== undefined) update.segment_id = patch.segmentId
   if (patch.deploymentModel !== undefined) update.deployment_model = patch.deploymentModel
   if (patch.lifecycleStage !== undefined) update.lifecycle_stage = patch.lifecycleStage
-  if (patch.ownerProfileId !== undefined) update.owner_profile_id = patch.ownerProfileId
   if (patch.health !== undefined) update.health = patch.health
   if (patch.healthReason !== undefined) update.health_reason = patch.healthReason
   const { error } = await supabase.from('organizations').update(update).eq('id', orgId)
@@ -213,6 +210,31 @@ async function fetchLastEngagements(): Promise<Record<string, string>> {
 
 export function useLastEngagements() {
   return useQuery({ queryKey: ['last-engagements'], queryFn: fetchLastEngagements })
+}
+
+// The account's EDL display (equal-admins model) — read from active
+// account_roles, not a stored column. One query across every account,
+// grouped client-side, same pattern as the aggregates above.
+async function fetchEdlNamesByOrg(): Promise<Record<string, string>> {
+  const { data, error } = await supabase
+    .from('account_roles')
+    .select('org_id, profiles!account_roles_profile_id_fkey(full_name)')
+    .eq('role', 'edl')
+    .is('ended_at', null)
+  if (error) throw new Error(error.message)
+  const out: Record<string, string[]> = {}
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  for (const row of (data ?? []) as any[]) {
+    const name = (Array.isArray(row.profiles) ? row.profiles[0] : row.profiles)?.full_name ?? null
+    if (!name) continue
+    out[row.org_id] ??= []
+    out[row.org_id].push(name)
+  }
+  return Object.fromEntries(Object.entries(out).map(([orgId, names]) => [orgId, names.join(', ')]))
+}
+
+export function useEdlNamesByOrg() {
+  return useQuery({ queryKey: ['edl-names-by-org'], queryFn: fetchEdlNamesByOrg })
 }
 
 // ── Coverage (product-overview § 3.3, § 5.2) — per account, per section:
@@ -279,6 +301,7 @@ export function usePortfolioAccounts() {
   const escalationCounts = useOpenEscalationCounts()
   const nextMilestones = useNextMilestones()
   const lastEngagements = useLastEngagements()
+  const edlNames = useEdlNamesByOrg()
   const coverage = useCoverage()
 
   const isLoading = accounts.isLoading || segments.isLoading
@@ -287,7 +310,7 @@ export function usePortfolioAccounts() {
   const data: PortfolioAccountRow[] | undefined = accounts.data?.map((a) => ({
     ...a,
     segmentName: segments.data?.find((s) => s.id === a.segmentId)?.name ?? null,
-    ownerName: null, // resolved by the caller (needs ManagedUser list — avoids a second N+1 lookup here)
+    edlNames: edlNames.data?.[a.id] ?? null,
     openEscalationCount: escalationCounts.data?.[a.id] ?? 0,
     nextMilestone: nextMilestones.data?.[a.id] ?? null,
     lastEngagementAt: lastEngagements.data?.[a.id] ?? null,

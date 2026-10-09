@@ -4,7 +4,6 @@ import { useQueryClient } from '@tanstack/react-query'
 import { Plus } from 'lucide-react'
 import {
   useSupabaseAuth,
-  useSuperAdmins,
   useSegments,
   usePortfolioAccounts,
   useCoverage,
@@ -15,6 +14,9 @@ import {
   deletePortfolioNote,
   useScope,
   useScopedAccountIds,
+  usePersonRoles,
+  addRole,
+  endRole,
 } from '@/hooks'
 import { DataTable, type Column } from '@/components/DataTable'
 import { StatusBadge } from '@/components/StatusBadge'
@@ -26,7 +28,7 @@ import { CardSkeleton } from '@/components/SkeletonLoader'
 import { ErrorState } from '@/components/ErrorState'
 import { Tooltip } from '@/components/Tooltip'
 import { formatDate } from '@/utils/formatDate'
-import type { CoverageSection, DeploymentModel, DeploymentType, PortfolioAccountRow, PortfolioNoteKind, SavedView } from '@/types'
+import type { AssignmentRole, CoverageSection, DeploymentModel, DeploymentType, PortfolioAccountRow, PortfolioNoteKind, SavedView } from '@/types'
 
 const PAGE = 'portfolio'
 const COVERAGE_SECTIONS: CoverageSection[] = ['projects', 'milestones', 'risks', 'escalations', 'tickets', 'engagements', 'metrics']
@@ -41,7 +43,7 @@ export function PortfolioPage() {
     <div className="p-6 space-y-6">
       <div>
         <h1 className="text-xl font-semibold text-foreground">Portfolio</h1>
-        <p className="text-sm text-muted-foreground mt-0.5">Every account, grouped by segment — health, ownership, coverage.</p>
+        <p className="text-sm text-muted-foreground mt-0.5">Every account, grouped by segment — health, EDL, coverage.</p>
       </div>
       <Tabs tabs={tabs} active={tab} onChange={setTab} />
       {tab === 'board' ? <BoardTab /> : <CoverageTab />}
@@ -52,15 +54,30 @@ export function PortfolioPage() {
 // ── Board ────────────────────────────────────────────────────────────────
 
 function BoardTab() {
+  const { profile } = useSupabaseAuth()
+  const qc = useQueryClient()
   const { data: accounts, isLoading, isError, refetch } = usePortfolioAccounts()
-  const { data: people } = useSuperAdmins()
   const { data: segments } = useSegments()
+  const { data: myRoles } = usePersonRoles(profile?.id ?? null)
   const { scope, scopeTarget, setScope } = useScope(PAGE)
   const { data: scopedIds } = useScopedAccountIds(scope, scopeTarget)
   const [filters, setFilters] = useState<{ segmentId: string; health: string; lifecycle: string }>({ segmentId: '', health: '', lifecycle: '' })
   const [addOpen, setAddOpen] = useState(false)
+  const [roleTarget, setRoleTarget] = useState<PortfolioAccountRow | null>(null)
 
-  const ownerName = (profileId: string | null) => (profileId ? (people ?? []).find((p) => p.id === profileId)?.fullName ?? null : null)
+  const myActiveRoleByOrg = new Map((myRoles ?? []).filter((r) => !r.endedAt).map((r) => [r.orgId, r]))
+
+  const refreshMyRoles = () => {
+    qc.invalidateQueries({ queryKey: ['person-roles', profile?.id] })
+    qc.invalidateQueries({ queryKey: ['my-active-account-ids'] })
+  }
+
+  async function handleLeave(orgId: string) {
+    const role = myActiveRoleByOrg.get(orgId)
+    if (!role) return
+    await endRole(role.id)
+    refreshMyRoles()
+  }
 
   const filtered = useMemo(() => {
     if (!accounts) return []
@@ -94,11 +111,21 @@ function BoardTab() {
     { key: 'health', header: 'Health', render: (a) => <StatusBadge status={a.health} /> },
     { key: 'lifecycle', header: 'Lifecycle', render: (a) => <span className="text-muted-foreground capitalize">{a.lifecycleStage.replace(/_/g, ' ')}</span> },
     { key: 'deployment', header: 'Deployment', render: (a) => <span className="text-muted-foreground capitalize">{(a.deploymentModel ?? '—').replace(/_/g, ' ')}</span> },
-    { key: 'owner', header: 'Owner', render: (a) => <span className="text-muted-foreground">{ownerName(a.ownerProfileId) ?? '—'}</span> },
+    { key: 'edl', header: 'EDL', render: (a) => <span className="text-muted-foreground">{a.edlNames ?? '—'}</span> },
     { key: 'escalations', header: 'Open escalations', render: (a) => <span className="tabular-nums">{a.openEscalationCount}</span> },
     { key: 'milestone', header: 'Next milestone', render: (a) => <span className="text-muted-foreground">{a.nextMilestone ? `${a.nextMilestone.description} (${a.nextMilestone.period})` : '—'}</span> },
     { key: 'engagement', header: 'Last engagement', render: (a) => <span className="text-muted-foreground">{a.lastEngagementAt ? formatDate(a.lastEngagementAt) : 'never'}</span> },
     { key: 'coverage', header: 'Coverage', render: (a) => <span className="tabular-nums">{a.coveragePct}%</span> },
+    {
+      key: 'myRole',
+      header: '',
+      width: '140px',
+      render: (a) => myActiveRoleByOrg.has(a.id) ? (
+        <button onClick={() => handleLeave(a.id)} className="text-xs font-medium text-muted-foreground hover:text-red-600">Leave account</button>
+      ) : (
+        <button onClick={() => setRoleTarget(a)} className="text-xs font-medium text-primary hover:underline">Add to my accounts</button>
+      ),
+    },
   ]
 
   return (
@@ -150,7 +177,52 @@ function BoardTab() {
 
       <PortfolioNotesSection />
       <AddAccountModal open={addOpen} onClose={() => setAddOpen(false)} />
+      <AddRoleModal
+        account={roleTarget}
+        profileId={profile?.id ?? null}
+        onClose={() => setRoleTarget(null)}
+        onDone={refreshMyRoles}
+      />
     </div>
+  )
+}
+
+function AddRoleModal({ account, profileId, onClose, onDone }: { account: PortfolioAccountRow | null; profileId: string | null; onClose: () => void; onDone: () => void }) {
+  const [role, setRole] = useState<AssignmentRole>('fde')
+  const [busy, setBusy] = useState(false)
+  const [error, setError] = useState('')
+
+  async function submit(e: React.FormEvent) {
+    e.preventDefault()
+    if (!account || !profileId) return
+    setBusy(true)
+    setError('')
+    try {
+      await addRole(account.id, profileId, role)
+      onDone()
+      onClose()
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Failed to add role')
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  return (
+    <Modal open={!!account} onClose={onClose} title={`Add to my accounts — ${account?.name ?? ''}`}>
+      <form onSubmit={submit} className="space-y-4">
+        <div>
+          <label className="block text-sm font-medium text-foreground mb-1.5">My role on this account</label>
+          <select value={role} onChange={(e) => setRole(e.target.value as AssignmentRole)} className="w-full rounded-md border border-border px-3 py-2 text-sm">
+            <option value="edl">EDL</option>
+            <option value="ta">TA</option>
+            <option value="fde">FDE</option>
+          </select>
+        </div>
+        {error && <p className="text-xs text-red-600">{error}</p>}
+        <button type="submit" disabled={busy} className="w-full rounded-md bg-primary px-3 py-2.5 text-sm font-medium text-white hover:bg-primary/90 disabled:opacity-40">{busy ? 'Adding…' : 'Add'}</button>
+      </form>
+    </Modal>
   )
 }
 
