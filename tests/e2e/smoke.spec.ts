@@ -105,6 +105,27 @@ test('super admin smoke: Home, Portfolio, Account 360, Approvals, Audit log, Sta
   await expect(page.getByRole('heading', { name: 'Audit Log' })).toBeVisible()
   await expectNoErrors(page, errors)
 
+  // ── Ingest tokens (7.4): create one, see the plaintext once, revoke it ──
+  await page.getByRole('link', { name: 'Ingest Tokens' }).click()
+  await expect(page.getByRole('heading', { name: 'Ingest tokens' })).toBeVisible()
+  await expectNoErrors(page, errors)
+
+  await page.getByRole('button', { name: 'Create token' }).click()
+  await page.getByPlaceholder('CS Sync Skill — daily job').fill('Smoke test token')
+  await page.getByRole('button', { name: 'Create token' }).last().click()
+
+  await expect(page.getByRole('heading', { name: 'Token created' })).toBeVisible()
+  const tokenValue = (await page.locator('code').textContent())?.trim()
+  expect(tokenValue).toMatch(/^cshub_/)
+  await page.getByRole('button', { name: 'Done' }).click()
+  await expect(page.getByText('Smoke test token')).toBeVisible()
+  await expectNoErrors(page, errors)
+
+  page.once('dialog', (dialog) => dialog.accept())
+  await page.getByRole('row', { name: /Smoke test token/ }).getByRole('button', { name: 'Revoke token' }).click()
+  await expect(page.getByRole('row', { name: /Smoke test token/ }).getByText('Revoked')).toBeVisible()
+  await expectNoErrors(page, errors)
+
   // ── Standups: start one, edit own entry, open live mode ─────────────
   await page.getByRole('link', { name: 'Standups' }).click()
   await expect(page.getByRole('heading', { name: 'Standups' })).toBeVisible()

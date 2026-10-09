@@ -311,6 +311,67 @@ async function setReportsTo(caller: Caller, body: Record<string, unknown>) {
   return json({ ok: true })
 }
 
+// ── ingest tokens (7.4) ────────────────────────────────────────────────────────
+// The only two ways an ingest_tokens row is ever written — the table itself
+// grants no insert/update to `authenticated` at all. The plaintext token
+// exists only in this function's memory and in create_ingest_token's one
+// response; only its SHA-256 hash is ever persisted. Never pass the plaintext
+// to writeAudit (metadata carries only id/label).
+
+function base64url(bytes: Uint8Array): string {
+  let binary = ''
+  for (const b of bytes) binary += String.fromCharCode(b)
+  return btoa(binary).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '')
+}
+
+async function sha256Hex(input: string): Promise<string> {
+  const digest = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(input))
+  return Array.from(new Uint8Array(digest)).map((b) => b.toString(16).padStart(2, '0')).join('')
+}
+
+const MAX_TOKEN_TTL_DAYS = 365
+
+async function createIngestToken(caller: Caller, body: Record<string, unknown>) {
+  const label = (body.label as string)?.trim()
+  const expiresAt = body.expiresAt as string
+  const allowedOrgIds = (body.allowedOrgIds as string[] | undefined) ?? null
+  if (!label) return json({ error: 'label is required' }, 400)
+  if (!expiresAt) return json({ error: 'expiresAt is required' }, 400)
+
+  const expiry = new Date(expiresAt)
+  if (Number.isNaN(expiry.getTime())) return json({ error: 'expiresAt must be a valid date' }, 400)
+  const maxExpiry = new Date(Date.now() + MAX_TOKEN_TTL_DAYS * 86_400_000)
+  if (expiry > maxExpiry) return json({ error: `expiresAt must be at most ${MAX_TOKEN_TTL_DAYS} days out` }, 400)
+  if (expiry <= new Date()) return json({ error: 'expiresAt must be in the future' }, 400)
+
+  const plaintext = `cshub_${base64url(crypto.getRandomValues(new Uint8Array(32)))}`
+  const tokenHash = await sha256Hex(plaintext)
+
+  const svc = caller.service
+  const { data: row, error } = await svc
+    .from('ingest_tokens')
+    .insert({ label, token_hash: tokenHash, allowed_org_ids: allowedOrgIds, created_by: caller.id, expires_at: expiry.toISOString() })
+    .select('id')
+    .single()
+  if (error) return json({ error: error.message }, 400)
+
+  await writeAudit(svc, caller.id, 'create_ingest_token', 'ingest_tokens', row.id, null, { label })
+  return json({ id: row.id, token: plaintext })
+}
+
+async function revokeIngestToken(caller: Caller, body: Record<string, unknown>) {
+  const tokenId = body.tokenId as string
+  if (!tokenId) return json({ error: 'tokenId is required' }, 400)
+
+  const svc = caller.service
+  const { data: target } = await svc.from('ingest_tokens').select('label').eq('id', tokenId).single()
+  const { error } = await svc.from('ingest_tokens').update({ revoked_at: new Date().toISOString() }).eq('id', tokenId)
+  if (error) return json({ error: error.message }, 400)
+
+  await writeAudit(svc, caller.id, 'revoke_ingest_token', 'ingest_tokens', tokenId, null, { label: target?.label ?? null })
+  return json({ ok: true })
+}
+
 // ── set_user_status ───────────────────────────────────────────────────────────
 async function setUserStatus(caller: Caller, body: Record<string, unknown>) {
   const userId = body.userId as string
@@ -466,7 +527,7 @@ async function ownerSetUserStatus(caller: Caller, body: Record<string, unknown>)
   return json({ ok: true })
 }
 
-const SUPER_ACTIONS = new Set(['provision_org', 'invite_super_admin', 'assign_sub_role', 'set_user_status', 'set_reports_to'])
+const SUPER_ACTIONS = new Set(['provision_org', 'invite_super_admin', 'assign_sub_role', 'set_user_status', 'set_reports_to', 'create_ingest_token', 'revoke_ingest_token'])
 const OWNER_ACTIONS = new Set(['owner_invite_user', 'owner_assign_sub_role', 'owner_set_user_status'])
 
 Deno.serve(async (req: Request) => {
@@ -504,6 +565,10 @@ Deno.serve(async (req: Request) => {
         return setUserStatus(caller, body)
       case 'set_reports_to':
         return setReportsTo(caller, body)
+      case 'create_ingest_token':
+        return createIngestToken(caller, body)
+      case 'revoke_ingest_token':
+        return revokeIngestToken(caller, body)
     }
   }
 

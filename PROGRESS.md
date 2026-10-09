@@ -41,7 +41,7 @@
 - [x] 7.3 — Approvals inbox + audit log screen (scoped: My accounts/My team/Everyone): apply_proposal()/reject_proposal() SQL functions (approve actually applies the change via a fixed table allow-list + audits the decision itself), pending-count nav badge, CSV export on the audit log (D-080)
 - [x] Equal admins — people simplification (Part 1): `account_roles` (per-account role tag, record-keeping, history) replaces titles/teams/account_assignments/owner_profile_id; `reports_to` (optional, UX-only, cycle-checked); rewritten scope helpers; People directory screen; Portfolio/Account 360 "Add to my accounts"/"Leave account"; nav reorder + collapsed Admin group (D-081–D-086)
 - [x] Home + Standups + People activity (Parts 2–4): Home (personal "my day" — my accounts, needs attention, my reports, recent activity, all scoped); Standups (anyone hosts, standups/standup_entries/action_items, host-can-edit-any RLS, remembered participant set via saved_views, deterministic "since last standup" draft, live mode, blocker→ask/action-item); People activity (role history, recent activity, open action items, recent standup entries on the existing People directory) (D-087–D-090). Performance indexes/KPIs stay deferred — the data they need (account_roles history, project_members, audit actor, approvals, standups) is confirmed fully captured.
-- [ ] 7.4 — Ingest API
+- [x] 7.4 — Ingest API: `ingest_tokens` table (select super-admin-only, no client insert/update), `create_ingest_token`/`revoke_ingest_token` provisioning actions, new `ingest` Edge Function (bearer-token auth, verify_jwt disabled, upsert/dedupe decision tree, race-safe via partial unique index), Ingest Tokens admin screen
 - [ ] 7.5 — CS Sync Skill + runner + Refresh (was 6.5)
 - [ ] 7.6 — Ask the Hub (chat agent)
 - [ ] 7.7 — Reports (monthly status, EBR, QBR — was 6.6)
@@ -75,6 +75,35 @@ Points, streaks, badges, team leaderboards — computed from the audit log + pro
 
 ## Last session
 (See docs/devlog.md for full session history — this is just the pointer.)
+
+Date: 2026-10-09 (later still)
+Completed: 7.4 — Ingest API. New `ingest` Edge Function (bearer-token auth
+via `cshub_`-prefixed hashed tokens, `verify_jwt = false` in config.toml —
+the function's own token lookup is the only gate, proven both locally and
+against the deployed cloud function); `ingest_tokens` table (select
+super-admin-only, no client insert/update at all); two new `provisioning`
+actions to mint/revoke tokens; full upsert/dedupe decision tree
+(pending-merge / previously-rejected-skip / real-row compare-or-propose-
+update / create) with normalized equality comparisons and a partial unique
+index as the race-safety backstop; `superseded_pending` for a delete
+against a still-pending create; 200-record/2MB limits enforced while
+streaming the body; privacy-safe logging (ids/counts/codes only). Minimal
+`/ingest-tokens` admin screen (create/one-time reveal/revoke) since 7.5
+has no other way to get a token. Docs: build-spec-v3.md §4.3 rewritten to
+the final contract; new docs/ingest-api.md as the reference 7.5's CS Sync
+Skill will be written against.
+Verified: a throwaway script covering every outcome status + edge case
+(found and fixed one real bug — delete validation ordering); rls_test.sql
+new block + all 6 prior green; smoke-login.ts; npm run e2e (extended for
+the new token screen); typecheck/lint/build green. Cloud: db push
+--dry-run matched exactly 1 migration; migration list 30/30; ingest
+deployed new + provisioning redeployed; live curl against the deployed
+function confirmed the 401-from-our-code auth gate in production.
+Decisions made: D-091–D-096
+Known issues: none outstanding. 7.5 (CS Sync Skill) is blocked on Refold
+MCP server details, as already noted above.
+
+---
 
 Date: 2026-10-09 (yet later same day)
 Completed: Standups (Part 3) + People activity (Part 4), as designed in

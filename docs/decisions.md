@@ -1049,6 +1049,103 @@ D-068 "Supabase / PostgREST queries" coding rule: self-referential FK
 embeds need this workaround, not a `!fkey` hint, even when PostgREST's own
 error message suggests one.
 
+## D-091 — Ingest API auth: cshub_-prefixed hashed bearer tokens, minted only via provisioning, verify_jwt disabled on `ingest` (2026-10-09)
+A Supabase Edge Function's gateway rejects any `Authorization` header that
+isn't a Supabase-issued JWT before the function's own code ever runs —
+`provisioning` never hit this because its callers already send real user
+JWTs. `ingest`'s callers (the future CS Sync Skill) send a long-lived
+custom credential instead, so `[functions.ingest] verify_jwt = false` was
+added to `supabase/config.toml`, making the function's own token lookup the
+only gate — verified by confirming a request with no/garbage
+`Authorization` header gets `401` from the function's own code (not a
+platform-level rejection) both locally and via direct `curl`. Tokens are
+`cshub_` + 32 random bytes (base64url) so a leaked one is recognizable by
+prefix; only the SHA-256 hex digest is ever stored; the plaintext exists
+only in the one `create_ingest_token` response and is never logged or
+passed to `writeAudit()`'s metadata (only `id`/`label` are). `expires_at`
+is required at creation and capped server-side at 365 days — a longer
+request is rejected, not clamped. The `ingest_tokens` table grants
+`authenticated` **select only** — no insert/update policy exists at all;
+the only way to create or revoke one is through two new super_admin +
+AAL2-gated `provisioning` actions (`create_ingest_token`/
+`revoke_ingest_token`), mirroring every other credential-shaped write in
+this codebase. A minimal admin screen (`/ingest-tokens`, under the
+collapsed "Admin" nav group) was added in the same session since 7.5 (not
+yet built) would otherwise have no way to obtain a token at all.
+
+## D-092 — Ingest API upsert/dedupe decision tree + `proposals_pending_dedupe` race index (2026-10-09)
+The sync skill is designed to stay dumb — it reports what it currently
+sees in the source system via a caller-chosen `source_ref`; the server
+decides create vs. update vs. skip from actual platform state, not the
+caller's claimed `operation`. Resolution order per record: (1) a pending
+proposal for the same `(account, target_table, source_ref)` → merge into
+it (`updated_pending`); (2) else the most recently decided `rejected`
+proposal for that key with an **identical** payload → skip
+(`previously_rejected`), a changed payload falls through as a fresh
+attempt; (3) else a real row for that key — identical values →
+`duplicate_skipped`, different → a new `update` proposal
+(`proposed_update`, the path a ticket's status change takes on every sync
+run); (4) else a new `create` proposal (`proposed`). A partial unique
+index, `proposals_pending_dedupe on proposals (org_id, target_table,
+source_ref) where status = 'pending'`, is the authoritative concurrency
+backstop for step 1 — two overlapping runs (a manual Refresh racing the
+daily job) can't both insert a new pending proposal for the same key; a
+`23505` on insert is caught and converted into a merge into whichever
+proposal won the race, so the caller never sees the collision. Verified
+via two genuinely concurrent POSTs with the same `source_ref` resulting in
+exactly one pending proposal.
+
+## D-093 — Ingest API: `run.source` accepted (agent/chat/file) for reuse by 7.6/7.8 without changing this endpoint later (2026-10-09)
+Hardcoding `source = 'agent'` would have required touching the `ingest`
+function again for 7.6 (chat agent) and 7.8 (file import), both of which
+will post through this same endpoint. `run.source` now accepts
+`agent`/`chat`/`file` (default `agent`), validated at the run level
+(invalid → `400`), and is stamped onto every proposal created in that run
+as `proposals.source` — no schema or endpoint change anticipated for
+either future phase.
+
+## D-094 — Ingest API equality normalization for dedupe comparisons (2026-10-09)
+Literal comparison between an incoming record's `data` and either an
+existing row or a prior rejected payload would file a false
+`proposed_update`/skip-miss on every daily sync purely from formatting
+differences (e.g. `"2026-10-09"` vs. `"2026-10-09T00:00:00Z"`). One
+`valuesEqual`/`normalizeValue` helper is used everywhere this comparison
+happens: dates/timestamps reduced to one date-only form, numbers coerced
+via `Number()`, strings trimmed, `health`/`status`/`severity`/`priority`
+lowercased — and only the keys present in the *incoming* record are
+compared, so a field the caller didn't send is never treated as "changed."
+Verified: resending an identical ticket with an equivalently-but-
+differently-formatted date returns `duplicate_skipped`, not a false
+`proposed_update`.
+
+## D-095 — Ingest API: explicit delete against a still-pending create → `superseded_pending`, using the existing `superseded` enum value (2026-10-09)
+If a caller's explicit `delete` targets a `source_ref` that only matches a
+**pending** `create` proposal (never approved, so no real row ever
+existed), treating it as `rejected_invalid` would be misleading — there's
+nothing wrong with the request, the create's intent is simply being
+withdrawn before it was ever acted on. That pending proposal is marked
+`status = 'superseded'` (the `proposal_status` enum already had this value
+— confirmed via `enum_range`, no schema change needed) and the record
+reports `superseded_pending`; no new proposal is filed, since nothing real
+needs deleting.
+
+## D-096 — Ingest API: no CORS on `ingest`; function logs never contain request bodies, record data, or evidence excerpts (2026-10-09)
+`ingest` is server-to-server only (the CS Sync Skill, later the chat agent/
+file import) — unlike `provisioning`, it sets no `Access-Control-Allow-*`
+headers and handles no `OPTIONS` preflight, so a browser page cannot read
+its response cross-origin even if it obtained a token. (Noted during
+verification: the **local** Supabase CLI's Kong gateway injects
+`Access-Control-Allow-Origin: *` on every response regardless of function
+code, confirmed present even on a bare 401 before the function's handler
+runs at all — a platform/dev-proxy behavior, not something `ingest`'s own
+code controls either way; since auth here is a bearer token rather than an
+ambient browser credential like a cookie, this doesn't reopen the
+cross-origin risk the no-CORS design is guarding against.) Separately,
+every `console.log`/`console.error` in the function logs only ids
+(`run.id`, `ingest_token_id`), outcome counts, and error codes — never a
+request body, a record's `data`, or `evidence_excerpt` — stated as a
+guarantee in `docs/ingest-api.md`, not just current behavior.
+
 # Parked
 
 Out-of-scope ideas land here instead of derailing the current prompt block.
@@ -1074,3 +1171,5 @@ Format: one line each, with the session it came from.
 - Performance indexes / KPIs (Session 31, equal-admins Part 4): explicitly
   deferred to a later block, alongside gamification (Phase 10) — compute
   from `account_roles` history + the audit log; no new tracking needed.
+- Per-token rate limiting on the Ingest API (7.4 session): not needed until
+  7.5 actually runs a sync on a schedule; revisit when that lands.

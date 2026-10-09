@@ -18,6 +18,8 @@ const STATUS_STYLES: Record<string, string> = {
   down: 'bg-red-100 text-red-800',
   failed: 'bg-red-100 text-red-800',
   risk: 'bg-red-100 text-red-800', // 7.1 org_health
+  expired: 'bg-gray-100 text-gray-700', // 7.4 ingest tokens
+  revoked: 'bg-red-100 text-red-800', // 7.4 ingest tokens
 }
 
 interface StatusBadgeProps {

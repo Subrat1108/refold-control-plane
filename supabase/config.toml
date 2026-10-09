@@ -385,6 +385,16 @@ deno_version = 2
 # [edge_runtime.secrets]
 # secret_key = "env(SECRET_VALUE)"
 
+# 7.4 — the ingest endpoint's caller sends a custom bearer token (not a
+# Supabase-issued JWT), so the platform's default gateway JWT check would
+# reject every request before the function's own code runs. Disabling it
+# here makes the function's own token lookup (ingest_tokens.token_hash)
+# the ONLY gate — verified in this session's throwaway script by sending
+# a request with no/garbage Authorization header and confirming the 401
+# comes from the function itself, not the gateway.
+[functions.ingest]
+verify_jwt = false
+
 [analytics]
 enabled = true
 port = 54327

@@ -1,5 +1,7 @@
 export { useAuth } from './useAuth'
 export { useMediaQuery } from './useMediaQuery'
+export { useIngestTokens, ingestTokenStatus } from './useIngestTokens'
+export type { IngestToken } from './useIngestTokens'
 export { useSupabaseAuth } from '@/lib/auth/AuthProvider'
 export {
   useOverviewStats,

@@ -16,6 +16,56 @@ Template:
 
 ---
 
+## Session 33 — 2026-10-09 — 7.4 Ingest API
+**Built:** per build-spec-v3 §6, revised through 3 rounds of plan feedback
+(go-ahead points preserved in full in the plan file this session started
+from). One migration: `ingest_tokens` (select super-admin-only, **no**
+insert/update policy for `authenticated` at all — credential material,
+minted only via two new `provisioning` actions), `sync_runs`/
+`proposals.ingest_token_id` traceability FKs, a partial unique index
+(`proposals_pending_dedupe`) as the race-safety backstop. New `ingest`
+Edge Function (`verify_jwt = false` in `supabase/config.toml` — the
+function's own `cshub_`-token lookup is the only gate, proven both locally
+and against the deployed cloud function: a request with no/garbage
+`Authorization` header returns `401` from the function's own code, and
+production carries **no** CORS header at all, confirming the earlier local
+observation of one was purely the local Kong dev-proxy, not the function).
+Implements the full upsert/dedupe decision tree (pending-merge →
+previously-rejected-skip → real-row compare-or-update-propose → create),
+normalized equality comparisons (dates/numbers/strings/enums, caller-sent
+fields only), `superseded_pending` for a delete against a still-pending
+create, 200-record/2MB limits (body size enforced while streaming, not via
+`Content-Length`), and privacy-safe logging (ids/counts/codes only, never
+request bodies or record data). Minimal admin UI: `/ingest-tokens` (new
+nav item under "Admin") — create (label, expiry capped at 365d, optional
+account scope), one-time plaintext reveal with copy, revoke; new
+`src/hooks/useIngestTokens.ts`.
+**Deviations:** none from the final approved plan. One real bug found
+during the throwaway verification script (not a plan deviation, an
+implementation bug caught by testing): required-field validation ran
+before the `delete` branch, so every delete (whose `data` is `{}`) failed
+validation before reaching delete-handling logic at all — fixed by moving
+the delete branch before the known/required-field checks, which apply only
+to create/update.
+**Decisions:** D-091–D-096 (token scheme + verify_jwt; upsert/dedupe tree +
+race index; `run.source` reuse; equality normalization; `superseded_pending`;
+no-CORS + logging privacy). Parked: per-token rate limiting.
+**Verified:** fresh `db reset`; a throwaway Node.js script exercising every
+outcome status + edge case in the approved plan's verification list (all
+pass after the delete-ordering fix); confirmed no request body/record
+data/evidence ever appears in function logs; `rls_test.sql`'s new ingest-
+tokens block (super-admin read-only, customer roles 0 rows, direct client
+insert rejected) + all 6 prior blocks green; `smoke-login.ts` all 3 roles;
+`npm run e2e` green (extended to create/reveal/revoke a token);
+typecheck/lint/build green. Cloud: `db push --dry-run` matched exactly 1
+migration; migration list 30/30 local=remote; `ingest` deployed new
+(`verify_jwt: false` confirmed via `functions list`) + `provisioning`
+redeployed; a live `curl` against the deployed `ingest` function confirmed
+the 401-from-our-code behavior in production too.
+**Next:** 7.5 — CS Sync Skill + runner + Refresh (was 6.5) — the first
+actual caller of this endpoint; blocked on Refold MCP server details.
+**Issues:** —
+
 ## Session 32 — 2026-10-09 — Standups (Part 3) + People activity (Part 4) + 2 cleanups
 **Built:** the design was already decided (D-081–D-086, product-overview.md
 §5.7/§12) — this session builds it, no redesign.

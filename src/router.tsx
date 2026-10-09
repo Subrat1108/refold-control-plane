@@ -17,6 +17,7 @@ import { NamespaceDetailPage } from '@/pages/NamespaceDetailPage'
 import { NamespaceOrgDetailPage } from '@/pages/NamespaceOrgDetailPage'
 import { FeatureFlagsPage } from '@/pages/FeatureFlagsPage'
 import { SuperAdminsPage } from '@/pages/SuperAdminsPage'
+import { IngestTokensPage } from '@/pages/IngestTokensPage'
 import { PeoplePage } from '@/pages/PeoplePage'
 import { StandupsPage } from '@/pages/StandupsPage'
 import { StandupDetailPage } from '@/pages/StandupDetailPage'
@@ -119,6 +120,11 @@ export const router = createBrowserRouter([
       {
         path: 'admin-users',
         element: <RouteGuard allowedRoles={['super_admin']}><SuperAdminsPage /></RouteGuard>,
+      },
+      {
+        // 7.4 — mint/revoke bearer tokens for the Ingest API (7.5's CS Sync Skill).
+        path: 'ingest-tokens',
+        element: <RouteGuard allowedRoles={['super_admin']}><IngestTokensPage /></RouteGuard>,
       },
       {
         // Equal-admins model — directory of admins, reports_to, account roles.

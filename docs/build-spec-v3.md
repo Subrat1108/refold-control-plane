@@ -159,13 +159,18 @@ using the Refold MCP server:
 The same skill works from the platform's Edge Function runner (Refresh + daily)
 and when run by hand in Claude or a Refold agent.
 
-### 4.3 Ingest API contract (sketch — finalized in 7.4)
+### 4.3 Ingest API contract (final, 7.4)
 
-`POST /functions/v1/ingest` · `Authorization: Bearer <ingest token>`
+`POST /functions/v1/ingest` · `Authorization: Bearer <ingest token>` — a
+`cshub_`-prefixed bearer token minted via the Ingest Tokens admin screen
+(`/ingest-tokens`), not a Supabase JWT. Full reference, including every
+record type's fields and every result status: `docs/ingest-api.md` — that
+is what 7.5's CS Sync Skill is written against; this section is a summary.
 
 ```json
 {
-  "run": { "id": "uuid", "mode": "scoped|backfill|daily", "triggered_by": "user-uuid|system",
+  "run": { "id": "uuid", "mode": "scoped|backfill|daily", "source": "agent|chat|file",
+           "triggered_by": "super-admin-profile-uuid|system",
            "scope": { "account": "id-or-alias", "record_type": "tickets", "since": "ISO date" } },
   "records": [
     { "record_type": "risk", "operation": "create|update|delete",
@@ -178,12 +183,39 @@ and when run by hand in Claude or a Refold agent.
 }
 ```
 
-Response per record: `proposed` / `updated_pending` / `duplicate_skipped` /
-`rejected_invalid` (with reason). Everything lands as a proposal; nothing is
-applied by the API. Runs from our Edge Function post this payload themselves
-(the model returns structured output and never holds the token); the token is
-only given to Refold if the API is also exposed as a Refold MCP tool for
-hand-run sessions.
+`triggered_by` is a caller *claim*, validated server-side (accepted only as
+`system` or an existing super_admin profile id; otherwise stored `null`,
+and the response's `run.triggeredByAccepted` says so). `run.source` defaults
+to `agent` and is reused as-is by 7.6 (chat) and 7.8 (file import).
+
+Every record goes through the same upsert decision tree regardless of the
+caller-stated `operation` — the sync skill doesn't need to track platform
+state, just report facts via `source_ref`:
+
+1. A pending proposal already exists for `(account, table, source_ref)` →
+   merge into it → **`updated_pending`**.
+2. Else the most recently decided `rejected` proposal for that key has an
+   **identical** payload → **`previously_rejected`** (skip — a human already
+   said no and nothing changed). A changed payload falls through to 3.
+3. Else a real row already exists for `(account, source_ref)`: identical
+   current values → **`duplicate_skipped`**; different → an `update`
+   proposal against that row → **`proposed_update`** (the path a ticket's
+   status change takes on every sync run).
+4. Else → a new `create` proposal → **`proposed`**.
+
+Comparisons are normalized (dates to one form, numeric coercion, trimmed
+strings, lowercased enums, only the fields the caller actually sent) so a
+daily re-sync never files a false `proposed_update` from formatting alone.
+An explicit `delete` against a `source_ref` that only matches a still-
+pending `create` cancels that proposal (`superseded`) and reports
+**`superseded_pending`**, rather than treating it as invalid.
+
+Everything lands as a proposal; **nothing is applied by the API** — 7.3's
+Approvals inbox and `apply_proposal()` act on the result unchanged. Limits:
+max 200 records/request, 2 MB body, evidence excerpts truncated to 280
+chars, unknown `data` fields stripped (listed per-record, not fatal). No
+browser CORS (server-to-server only); function logs never contain request
+bodies, record data, or evidence excerpts.
 
 ### 4.4 Refresh buttons and daily job
 

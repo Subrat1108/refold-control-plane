@@ -65,6 +65,16 @@ export function setReportsTo(userId: string, reportsTo: string | null) {
   return invoke<{ ok: true }>({ action: 'set_reports_to', userId, reportsTo })
 }
 
+// 7.4 — ingest_tokens grants no insert/update to `authenticated` at all; the
+// plaintext only ever exists in this one response, never stored.
+export function createIngestToken(label: string, expiresAt: string, allowedOrgIds: string[] | null) {
+  return invoke<{ id: string; token: string }>({ action: 'create_ingest_token', label, expiresAt, allowedOrgIds })
+}
+
+export function revokeIngestToken(tokenId: string) {
+  return invoke<{ ok: true }>({ action: 'revoke_ingest_token', tokenId })
+}
+
 export function acceptInvite() {
   return invoke<{ ok: true; alreadyActive?: boolean }>({ action: 'accept_invite' })
 }

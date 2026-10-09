@@ -586,3 +586,52 @@ begin
 
   raise notice 'ALL STANDUPS RLS TESTS PASSED';
 end $$;
+
+-- ── Ingest tokens (7.4) ───────────────────────────────────────────────────
+-- Credential material: select is super-admin-only, and there is deliberately
+-- NO insert/update policy for `authenticated` at all — tokens are minted
+-- only via the provisioning Edge Function's service-role client.
+do $$
+declare
+  n int;
+  v_token_id uuid;
+begin
+  -- Seed one token directly as service_role (the only way the Edge Function
+  -- itself ever writes this table).
+  set local role service_role;
+  insert into public.ingest_tokens (label, token_hash, expires_at)
+    values ('rls test token', 'deadbeef', now() + interval '1 day')
+    returning id into v_token_id;
+  reset role;
+
+  -- A super admin can read it.
+  set local role authenticated;
+  set local request.jwt.claims = '{"sub":"00000000-0000-0000-0000-000000001001","aal":"aal2"}';
+  select count(*) into n from public.ingest_tokens where id = v_token_id;
+  assert n = 1, 'a super admin must be able to read ingest_tokens';
+
+  -- A super admin's direct client INSERT is rejected — no policy grants it.
+  begin
+    insert into public.ingest_tokens (label, token_hash, expires_at)
+      values ('should fail', 'abc123', now() + interval '1 day');
+    assert false, 'a direct client insert into ingest_tokens must be rejected (no policy grants it)';
+  exception when insufficient_privilege then
+    null; -- expected
+  end;
+  reset role;
+
+  -- Customer roles see 0 rows.
+  set local role authenticated;
+  set local request.jwt.claims = '{"sub":"00000000-0000-0000-0000-000000001002","aal":"aal2"}'; -- Prism owner
+  select count(*) into n from public.ingest_tokens;
+  assert n = 0, format('Prism owner must see 0 ingest_tokens, saw %s', n);
+  reset role;
+
+  set local role authenticated;
+  set local request.jwt.claims = '{"sub":"00000000-0000-0000-0000-000000001003","aal":"aal2"}'; -- Meridian owner
+  select count(*) into n from public.ingest_tokens;
+  assert n = 0, format('Meridian owner must see 0 ingest_tokens, saw %s', n);
+  reset role;
+
+  raise notice 'ALL INGEST TOKENS RLS TESTS PASSED';
+end $$;
