@@ -744,3 +744,27 @@ export interface ProjectMemberRow {
   profileName: string | null
   role: AssignmentRole
 }
+
+// ── Phase 7.3 — Approvals inbox + audit log screen (build-spec-v3 § 3.1,
+// § 3.2). `Proposal` (types/index.ts) and `audit_log` already shipped in
+// 7.1 — these are just the composed/joined row shapes the two screens read.
+
+export interface ProposalRow extends Proposal {
+  accountName: string | null
+}
+
+export interface AuditLogEntry {
+  id: string
+  actorId: string | null
+  actorName: string | null
+  onBehalfOf: string | null
+  action: string
+  recordTable: string | null
+  recordId: string | null
+  before: Record<string, unknown> | null
+  after: Record<string, unknown> | null
+  orgId: string | null
+  accountName: string | null
+  proposalId: string | null
+  createdAt: string
+}

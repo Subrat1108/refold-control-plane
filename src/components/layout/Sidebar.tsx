@@ -3,9 +3,18 @@ import { LogOut } from 'lucide-react'
 import { useAuth } from '@/hooks/useAuth'
 import { useSupabaseAuth } from '@/lib/auth/AuthProvider'
 import { useMediaQuery } from '@/hooks/useMediaQuery'
+import { usePendingProposalCount } from '@/hooks/useApprovals'
 import { cn } from '@/lib/utils'
-import { NAV_BY_ROLE, ROLE_LABELS } from '@/config/navigation'
+import { NAV_BY_ROLE, ROLE_LABELS, type NavItem } from '@/config/navigation'
 import { Tooltip } from '@/components/Tooltip'
+
+// 7.3 — "Pending count badge in the nav" (build-spec-v3 § 3.1). Renders
+// nothing while 0 so it never clutters the sidebar when the inbox is empty.
+function NavBadge({ badgeKey }: { badgeKey: NavItem['badgeKey'] }) {
+  const { data: count } = usePendingProposalCount()
+  if (badgeKey !== 'pending-proposals' || !count) return null
+  return <span className="ml-auto rounded-full bg-[#6366F1] px-1.5 py-0.5 text-[10px] font-semibold leading-none">{count}</span>
+}
 
 export function Sidebar() {
   const { user, role } = useAuth()
@@ -58,6 +67,7 @@ export function Sidebar() {
             >
               {item.icon}
               {!collapsed && item.label}
+              {!collapsed && <NavBadge badgeKey={item.badgeKey} />}
             </NavLink>
           )
           return collapsed ? (

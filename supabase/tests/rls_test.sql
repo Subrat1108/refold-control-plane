@@ -482,3 +482,66 @@ begin
 
   raise notice 'ALL PHASE 7.2b RLS TESTS PASSED';
 end $$;
+
+-- ── Phase 7.3 — Approvals inbox + audit log screen ────────────────────────
+do $$
+declare
+  n int;
+  v_proposal_status text;
+  v_milestone_status text;
+  v_health text;
+begin
+  -- apply_proposal rejects at AAL1.
+  set local role authenticated;
+  set local request.jwt.claims = '{"sub":"00000000-0000-0000-0000-000000001001","aal":"aal1"}';
+  begin
+    perform public.apply_proposal('17000000-0000-0000-0000-000000000001', '00000000-0000-0000-0000-000000001001');
+    assert false, 'apply_proposal must reject at AAL1';
+  exception when others then null; end;
+  reset role;
+
+  -- apply_proposal rejects a non-super-admin (Prism owner).
+  set local role authenticated;
+  set local request.jwt.claims = '{"sub":"00000000-0000-0000-0000-000000001002","aal":"aal2"}';
+  begin
+    perform public.apply_proposal('17000000-0000-0000-0000-000000000001', '00000000-0000-0000-0000-000000001002');
+    assert false, 'apply_proposal must reject a non-super-admin';
+  exception when others then null; end;
+  reset role;
+
+  -- approving the milestones update proposal actually updates the row AND
+  -- writes an action='approve' audit_log row.
+  set local role authenticated;
+  set local request.jwt.claims = '{"sub":"00000000-0000-0000-0000-000000001001","aal":"aal2"}';
+  perform public.apply_proposal('17000000-0000-0000-0000-000000000001', '00000000-0000-0000-0000-000000001001');
+  select status::text into v_milestone_status from public.milestones where id = '11000000-0000-0000-0000-000000000002';
+  assert v_milestone_status = 'done', format('approved milestone must be done, saw %s', v_milestone_status);
+  select count(*) into n from public.audit_log where action = 'approve' and record_table = 'milestones' and record_id = '11000000-0000-0000-0000-000000000002';
+  assert n = 1, format('approve must write exactly one audit_log row, saw %s', n);
+  select status::text into v_proposal_status from public.proposals where id = '17000000-0000-0000-0000-000000000001';
+  assert v_proposal_status = 'approved', format('proposal status must be approved, saw %s', v_proposal_status);
+
+  -- rejecting leaves the target table untouched and writes action='reject'.
+  perform public.reject_proposal('17000000-0000-0000-0000-000000000002', '00000000-0000-0000-0000-000000001001', 'test rejection');
+  select health::text into v_health from public.organizations where id = '00000000-0000-0000-0000-000000000002';
+  assert v_health = 'active', format('rejected health-change proposal must NOT touch organizations.health, saw %s', v_health);
+  select count(*) into n from public.audit_log where action = 'reject' and record_table = 'organizations';
+  assert n = 1, format('reject must write exactly one audit_log row, saw %s', n);
+
+  -- a disallowed target_table raises rather than silently no-op-ing.
+  insert into public.proposals (id, org_id, target_table, target_id, operation, payload, source, proposed_by)
+    values ('19000000-0000-0000-0000-000000000001', '00000000-0000-0000-0000-000000000002', 'profiles', '00000000-0000-0000-0000-000000001001', 'update', '{"full_name":"hacked"}'::jsonb, 'agent', 'rls-test');
+  begin
+    perform public.apply_proposal('19000000-0000-0000-0000-000000000001', '00000000-0000-0000-0000-000000001001');
+    assert false, 'apply_proposal must reject a disallowed target_table';
+  exception when others then null; end;
+  reset role;
+
+  -- customer roles see nothing in proposals (not just org-scoped — none).
+  set local role authenticated;
+  set local request.jwt.claims = '{"sub":"00000000-0000-0000-0000-000000001002","aal":"aal2"}'; -- Prism owner
+  select count(*) into n from public.proposals; assert n = 0, format('Prism owner must see 0 proposals, saw %s', n);
+  reset role;
+
+  raise notice 'ALL PHASE 7.3 RLS TESTS PASSED';
+end $$;

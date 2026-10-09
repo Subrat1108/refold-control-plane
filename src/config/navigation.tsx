@@ -1,4 +1,4 @@
-import { LayoutDashboard, Users, Server, Flag, Settings, Layers, ShieldCheck, UsersRound, UserCog, Briefcase } from 'lucide-react'
+import { LayoutDashboard, Users, Server, Flag, Settings, Layers, ShieldCheck, UsersRound, UserCog, Briefcase, CheckSquare, ScrollText } from 'lucide-react'
 import type { UserRole } from '@/types'
 
 export interface NavItem {
@@ -6,6 +6,7 @@ export interface NavItem {
   label: string
   icon: React.ReactNode
   ownerOnly?: boolean // 6.4b: shown only to customer owners, hidden from members
+  badgeKey?: 'pending-proposals' // 7.3 — Sidebar renders a live count next to the label
 }
 
 // Single source of truth for the role-driven sidebar. The first item of each
@@ -19,6 +20,8 @@ export const NAV_BY_ROLE: Record<UserRole, NavItem[]> = {
     { to: '/feature-flags', label: 'Feature Flags', icon: <Flag size={16} /> },
     { to: '/admin-users', label: 'Super Admins', icon: <ShieldCheck size={16} /> },
     { to: '/team-structure', label: 'Team Structure', icon: <UserCog size={16} /> },
+    { to: '/approvals', label: 'Approvals', icon: <CheckSquare size={16} />, badgeKey: 'pending-proposals' },
+    { to: '/audit-log', label: 'Audit Log', icon: <ScrollText size={16} /> },
     { to: '/settings', label: 'Settings', icon: <Settings size={16} /> },
   ],
   cloud_customer_admin: [

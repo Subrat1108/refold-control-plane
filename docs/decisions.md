@@ -870,6 +870,28 @@ backing data until 7.3's proposals/approvals ship, so it's always absent for
 now — a known gap, not a silent drop. Portfolio's coverage % = (current
 sections) / 7.
 
+## D-080 — apply_proposal()/reject_proposal(): approve applies the change via a fixed table allow-list (2026-10-09)
+§3.1's "approve" means apply, not just flip a status flag — and §3.2 wants
+the audit trail to show literal `action='approve'`/`'reject'`, which the
+generic trigger can't produce (it only sees `proposals`' own `update`). Built
+two SECURITY DEFINER functions instead of a client-side status update:
+`apply_proposal(proposal_id, decided_by, payload_override)` and
+`reject_proposal(proposal_id, decided_by, reason)`. `target_table` is
+checked against a FIXED allow-list matching §3.1's pending kinds exactly —
+`milestones`, `accomplishments`, `risks`, `escalations`, `tickets`,
+`metric_values` (create/update/delete), and `organizations` (update only,
+for health changes). One explicit `if/elsif` branch per table, not dynamic
+`format(%I, ...)` SQL — safer (no identifier-injection surface) and each
+table's columns differ anyway; a disallowed table raises rather than
+silently no-op-ing (verified in rls_test.sql). `asks`/`engagements`/
+`portfolio_notes`/`projects` are manual-only (7.2b) and stay unreachable
+here until the roadmap says otherwise. Each function runs the apply +
+proposal-status-update + explicit audit_log('approve'/'reject') insert as
+one transaction, so a mid-way failure can't leave a proposal half-applied.
+Fixtures: 7.1's `phase7_demo_data.sql` already seeded 2 pending proposals
+(both 'create') — added 3 more, local-only (`seed_proposals.sql`), covering
+'update' and 'delete' so edit-then-approve and reject are exercisable too.
+
 # Parked
 
 Out-of-scope ideas land here instead of derailing the current prompt block.

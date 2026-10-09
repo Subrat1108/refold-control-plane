@@ -38,7 +38,7 @@
 - [x] 7.1 — Data model v3: migrations (enums, segments/metric_definitions, organizations extend, proposals/sync_state/sync_runs, projects+subtables, account records), RLS, generic audit trigger, provenance/dedupe, TS types, fictional local fixtures (D-055–D-065)
 - [x] 7.2a — People, teams, assignments, scoped views: titles, teams/team_members, account_assignments (+owner_profile_id derivation), project_members (replaces fdes/edl_profile_id), saved_views, scope helper functions, Team Structure screen (People/Teams/Accounts), ScopeSwitcher + SavedViewsMenu proof-wired into the Accounts list (D-069–D-077)
 - [x] 7.2b — Portfolio + Account 360: Portfolio board (the account list, grouped by segment) + coverage tab, Account 360 (6 tabs: Overview/Projects/Escalations/Tickets/Engagements/Metrics), Add account (no invite), inline add/edit/delete, Mark verified, source badges — ScopeSwitcher + saved views wired into Portfolio (D-079)
-- [ ] 7.3 — Approvals inbox + audit log screen (scoped: Mine/My team/Everyone)
+- [x] 7.3 — Approvals inbox + audit log screen (scoped: Mine/My team/Everyone): apply_proposal()/reject_proposal() SQL functions (approve actually applies the change via a fixed table allow-list + audits the decision itself), pending-count nav badge, CSV export on the audit log (D-080)
 - [ ] Home + per-team Standups + Team (FDE performance) — pulled ahead of Phase 8 (product-overview § 9)
 - [ ] 7.4 — Ingest API
 - [ ] 7.5 — CS Sync Skill + runner + Refresh (was 6.5)
@@ -74,6 +74,38 @@ Points, streaks, badges, team leaderboards — computed from the audit log + pro
 
 ## Last session
 (See docs/devlog.md for full session history — this is just the pointer.)
+
+Date: 2026-10-09
+Completed: 7.3 — Approvals inbox + audit log screen. `apply_proposal()`/
+`reject_proposal()` SQL functions (SECURITY DEFINER, AAL2-gated): approving
+a proposal actually applies create/update/delete to the real target table
+(one explicit branch per table against a fixed allow-list — milestones,
+accomplishments, risks, escalations, tickets, metric_values, organizations
+health changes) and audits the decision itself with action='approve'/
+'reject' (the generic trigger can't produce that label). `/approvals`
+(filterable inbox, field-level diff, approve/edit-then-approve/reject/bulk,
+ScopeSwitcher+SavedViewsMenu, pending-count nav badge) and `/audit-log`
+(filterable, paginated, CSV export, ScopeSwitcher). One migration (the two
+functions — no new tables, proposals/audit_log already had everything).
+3 local-only fixture proposals added (update/delete) alongside 7.1's
+existing 2 (create), so every operation type is exercisable.
+Verified: fresh db reset; rls_test.sql all 5 blocks PASS (new block: AAL1/
+non-super-admin rejected, approve actually mutates + audits, reject leaves
+the target table untouched + audits, a disallowed target_table raises,
+customer roles see 0 proposals); smoke-login.ts all 3 roles PASS; typecheck/
+lint (0 errors)/build green. A throwaway script exercised approve/
+edit-then-approve (confirmed the override payload wins, not the original)/
+reject/bulk against the real AAL2-protected API, confirmed the pending
+count drops to 0 and audit_log shows the right approve/reject counts.
+Cloud: db push --dry-run matched exactly 1 migration; migration list
+27/27 local=remote; no Edge Function changes this block.
+Decisions made: D-080
+Known issues: same no-browser-automation-tool gap as 7.2b — UI not
+click-tested interactively, verified at the API/RLS/schema layer instead.
+Approvals inbox will stay thin on real data until 7.5/7.6/7.8 ship actual
+proposal producers.
+
+---
 
 Date: 2026-10-08 (later same day)
 Completed: 7.2b — Portfolio + Account 360. Portfolio board (grouped by

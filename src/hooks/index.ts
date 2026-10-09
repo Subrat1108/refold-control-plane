@@ -125,3 +125,15 @@ export type {
   TicketInput,
   EngagementInput,
 } from './usePortfolio'
+export {
+  useProposals,
+  usePendingProposalCount,
+  fetchCurrentRow,
+  useCurrentRow,
+  approveProposal,
+  rejectProposal,
+  useAuditLog,
+  auditLogToCsv,
+  downloadCsv,
+} from './useApprovals'
+export type { ProposalFilters, AuditLogFilters } from './useApprovals'

@@ -16,6 +16,62 @@ Template:
 
 ---
 
+## Session 30 — 2026-10-09 — 7.3: Approvals inbox + audit log screen
+**Built:** closes the write-pipeline loop (build-spec-v3 § 3). The real
+design question was what "approve" does — the spec says it applies the
+change, and the audit trail needs literal `action='approve'`/`'reject'`,
+which the generic trigger can't produce on its own. Built two SECURITY
+DEFINER functions instead of a client-side status flip:
+`apply_proposal(proposal_id, decided_by, payload_override)` and
+`reject_proposal(proposal_id, decided_by, reason)` (migration
+`20261009000001_apply_proposal.sql`). `target_table` is checked against a
+fixed allow-list matching § 3.1's pending kinds exactly — milestones,
+accomplishments, risks, escalations, tickets, metric_values (create/update/
+delete), organizations (update only, health changes) — one explicit branch
+per table rather than dynamic SQL, so there's no identifier-injection
+surface and a disallowed table raises instead of silently doing nothing.
+Each function applies the change, marks the proposal decided, and writes
+one explicit `audit_log` row with the real action, all as one transaction.
+- **`/approvals`:** filter bar (type/source) + ScopeSwitcher/SavedViewsMenu,
+  a card per pending proposal (proposer, source, evidence, before→after
+  diff fetched live from the target table), Approve / Edit then approve
+  (pre-filled form, calls apply with the edited payload) / Reject (reason
+  required), checkbox + bulk-approve.
+- **`/audit-log`:** filter bar (table/action/date range) + ScopeSwitcher,
+  paginated `DataTable` of who/action/record/account/changed-fields, CSV
+  export (a small client-side builder — nothing like it existed yet).
+- **Nav:** `usePendingProposalCount` renders a live badge on the Approvals
+  item (hidden at 0, per spec).
+- **Fixtures:** 7.1's `phase7_demo_data.sql` already seeded 2 pending
+  proposals (both 'create' — I'd missed this on first pass). Added 3 more,
+  local-only (`seed_proposals.sql`), covering 'update' and 'delete' so
+  edit-then-approve and reject are actually exercisable, not just creates.
+**Verified:** fresh `db reset`; `rls_test.sql` all 5 blocks PASS (new block:
+AAL1 and non-super-admin rejected; approving the milestones proposal
+actually updates the row *and* writes exactly one `action='approve'` audit
+row; rejecting leaves the target table untouched and writes
+`action='reject'`; an `insert`ed disallowed-table proposal (`profiles`)
+raises rather than no-op-ing; customer roles see 0 proposals);
+`smoke-login.ts` all 3 roles PASS; typecheck/lint (0 errors)/build green.
+A throwaway script ran the full approve/edit-then-approve/reject/bulk flow
+against the real API — confirmed the edited payload wins over the original
+on edit-then-approve, the rejected ticket survives, the pending count drops
+from 5 to 0, and `audit_log` shows exactly 4 approves + 1 reject.
+Cloud: `db push --dry-run` matched exactly 1 migration; `migration list`
+27/27 local=remote; no Edge Function changes this block.
+**Deviations:** none from the approved plan, beyond the fixture-overlap
+correction above (planned 5 new proposals, shipped 3, since 2 already
+existed).
+**Decisions:** D-080
+**Next:** Home + per-team Standups + Team (FDE performance) — pulled ahead
+of Phase 8.
+**Issues:** same no-browser-automation-tool gap as 7.2b (see CLAUDE.md) —
+verified at the API/RLS/schema layer, not click-tested. The Approvals inbox
+will stay thin on real data until 7.5/7.6/7.8 ship actual proposal
+producers (chat agent, agentic sync, file import).
+
+---
+
 ## Session 29 — 2026-10-08 — 7.2b: Portfolio + Account 360
 **Built:** the two screens a CS person actually works in day to day
 (build-spec-v3 § 6; product-overview § 5.2–5.3), on top of 7.1's schema and

@@ -20,6 +20,8 @@ import { SuperAdminsPage } from '@/pages/SuperAdminsPage'
 import { TeamStructurePage } from '@/pages/TeamStructurePage'
 import { PortfolioPage } from '@/pages/PortfolioPage'
 import { AccountDetailPage } from '@/pages/AccountDetailPage'
+import { ApprovalsPage } from '@/pages/ApprovalsPage'
+import { AuditLogPage } from '@/pages/AuditLogPage'
 import { OrgUsersPage } from '@/pages/OrgUsersPage'
 import { DashboardPage } from '@/pages/DashboardPage'
 import { SettingsPage } from '@/pages/SettingsPage'
@@ -119,6 +121,15 @@ export const router = createBrowserRouter([
         // 7.2a — people, teams, assignments.
         path: 'team-structure',
         element: <RouteGuard allowedRoles={['super_admin']}><TeamStructurePage /></RouteGuard>,
+      },
+      {
+        // 7.3 — Approvals inbox + audit log screen.
+        path: 'approvals',
+        element: <RouteGuard allowedRoles={['super_admin']}><ApprovalsPage /></RouteGuard>,
+      },
+      {
+        path: 'audit-log',
+        element: <RouteGuard allowedRoles={['super_admin']}><AuditLogPage /></RouteGuard>,
       },
       {
         path: 'dashboard',
