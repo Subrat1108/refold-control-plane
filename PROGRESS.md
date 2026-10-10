@@ -42,7 +42,7 @@
 - [x] Equal admins — people simplification (Part 1): `account_roles` (per-account role tag, record-keeping, history) replaces titles/teams/account_assignments/owner_profile_id; `reports_to` (optional, UX-only, cycle-checked); rewritten scope helpers; People directory screen; Portfolio/Account 360 "Add to my accounts"/"Leave account"; nav reorder + collapsed Admin group (D-081–D-086)
 - [x] Home + Standups + People activity (Parts 2–4): Home (personal "my day" — my accounts, needs attention, my reports, recent activity, all scoped); Standups (anyone hosts, standups/standup_entries/action_items, host-can-edit-any RLS, remembered participant set via saved_views, deterministic "since last standup" draft, live mode, blocker→ask/action-item); People activity (role history, recent activity, open action items, recent standup entries on the existing People directory) (D-087–D-090). Performance indexes/KPIs stay deferred — the data they need (account_roles history, project_members, audit actor, approvals, standups) is confirmed fully captured.
 - [x] 7.4 — Ingest API: `ingest_tokens` table (select super-admin-only, no client insert/update), `create_ingest_token`/`revoke_ingest_token` provisioning actions, new `ingest` Edge Function (bearer-token auth, verify_jwt disabled, upsert/dedupe decision tree, race-safe via partial unique index), Ingest Tokens admin screen
-- [ ] 7.5 — CS Sync Skill + runner + Refresh (was 6.5)
+- [ ] 7.5 — CS Sync Skill + runner + Refresh (was 6.5). **7.5-pre done** (D-097–D-099): Refold MCP connection confirmed and the `cs-sync` skill finalized against the real server (`skills/cs-sync/`, `docs/refold-mcp.md`) — connected live, confirmed the agent-mode `RESOLVE_ACTIONS`/`EXECUTE_ACTION` contract, real action IDs/schema enums filled in, health-dedupe tested against local ingest. Four real connection/app-admin gaps found (not code issues): Zendesk/Gmail not connected for the `cs-hub` linked account, Slack's bot is not in any channel, `search_messages` is structurally unavailable (bot vs. user token), and zero Refold workflows exist (blocks `metric` entirely). The runner itself (7.5 proper) is still not started — waiting on a go-ahead for the proposed plan in devlog.
 - [ ] 7.6 — Ask the Hub (chat agent)
 - [ ] 7.7 — Reports (monthly status, EBR, QBR — was 6.6)
 - [ ] 7.8 — Air-gapped import
@@ -75,6 +75,48 @@ Points, streaks, badges, team leaderboards — computed from the audit log + pro
 
 ## Last session
 (See docs/devlog.md for full session history — this is just the pointer.)
+
+Date: 2026-10-10
+Completed: 7.5-pre — Refold MCP discovery + finalized the CS Sync Skill.
+Discovery and documentation only, no app code or schema touched, no build.
+Connected live to the real `CS Hub` MCP server (test environment):
+session-token auth, JSON-RPC over streamable HTTP, agent-mode contract
+(`RESOLVE_ACTIONS`/`EXECUTE_ACTION` only — no skill-index tools, since
+`expose_skills` is off), the `linked_account_id` header requirement on
+every tool call, and a deterministic non-LLM REST execute path for
+already-known actions (outer HTTP status always 200 — check `node_status`
+in the body). Confirmed via the Applications API and live calls: Slack and
+Fireflies are connected, Zendesk and Gmail are not (`connected: false`,
+every call fails "Application Authentication not found"). Further live
+testing found three more real gaps: the connected Slack identity is not a
+member of any channel (`not_in_channel` on every channel history read
+tried); `search_messages` is structurally unusable (needs a user token, not
+a bot token); and the org has zero Refold workflows published, so the
+`metric` record type has no source, deterministic or otherwise. Finalized
+`skills/cs-sync/` against the real server (real action IDs, CS Hub schema
+enums read directly from Postgres, Zendesk as the ticketing system, DRAFT
+markers removed) and generated `skills/cs-sync/refold-skill.md` — a single
+merged document ready to paste into Refold → MCP → CS Hub → Skills → Add
+Skill by hand (confirmed no skill CRUD API exists). Tested `health:<account
+id>` dedupe against local ingest (duplicate_skipped / proposed_update /
+updated_pending, exactly as designed — no change to `docs/ingest-api.md`
+needed). The planned "hand-run one real ticket" step couldn't use real
+Zendesk data (the connection gap above), so one fictional-but-schema-valid
+ticket record was hand-built, validated against `payload.schema.json`, and
+posted to a local-only ingest token instead — proving the pipe, not Zendesk
+connectivity; reported as a deviation. New `docs/refold-mcp.md` documents
+the connection mechanics (no secrets, no customer content). A proposed 7.5
+plan (runner design, deterministic vs. LLM-driven split, secrets needed,
+watermarks, Refresh buttons, pg_cron, cost/limit guards) is in devlog,
+awaiting go-ahead before any build.
+Decisions made: D-097–D-099. Parked: rotate the Refold API key (exposed in
+an earlier planning chat, not this session); stand up a production
+(`pk…`) key + server/account before go-live.
+Known issues: four real connection/app-admin gaps (above) block 7.5 from
+syncing anything beyond Slack metadata and Fireflies connectivity today —
+none are code issues; all need Refold-dashboard/app-admin work first.
+
+---
 
 Date: 2026-10-09 (later still)
 Completed: 7.4 — Ingest API. New `ingest` Edge Function (bearer-token auth

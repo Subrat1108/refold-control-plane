@@ -1146,6 +1146,82 @@ every `console.log`/`console.error` in the function logs only ids
 request body, a record's `data`, or `evidence_excerpt` — stated as a
 guarantee in `docs/ingest-api.md`, not just current behavior.
 
+## D-097 — Refold MCP connection confirmed; agent-mode contract finalized for cs-sync (2026-10-10)
+Connected end-to-end against the live `CS Hub` MCP server (`mode: agent`,
+`environment: test`) for 7.5-pre discovery: session-token auth
+(`POST /api/v2/public/session-token`, ~7-day expiry, re-call to refresh),
+then JSON-RPC over streamable HTTP (`initialize` → `tools/list` →
+`tools/call`) at `https://app.refold.ai/mcp/v1/<server id>`. In agent mode
+the server exposes exactly two tools — `RESOLVE_ACTIONS` (turns plain-
+English queries into `{slug, type, identifier, json_schema}`) and
+`EXECUTE_ACTION` (runs one). **Every `tools/call` additionally requires a
+`linked_account_id` header** that `initialize`/`tools/list` do not —
+omitting it produces `"Missing auth context"` with no other clue; this is
+now documented in `docs/refold-mcp.md` and `skills/cs-sync/reference/
+tool-map.md` so it isn't rediscovered the hard way again. A deterministic,
+non-LLM REST path also exists for any already-known action
+(`POST /api/v2/integration-schema/{slug}/actions/{action_id}/execute`,
+same auth) — its outer HTTP status is always 200 even on failure; the body's
+`node_status`/`http_status` is the real result, confirmed live against
+several deliberately-broken calls. `expose_skills` (the dashboard's
+**Retrieve Skill** switch) is off for this server, so there is no
+`GET_KNOWLEDGE_INDEX`/`LOAD_SKILL` tool to wait for — `cs-sync` calls
+`RESOLVE_ACTIONS` directly. No skill CRUD exists in the public API (read
+the full OpenAPI spec to confirm — `skills_count` is reported but not
+writable); a finished skill can only be installed by pasting it into
+Refold → MCP → CS Hub → Skills → Add Skill by hand, which is why this
+session generates `skills/cs-sync/refold-skill.md` as a mergeable document
+rather than attempting an API upload.
+
+## D-098 — Real connection/app-admin gaps block 7.5 today, independent of any code (2026-10-10)
+Discovery surfaced four genuine blockers, confirmed live against the real
+`cs-hub` linked account, none of them MCP-protocol or skill-design issues:
+(1) Zendesk and Gmail are attached to the CS Hub MCP server but **not
+connected** at the application level (`connected: false` via the
+Applications API) — every call fails `"Application Authentication not
+found for linked_account_id cs-hub and app <slug>"`; (2) the connected
+Slack identity is not a member of any channel in the workspace, so
+`get_conversation_history`/`list_thread_messages` return `not_in_channel`
+for every channel tried, customer channels included; (3) `search_messages`
+cannot work **at all** as configured — Slack's `search.messages` requires
+a user-scope token, and this connection is bot-token-based
+(`not_allowed_token_type`), so this is not a permissions fix, it's a
+different-auth-type problem; (4) the org has **zero** Refold workflows
+published (`GET /api/v2/public/workflow` → `totalDocs: 0`), so the planned
+`metric` record type has no source at all yet, deterministic or otherwise.
+Separately (not blocking, just a design input): neither Zendesk nor
+Fireflies exposes a list/search action in its current catalog — only
+get-by-id — so even once connected, "what changed since `since`" has no
+direct answer for tickets or meeting transcripts without another signal
+supplying the id first. All four are fixed by app-admin/Refold-dashboard
+work, not by this repo's code; `skills/cs-sync/reference/tool-map.md`
+documents each one so `cs-sync` skips the affected record type and reports
+why instead of guessing, and so 7.5's rollout plan accounts for them before
+relying on this skill for a real sync.
+
+## D-099 — cs-sync skill finalized against the real server; `refold-skill.md` generated for manual install (2026-10-10)
+Replaced every placeholder in `skills/cs-sync/` with what was actually
+confirmed live: real `action_id`s and input schemas (`tool-map.md`),
+`"Zendesk"` as the one ticketing system, the CS Hub's own schema enums
+read directly from Postgres (`milestone_status`/`risk_status`/
+`escalation_status`/`severity`/`ticket_status`/`ticket_priority`/`health`)
+and its 15 current `metric_definitions` keys (`record-types.md`), and the
+`health:<account id>` dedupe behavior — tested directly against local
+ingest with the Prism Analytics fixture: same value → `duplicate_skipped`;
+changed value → `proposed_update`; resent while still pending →
+`updated_pending`, exactly as `docs/ingest-api.md` already specified, no
+change needed there. The planned "hand-run the skill for one real account ×
+tickets" step could not use real Zendesk data (D-098's connection gap), so
+one fictional-but-schema-valid ticket record was hand-built instead,
+validated against `payload.schema.json`, and posted to a local-only ingest
+token — proving the skill-output → validation → ingest pipe, not Zendesk
+connectivity (reported as a deviation, not silently substituted). All DRAFT
+markers removed from `SKILL.md`/`tool-map.md`. New
+`skills/cs-sync/refold-skill.md` is the single merged document (Goal /
+Pre-checks / Steps / On success / On failure, real action ids throughout)
+meant to be pasted into Refold → MCP → CS Hub → Skills → Add Skill by a
+human — not uploaded automatically, since no skill CRUD API exists (D-097).
+
 # Parked
 
 Out-of-scope ideas land here instead of derailing the current prompt block.
@@ -1173,3 +1249,10 @@ Format: one line each, with the session it came from.
   from `account_roles` history + the audit log; no new tracking needed.
 - Per-token rate limiting on the Ingest API (7.4 session): not needed until
   7.5 actually runs a sync on a schedule; revisit when that lands.
+- Rotate the Refold API key (7.5-pre session): exposed in an earlier
+  planning chat, per the session owner — not during this discovery
+  session, which only ever read its length/prefix.
+- Production key (`pk…`) + a production-environment MCP server/account
+  before go-live (7.5-pre session): this discovery only used the
+  test-environment (`tk…`) key and server; a separate production setup is
+  needed before 7.5 runs against real customer data in prod.

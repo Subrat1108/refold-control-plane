@@ -16,6 +16,130 @@ Template:
 
 ---
 
+## Session 34 — 2026-10-10 — 7.5-pre: Refold MCP discovery + finalize cs-sync
+**Built:** discovery and documentation only — no app code, no schema, no
+runner. Authenticated against the real Refold API (session-token flow,
+test environment, `tk…` key) and connected live to the org's one MCP
+server ("CS Hub", `mode: agent`, `expose_skills: false`,
+`interactive_auth: false`) over streamable HTTP JSON-RPC. Confirmed the
+agent-mode tool contract (`RESOLVE_ACTIONS`/`EXECUTE_ACTION` only — no
+skill-index tools), the undocumented-until-now `linked_account_id` header
+requirement on `tools/call`, and a deterministic non-LLM REST execute path
+(`/api/v2/integration-schema/{slug}/actions/{action_id}/execute`, outer
+HTTP status always 200 regardless of outcome). Resolved real action IDs
+and input schemas for every planned capability. Read the CS Hub's own
+Postgres enums and `metric_definitions` directly to fill
+`allowed_values`/`metric_key` lists. Finalized `skills/cs-sync/` (SKILL.md,
+reference/tool-map.md, reference/record-types.md) against all of the
+above, removed the DRAFT markers, and generated
+`skills/cs-sync/refold-skill.md` as one merged Goal/Pre-checks/Steps/
+On-success/On-failure document ready for manual paste into Refold → MCP →
+CS Hub → Skills → Add Skill (no skill CRUD API exists — confirmed from the
+full OpenAPI spec). Tested `health:<account id>` dedupe end-to-end against
+a local `db reset` + local ingest token (duplicate_skipped →
+proposed_update → updated_pending, exactly as `docs/ingest-api.md` already
+specifies). New `docs/refold-mcp.md` documents the connection mechanics
+(auth flow, endpoint form, mode, limits, the deterministic option) with no
+secrets and no customer content.
+**Deviations:** Step 7 ("hand-run the skill for one real account × tickets,
+post to local ingest") couldn't use real Zendesk data — Zendesk isn't
+connected for the `cs-hub` linked account (see Issues). Used one
+fictional-but-schema-valid ticket record instead, following
+`record-types.md`'s own mapping, to validate the skill-output →
+`payload.schema.json` → local-ingest pipe. This proves the pipe, not
+Zendesk connectivity — stated explicitly, not silently substituted.
+**Decisions:** D-097–D-099. Parked: rotate the Refold API key (exposed in
+an earlier planning chat, per the session owner — not this session, which
+only ever read its length/prefix); stand up a production (`pk…`) key +
+server/account before go-live.
+**Next:** 7.5 proper (runner + Refresh + daily job) — proposed plan below,
+awaiting go-ahead. Nothing in this session is a blocker for writing the
+plan; the four gaps below are blockers for the runner actually *producing*
+synced records once built, not for building it.
+**Issues:** Four real connection/app-admin gaps, confirmed live, all fixed
+by Refold-dashboard/app-admin work rather than code: (1) Zendesk and Gmail
+show `connected: false` for the `cs-hub` linked account — every call fails
+"Application Authentication not found"; (2) the connected Slack identity
+(bot) is not a member of any channel in the workspace, so channel-history
+reads return `not_in_channel` for every channel tried, customer channels
+included; (3) Slack's `search_messages` needs a user-scope token and this
+connection is bot-token-based (`not_allowed_token_type`) — structurally
+unavailable, not a permissions fix; (4) the org has zero Refold workflows
+published, so the `metric` record type has no source at all, deterministic
+or agent-driven. Also: neither Zendesk nor Fireflies exposes a list/search
+action — only get-by-id — so "what changed since `since`" has no direct
+answer for tickets or meeting transcripts without another signal supplying
+the id first; this is a design input for the runner (lean on Slack/email
+discovery to surface ids), not fixable by a Refold-side connection change.
+
+### Proposed 7.5 plan (runner + Refresh + daily job) — awaiting go-ahead
+
+**Runner design.** A new Edge Function (or a `pg_cron`-invoked one) builds
+the **sync context** per `skills/cs-sync/SKILL.md`'s contract from CS Hub
+state (`sync_state` watermarks, account aliases/projects, `known_records`
+for in-flight items, `metric_definitions`, `allowed_values` read live from
+the enums/table confirmed this session), calls the Anthropic API with the
+`cs-sync` skill loaded and that context as the prompt, parses the model's
+single JSON reply, and POSTs `{run, records}` to `/functions/v1/ingest`
+using a dedicated production ingest token (7.4). `skipped` entries are
+logged, never sent to ingest.
+
+**Deterministic vs. LLM-driven, given what this session found.** Nothing
+is fully deterministic yet — even ticket-by-id and metric pulls (the two
+candidates) have no deterministic *discovery* step (no list/search action,
+no workflow at all for metrics). Until those exist, every sync run is
+LLM-driven: the model decides what to fetch and how to read it, using
+`RESOLVE_ACTIONS`/`EXECUTE_ACTION` through the MCP connection. Once a
+Zendesk "tickets updated since" action or a metrics workflow exists, that
+one record type's *fetch* step can move to the deterministic REST execute
+path while extraction/mapping stays the same — worth revisiting then, not
+blocking the runner now.
+
+**Secrets needed (as Supabase project secrets, not `.env`):**
+`REFOLD_API_KEY`, `REFOLD_LINKED_ACCOUNT_ID`, `REFOLD_MCP_SERVER_ID` (this
+session's three, promoted from local `.env`), an Anthropic API key (new —
+the runner calls the model directly, this repo has never needed one
+before), and a dedicated production **ingest token** (7.4's
+`create_ingest_token`, scoped and labeled for the runner, not a human's
+token).
+
+**Watermarks.** `sync_state` (one row per account × record type) already
+exists from 7.1 — `last_synced_at`/`status`/`error`/`lock`. The runner
+reads it to build each unit's `since`, advances it only on a `success`
+outcome from ingest (never on `partial` for that unit, so a failed record
+type gets retried, not silently skipped forward), and the lock prevents two
+runs for the same unit overlapping (on top of 7.4's
+`proposals_pending_dedupe` index, which is the last-resort backstop, not
+the primary guard).
+
+**Refresh buttons.** A `scoped` sync for one account × one record type,
+triggered from that record's screen, `triggered_by` = the clicking
+super-admin's own profile id (now that 7.4 validates this against real
+super_admin profiles) — should show "last synced …" using `sync_state`
+immediately, consistent with build-spec-v3 §4.4.
+
+**Daily job.** `pg_cron` on a schedule, `mode: daily`, iterating every
+account × record-type unit whose watermark is stale — same runner code
+path as Refresh, just invoked on a timer instead of a click, per
+build-spec-v3 §4.4's "one code path" rule.
+
+**Cost / limit guards.** A per-run cap on units processed (to bound both
+Anthropic spend and MCP call volume per invocation); skip (not fail) a
+unit whose capability is known-blocked per this session's findings
+(Zendesk/Gmail/metrics) rather than burning a model call attempting it
+every single day until the connection gap is fixed; log token usage per
+run for later cost visibility — no dashboard for it yet, just the data.
+
+**Given this session's findings, the realistic first real-data run** will
+only produce Slack-channel-sourced records (escalation/risk/milestone/
+accomplishment/health) once the bot is invited into at least one real
+customer channel — tickets, email, and metrics stay blocked until their
+respective connection/workflow gaps are closed. Recommend treating "invite
+the Slack bot to customer channels" as this plan's actual critical path,
+not a footnote.
+
+---
+
 ## Session 33 — 2026-10-09 — 7.4 Ingest API
 **Built:** per build-spec-v3 §6, revised through 3 rounds of plan feedback
 (go-ahead points preserved in full in the plan file this session started

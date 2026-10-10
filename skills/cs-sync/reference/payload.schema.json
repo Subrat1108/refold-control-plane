@@ -1,0 +1,79 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "CS Sync output (runner mode)",
+  "description": "What the cs-sync skill returns in runner mode. The runner posts {run, records} to POST /functions/v1/ingest and logs `skipped` locally.",
+  "type": "object",
+  "required": ["run", "records"],
+  "additionalProperties": false,
+  "properties": {
+    "run": {
+      "type": "object",
+      "required": ["mode"],
+      "additionalProperties": false,
+      "properties": {
+        "id": { "type": "string", "format": "uuid" },
+        "mode": { "enum": ["scoped", "daily", "backfill"] },
+        "source": { "enum": ["agent", "chat", "file"], "default": "agent" },
+        "triggered_by": { "type": "string" },
+        "scope": { "type": "object" }
+      }
+    },
+    "records": {
+      "type": "array",
+      "maxItems": 200,
+      "items": {
+        "type": "object",
+        "required": ["record_type", "operation", "account", "source_ref", "data", "evidence", "confidence"],
+        "additionalProperties": false,
+        "properties": {
+          "record_type": { "enum": ["milestone", "accomplishment", "risk", "escalation", "ticket", "metric", "health"] },
+          "operation": { "enum": ["create", "update", "delete"] },
+          "account": { "type": "string", "minLength": 1 },
+          "project": { "type": "string" },
+          "source_ref": { "type": "string", "minLength": 3 },
+          "observed_at": { "type": "string", "format": "date-time" },
+          "data": { "type": "object" },
+          "evidence": {
+            "type": "object",
+            "required": ["excerpt"],
+            "additionalProperties": false,
+            "properties": {
+              "url": { "type": "string" },
+              "excerpt": { "type": "string", "maxLength": 280 }
+            }
+          },
+          "confidence": { "type": "number", "minimum": 0.5, "maximum": 1 }
+        },
+        "allOf": [
+          { "if": { "properties": { "record_type": { "enum": ["milestone", "accomplishment"] } } },
+            "then": { "required": ["project"] } },
+          { "if": { "properties": { "record_type": { "const": "milestone" }, "operation": { "enum": ["create", "update"] } } },
+            "then": { "properties": { "data": { "required": ["period", "description"] } } } },
+          { "if": { "properties": { "record_type": { "const": "accomplishment" }, "operation": { "enum": ["create", "update"] } } },
+            "then": { "properties": { "data": { "required": ["period", "text"] } } } },
+          { "if": { "properties": { "record_type": { "const": "risk" }, "operation": { "enum": ["create", "update"] } } },
+            "then": { "properties": { "data": { "required": ["risk", "impact"] } } } },
+          { "if": { "properties": { "record_type": { "const": "escalation" }, "operation": { "enum": ["create", "update"] } } },
+            "then": { "properties": { "data": { "required": ["title"] } } } },
+          { "if": { "properties": { "record_type": { "const": "ticket" }, "operation": { "enum": ["create", "update"] } } },
+            "then": { "properties": { "data": { "required": ["external_key", "title", "system"] } } } },
+          { "if": { "properties": { "record_type": { "const": "metric" }, "operation": { "enum": ["create", "update"] } } },
+            "then": { "properties": { "data": { "required": ["metric_key", "period", "value"] } } } },
+          { "if": { "properties": { "record_type": { "const": "health" } } },
+            "then": { "properties": { "operation": { "enum": ["create", "update"] }, "data": { "required": ["health"], "properties": { "health": { "enum": ["active", "caution", "risk"] } } } } } }
+        ]
+      }
+    },
+    "skipped": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["pointer", "reason"],
+        "properties": {
+          "pointer": { "type": "string" },
+          "reason": { "type": "string" }
+        }
+      }
+    }
+  }
+}
