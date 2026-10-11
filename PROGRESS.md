@@ -42,7 +42,7 @@
 - [x] Equal admins — people simplification (Part 1): `account_roles` (per-account role tag, record-keeping, history) replaces titles/teams/account_assignments/owner_profile_id; `reports_to` (optional, UX-only, cycle-checked); rewritten scope helpers; People directory screen; Portfolio/Account 360 "Add to my accounts"/"Leave account"; nav reorder + collapsed Admin group (D-081–D-086)
 - [x] Home + Standups + People activity (Parts 2–4): Home (personal "my day" — my accounts, needs attention, my reports, recent activity, all scoped); Standups (anyone hosts, standups/standup_entries/action_items, host-can-edit-any RLS, remembered participant set via saved_views, deterministic "since last standup" draft, live mode, blocker→ask/action-item); People activity (role history, recent activity, open action items, recent standup entries on the existing People directory) (D-087–D-090). Performance indexes/KPIs stay deferred — the data they need (account_roles history, project_members, audit actor, approvals, standups) is confirmed fully captured.
 - [x] 7.4 — Ingest API: `ingest_tokens` table (select super-admin-only, no client insert/update), `create_ingest_token`/`revoke_ingest_token` provisioning actions, new `ingest` Edge Function (bearer-token auth, verify_jwt disabled, upsert/dedupe decision tree, race-safe via partial unique index), Ingest Tokens admin screen
-- [ ] 7.5 — CS Sync Skill + runner + Refresh (was 6.5). **7.5-pre done** (D-097–D-099): Refold MCP connection confirmed and the `cs-sync` skill finalized against the real server (`skills/cs-sync/`, `docs/refold-mcp.md`) — connected live, confirmed the agent-mode `RESOLVE_ACTIONS`/`EXECUTE_ACTION` contract, real action IDs/schema enums filled in, health-dedupe tested against local ingest. Four real connection/app-admin gaps found (not code issues): Zendesk/Gmail not connected for the `cs-hub` linked account, Slack's bot is not in any channel, `search_messages` is structurally unavailable (bot vs. user token), and zero Refold workflows exist (blocks `metric` entirely). **7.5-pre2 Session 1 of 6 done** (D-100–D-103): accounts/tenants are the only truth — `tenants` + `account_sources` tables (supersede `aliases` for matching), `dormant` lifecycle value, `tenant_id` on 9 record tables, `apply_proposal()`/`ingest` updated, Account 360 sources panel. Sessions 2–6 (account-match-needed/held records, learning loop, skill realignment + new record types, the runner itself, context-store bootstrap) remain per the plan, built only as approved session-by-session.
+- [ ] 7.5 — CS Sync Skill + runner + Refresh (was 6.5). **7.5-pre done** (D-097–D-099): Refold MCP connection confirmed and the `cs-sync` skill finalized against the real server (`skills/cs-sync/`, `docs/refold-mcp.md`) — connected live, confirmed the agent-mode `RESOLVE_ACTIONS`/`EXECUTE_ACTION` contract, real action IDs/schema enums filled in, health-dedupe tested against local ingest. Four real connection/app-admin gaps found (not code issues): Zendesk/Gmail not connected for the `cs-hub` linked account, Slack's bot is not in any channel, `search_messages` is structurally unavailable (bot vs. user token), and zero Refold workflows exist (blocks `metric` entirely). **7.5-pre2 Sessions 1–2 of 6 done.** Session 1 (D-100–D-103): accounts/tenants are the only truth — `tenants` + `account_sources` tables (supersede `aliases` for matching), `dormant` lifecycle value, `tenant_id` on 9 record tables, `apply_proposal()`/`ingest` updated, Account 360 sources panel. Session 2 (D-104–D-107): "account match needed" — `held` proposal status + `account_resolution` meta-proposals, the `ingest` dedupe tree extracted to `supabase/functions/_shared/dedupe.ts` (shared with the new release path), a pinned Approvals-inbox section with all 4 resolution decisions (map to existing / map as tenant / create new account / ignore), `sync_learnings` pulled forward minimally for the ignore-list + alias-map audit trail. Sessions 3–6 (learning loop proper, skill realignment + new record types, the runner itself, context-store bootstrap) remain per the plan, built only as approved session-by-session.
 - [ ] 7.6 — Ask the Hub (chat agent)
 - [ ] 7.7 — Reports (monthly status, EBR, QBR — was 6.6)
 - [ ] 7.8 — Air-gapped import
@@ -75,6 +75,44 @@ Points, streaks, badges, team leaderboards — computed from the audit log + pro
 
 ## Last session
 (See docs/devlog.md for full session history — this is just the pointer.)
+
+Date: 2026-10-11 (later same day)
+Completed: 7.5-pre2 Session 2 of 6 — "Account match needed." An
+unresolvable account or tenant identifier never gets guessed or silently
+rejected: the dependent record becomes a `held` proposal linked to a new
+`account_resolution` meta-proposal naming the identifier. Same-identifier
+sightings reuse one pending resolution (not a new one every run); race-
+safety backstops (`proposals_resolution_dedupe`, `proposals_held_dedupe`)
+mirror 7.4's existing pattern, shipped as 2 migrations since Postgres
+forbids using a brand-new enum value in the same transaction that added
+it. Extracted `ingest`'s dedupe/upsert tree (plus the record-type schema
+knowledge both sides need — broader than originally scoped, flagged) into
+`supabase/functions/_shared/dedupe.ts`, now shared with a new
+`resolve_account_proposal` provisioning action handling all 4 decisions
+(map to existing account / map as tenant, creating it if needed / create
+a brand-new account / ignore). The first three save the identifier to
+`account_sources` (instant resolution next time) and log a
+`sync_learnings` `alias_map` row; ignore adds it to `sync_learnings` so it
+never re-proposes itself, confirmed via a later identical sighting being
+rejected immediately. `sync_learnings` itself is pulled forward minimally
+from the not-yet-built Session 3 (just the table + these two deterministic
+write paths — no admin UI, no agent-written rules yet). Approvals inbox
+gets a pinned "Account match needed" section with held-record counts and
+one modal covering all 4 decisions.
+Verified: a 24-check throwaway script (resolution reuse/race-safety,
+all 4 decisions, the ignore-list fast path, required-field and required-
+project safety nets at release time, full audit coverage); rls_test.sql
+new block + all 8 prior green; smoke-login; npm run e2e (new seed fixture
+`seed_account_resolutions.sql`, local-only, walks through all 4 decisions
+through the real UI — found and fixed a real bug along the way: 
+`account_resolution` proposals were leaking into the normal Approvals
+list and rendering a doomed-to-fail generic Approve button); typecheck/
+lint/build green.
+Decisions made: D-104–D-107.
+Known issues: none outstanding from this session's own scope. Sessions
+3–6 of the 7.5-pre2 plan remain, built only as separately approved.
+
+---
 
 Date: 2026-10-11
 Completed: 7.5-pre2 Session 1 of 6 — accounts & tenants are the only

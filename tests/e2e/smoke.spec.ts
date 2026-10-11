@@ -107,6 +107,42 @@ test('super admin smoke: Home, Portfolio, Account 360, Approvals, Audit log, Sta
   }
   await expectNoErrors(page, errors)
 
+  // ── Account match needed (7.5-pre2 Session 2): resolve each of the 4 ways ──
+  // Fixtures (seed_account_resolutions.sql) render oldest-first: map_existing,
+  // map_tenant, create_account, ignore — resolving the first repeatedly walks
+  // through all four in that fixed order as each row disappears in turn.
+  await expect(page.getByRole('heading', { name: 'Account match needed (4)' })).toBeVisible()
+
+  // 1. map_existing
+  await page.getByRole('button', { name: 'Resolve' }).first().click()
+  await page.getByRole('dialog').getByRole('combobox').first().selectOption({ label: 'Prism Analytics' })
+  await page.getByRole('button', { name: 'Resolve', exact: true }).last().click()
+  await expect(page.getByText('Account match needed (3)')).toBeVisible()
+  await expectNoErrors(page, errors)
+
+  // 2. map_tenant
+  await page.getByRole('button', { name: 'Resolve' }).first().click()
+  await page.getByRole('button', { name: 'Map as tenant of…' }).click()
+  await page.getByRole('dialog').getByRole('combobox').first().selectOption({ label: 'Meridian Laboratories' })
+  await page.getByPlaceholder('smoke-map-tenant').fill('Smoke Test Tenant')
+  await page.getByRole('button', { name: 'Resolve', exact: true }).last().click()
+  await expect(page.getByText('Account match needed (2)')).toBeVisible()
+  await expectNoErrors(page, errors)
+
+  // 3. create_account
+  await page.getByRole('button', { name: 'Resolve' }).first().click()
+  await page.getByRole('button', { name: 'Create new account' }).click()
+  await page.getByRole('button', { name: 'Resolve', exact: true }).last().click()
+  await expect(page.getByText('Account match needed (1)')).toBeVisible()
+  await expectNoErrors(page, errors)
+
+  // 4. ignore
+  await page.getByRole('button', { name: 'Resolve' }).first().click()
+  await page.getByRole('button', { name: 'Ignore — not a customer' }).click()
+  await page.getByRole('button', { name: 'Resolve', exact: true }).last().click()
+  await expect(page.getByText('Account match needed')).not.toBeVisible()
+  await expectNoErrors(page, errors)
+
   // ── Audit log (inside the collapsed-by-default "Admin" disclosure) ──
   await page.getByRole('button', { name: 'Admin' }).click()
   await page.getByRole('link', { name: 'Audit Log' }).click()

@@ -16,6 +16,41 @@ Template:
 
 ---
 
+## Session 36 — 2026-10-11 — 7.5-pre2 Session 2: "Account match needed"
+**Built:** `held` proposal status + `account_resolution` meta-proposals
+(`proposals.blocked_by_resolution_id`); two race-safety indexes mirroring
+7.4's `proposals_pending_dedupe`, shipped as 2 migrations (Postgres won't
+let a brand-new enum value be used — e.g. in a partial index's WHERE — in
+the same transaction that added it). Extracted `ingest`'s dedupe/upsert
+tree into `supabase/functions/_shared/dedupe.ts`; new `resolve_account_
+proposal` provisioning action (map_existing / map_tenant / create_account
+/ ignore) releases every held record through that same shared logic
+rather than a second copy. `sync_learnings` pulled forward minimally from
+Session 3 (table + `alias_map`/`ignore` write paths only). Approvals inbox
+gained a pinned "Account match needed" section + one resolve modal
+covering all 4 decisions.
+**Deviations:** the shared-module extraction ended up broader than
+approved — releasing a held record needs the same *validation* (required
+fields, `KNOWN_FIELDS`, project/tenant lookups) `ingest` uses, not just
+the dedupe tree, so that schema knowledge moved to `_shared/` too (D-105).
+`resolve_account_proposal` is a `provisioning` action, not an
+`apply_proposal()` extension, despite the original instruction saying to
+extend `apply_proposal` — same reasoning 7.3 already uses to exclude
+`asks`/`engagements`/`projects` from it (D-107).
+**Decisions:** D-104–D-107.
+**Next:** 7.5-pre2 Session 3 — the learning loop proper (agent-written
+`rule`/`example` kinds, the admin "Sync learnings" screen, guardrails) —
+awaiting go-ahead.
+**Issues:** `npm run e2e` caught a real bug unrelated to a specific line
+change — a side effect of adding `account_resolution` proposals at all:
+they showed up in the normal Approvals list (status is just `pending`
+like any other) and rendered a generic "Approve" button that would always
+fail against `apply_proposal()`'s allow-list. Fixed by excluding
+`target_table = 'account_resolution'` from the default proposals query —
+it only ever surfaces through the pinned section now.
+
+---
+
 ## Session 35 — 2026-10-11 — 7.5-pre2 Session 1: accounts & tenants are the only truth
 **Built:** plan first (large task — proposed and got approval for a
 6-session split, plus 4 clarifying questions on judgment calls), then only

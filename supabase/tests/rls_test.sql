@@ -682,3 +682,44 @@ begin
 
   raise notice 'ALL TENANTS/ACCOUNT_SOURCES RLS TESTS PASSED';
 end $$;
+
+-- ── Account resolution: held proposals + sync_learnings (7.5-pre2 Session 2) ──
+-- 'held' is just another proposals.status value — no policy carve-out
+-- needed, the existing status-agnostic policies already cover it. Checks
+-- that holds that through directly, plus sync_learnings' own RLS shape
+-- (same as every other table this session: super-admin read/write under
+-- AAL2, customer roles 0 rows).
+do $$
+declare
+  n int;
+  v_held_id uuid;
+begin
+  set local role authenticated;
+  set local request.jwt.claims = '{"sub":"00000000-0000-0000-0000-000000001001","aal":"aal2"}';
+
+  insert into public.proposals (org_id, target_table, operation, payload, source, proposed_by, status)
+    values (null, 'escalations', 'create', '{"title":"rls test held"}'::jsonb, 'agent', 'rls-test', 'held')
+    returning id into v_held_id;
+  select count(*) into n from public.proposals where id = v_held_id and status = 'held';
+  assert n = 1, 'a super admin must be able to read/write a held proposal — no policy carve-out expected';
+
+  insert into public.sync_learnings (kind, content, created_by) values ('ignore', '{"identifier":"rls-test-ignore"}'::jsonb, '00000000-0000-0000-0000-000000001001');
+  select count(*) into n from public.sync_learnings where content->>'identifier' = 'rls-test-ignore';
+  assert n = 1, 'a super admin must be able to write sync_learnings';
+  reset role;
+
+  -- Customer roles see 0 rows across both.
+  set local role authenticated;
+  set local request.jwt.claims = '{"sub":"00000000-0000-0000-0000-000000001002","aal":"aal2"}'; -- Prism owner
+  select count(*) into n from public.proposals where status = 'held'; assert n = 0, format('Prism owner must see 0 held proposals, saw %s', n);
+  select count(*) into n from public.sync_learnings; assert n = 0, format('Prism owner must see 0 sync_learnings, saw %s', n);
+  reset role;
+
+  set local role authenticated;
+  set local request.jwt.claims = '{"sub":"00000000-0000-0000-0000-000000001003","aal":"aal2"}'; -- Meridian owner
+  select count(*) into n from public.proposals where status = 'held'; assert n = 0, format('Meridian owner must see 0 held proposals, saw %s', n);
+  select count(*) into n from public.sync_learnings; assert n = 0, format('Meridian owner must see 0 sync_learnings, saw %s', n);
+  reset role;
+
+  raise notice 'ALL ACCOUNT RESOLUTION RLS TESTS PASSED';
+end $$;

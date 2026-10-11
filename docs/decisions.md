@@ -1295,6 +1295,73 @@ plan change needed beyond noting it: the later session that wires
 `engagement` into the ingest allow-list extends an existing table instead
 of creating one.
 
+## D-104 — "Account match needed": `held` proposal status + resolution/held dedupe indexes (2026-10-11)
+7.5-pre2 Session 2. An unresolvable account or tenant identifier never gets
+guessed or silently rejected — the dependent record becomes a normal
+`proposals` row with a new status, `held`, plus a nullable
+`blocked_by_resolution_id` pointing at an `account_resolution` proposal
+(`target_table = 'account_resolution'`, a meta-kind, never a real CS
+table) that names the unresolved identifier. Reusing `proposals` itself —
+not a parallel table — means every existing index/RLS/audit path on it
+already covers held rows with no carve-out. Two race-safety backstops,
+same philosophy as 7.4's `proposals_pending_dedupe`: `proposals_resolution_
+dedupe` (one pending resolution per identifier, so 50 sightings of the same
+unknown name file ONE resolution, not 50) and `proposals_held_dedupe`
+(one held row per fact per resolution, `coalesce`-normalizing the null
+`org_id` of an account-scope hold into one consistent bucket). Shipped as
+two migrations, not one: Postgres forbids using a brand-new enum value
+(`held`) inside the same transaction that added it — the partial index's
+`where status = 'held'` needs the catalog change already committed.
+
+## D-105 — Dedupe/upsert tree + record-type schema extracted to `_shared/dedupe.ts`, broader than originally scoped (2026-10-11)
+Approved as a refactor of shipped 7.4 code (not purely additive). Releasing
+a held record at resolution time needs the *exact* decision tree `ingest`
+already uses for a fresh sighting (pending-merge / previously-rejected-skip
+/ real-row-compare / create) — reimplementing it in `provisioning` would
+mean two copies silently drifting apart. The approved plan scoped the
+extraction to just that decision tree; building it surfaced that the
+*validation* a held record needs re-run at release (required-field checks,
+`KNOWN_FIELDS` filtering, metric/health rules, project/tenant lookups) also
+has to be identical on both sides, so `TARGET_TABLE`/`KNOWN_FIELDS`/
+`REQUIRED_FIELDS`/`NEEDS_PROJECT`/`resolveProject`/`resolveTenant` moved to
+the shared module too — flagged here as a deviation in scope (not kind) of
+the already-approved refactor, not a new one.
+
+## D-106 — `sync_learnings` pulled forward from Session 3, minimally (2026-10-11)
+The "ignore list" §B.7(d) requires — an identifier that never re-proposes
+itself once a human says "not a customer" — needs a durable, checked-on-
+every-sighting mechanism *now*, in Session 2, not Session 3. Rather than
+build a throwaway stand-in table, `sync_learnings` (kind, org_id?,
+tenant_id?, content jsonb, source_decision_ids, created_by, status,
+last_used_at, hits) ships now with only the two *deterministic* write
+paths Session 2 needs — `alias_map` (logged on every successful
+resolution, for the admin-visible audit trail — matching happens via
+`account_sources`, not by querying this table) and `ignore` (checked by
+`ingest` before ever filing a new resolution for the same identifier).
+The agent-written `rule`/`example` kinds, the admin "Sync learnings"
+screen, and the active-rule-count/conflict guardrails are untouched —
+still Session 3 scope.
+
+## D-107 — Resolution release is a new `provisioning` action, not an `apply_proposal()` extension (2026-10-11)
+The original instruction said "extend apply_proposal/ingest accordingly";
+built it as a dedicated `resolve_account_proposal` provisioning action
+instead, for the same reason 7.3's `apply_proposal()` already declines
+`asks`/`engagements`/`portfolio_notes`/`projects` — a single proposal's
+approve/reject is a different operation shape than "resolve one identifier,
+release N held records through it." `account_resolution` proposals are
+explicitly excluded from `apply_proposal()`'s allow-list (unchanged) and
+from the normal Approvals list's query entirely — found live during this
+session's `npm run e2e`: an `account_resolution` row (`status = 'pending'`)
+rendered a generic "Approve" button in the default inbox that then failed
+against `apply_proposal()`'s allow-list with a confusing error. Fixed by
+excluding `target_table = 'account_resolution'` from `fetchProposals()`
+unconditionally — it only ever surfaces through the pinned "Account match
+needed" section's own Resolve action. At release, a held record missing a
+required field, or (for milestone/accomplishment) one whose project still
+doesn't resolve even with the account now known, is marked `rejected` with
+a clear reason rather than being filed as a normal pending proposal that
+would later violate a NOT NULL constraint on approval.
+
 # Parked
 
 Out-of-scope ideas land here instead of derailing the current prompt block.

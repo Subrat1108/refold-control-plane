@@ -8,7 +8,12 @@ import {
   rejectProposal,
   useScope,
   useScopedAccountIds,
+  useAccountResolutions,
+  useAccountsRaw,
+  useSegments,
+  useTenants,
 } from '@/hooks'
+import { resolveAccountProposal } from '@/lib/provisioning'
 import { SourceBadge } from '@/components/SourceBadge'
 import { Modal } from '@/components/Modal'
 import { ScopeSwitcher } from '@/components/ScopeSwitcher'
@@ -17,7 +22,7 @@ import { CardSkeleton } from '@/components/SkeletonLoader'
 import { ErrorState } from '@/components/ErrorState'
 import { EmptyState } from '@/components/EmptyState'
 import { formatDate } from '@/utils/formatDate'
-import type { ProposalRow, SavedView } from '@/types'
+import type { AccountResolutionRow, ProposalRow, SavedView } from '@/types'
 
 const PAGE = 'approvals'
 const TARGET_TABLES = ['milestones', 'accomplishments', 'risks', 'escalations', 'tickets', 'metric_values', 'organizations']
@@ -32,16 +37,19 @@ export function ApprovalsPage() {
   const [selected, setSelected] = useState<Set<string>>(new Set())
   const [editTarget, setEditTarget] = useState<ProposalRow | null>(null)
   const [rejectTarget, setRejectTarget] = useState<ProposalRow | null>(null)
+  const [resolveTarget, setResolveTarget] = useState<AccountResolutionRow | null>(null)
 
   const { data: proposals, isLoading, isError, refetch } = useProposals({
     targetTable: targetTable || undefined,
     source: source || undefined,
     orgIds: scope === 'everyone' ? null : scopedIds,
   })
+  const { data: resolutions } = useAccountResolutions()
 
   const refresh = () => {
     qc.invalidateQueries({ queryKey: ['proposals'] })
     qc.invalidateQueries({ queryKey: ['pending-proposal-count'] })
+    qc.invalidateQueries({ queryKey: ['account-resolutions'] })
   }
 
   function applyView(v: SavedView) {
@@ -76,6 +84,28 @@ export function ApprovalsPage() {
         <h1 className="text-xl font-semibold text-foreground">Approvals</h1>
         <p className="text-sm text-muted-foreground mt-0.5">Review and act on pending proposals from every source.</p>
       </div>
+
+      {(resolutions ?? []).length > 0 && (
+        <div className="rounded-xl border border-amber-300 bg-amber-50 p-4 space-y-3">
+          <h2 className="text-sm font-semibold text-foreground">Account match needed ({resolutions!.length})</h2>
+          <div className="space-y-2">
+            {resolutions!.map((r) => (
+              <div key={r.id} className="bg-white rounded-lg border border-amber-200 p-3 flex items-center justify-between gap-3 flex-wrap">
+                <div>
+                  <p className="text-sm font-medium text-foreground">
+                    "{r.observedName}" {r.scope === 'tenant' ? <>— a possible tenant of <span className="font-semibold">{r.knownOrgName ?? 'unknown account'}</span></> : '— unrecognized account'}
+                  </p>
+                  <p className="text-xs text-muted-foreground mt-0.5">
+                    {r.heldCount} record{r.heldCount === 1 ? '' : 's'} waiting · first seen {formatDate(r.createdAt)}
+                    {r.candidates.length > 0 && <> · candidates: {r.candidates.map((c) => `${c.name} (${Math.round(c.confidence * 100)}%)`).join(', ')}</>}
+                  </p>
+                </div>
+                <button onClick={() => setResolveTarget(r)} className="rounded-md bg-primary px-3 py-1.5 text-xs font-medium text-white hover:bg-primary/90 whitespace-nowrap">Resolve</button>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
 
       <div className="flex items-center justify-between flex-wrap gap-3">
         <div className="flex items-center gap-2 flex-wrap">
@@ -132,6 +162,7 @@ export function ApprovalsPage() {
 
       <EditThenApproveModal proposal={editTarget} onClose={() => setEditTarget(null)} onDone={refresh} />
       <RejectModal proposal={rejectTarget} onClose={() => setRejectTarget(null)} onDone={refresh} />
+      <ResolveAccountModal resolution={resolveTarget} onClose={() => setResolveTarget(null)} onDone={refresh} />
     </div>
   )
 }
@@ -220,6 +251,163 @@ function EditThenApproveModal({ proposal, onClose, onDone }: { proposal: Proposa
             </div>
           ))}
           <button type="submit" disabled={busy} className="w-full rounded-md bg-primary px-3 py-2.5 text-sm font-medium text-white hover:bg-primary/90 disabled:opacity-40">{busy ? 'Approving…' : 'Approve with these values'}</button>
+        </form>
+      )}
+    </Modal>
+  )
+}
+
+type ResolveDecision = 'map_existing' | 'map_tenant' | 'create_account' | 'ignore'
+
+function ResolveAccountModal({ resolution, onClose, onDone }: { resolution: AccountResolutionRow | null; onClose: () => void; onDone: () => void }) {
+  const { data: accounts } = useAccountsRaw()
+  const { data: segments } = useSegments()
+  const [decision, setDecision] = useState<ResolveDecision>('map_existing')
+  const [orgId, setOrgId] = useState('')
+  const { data: tenants } = useTenants(orgId || null)
+  const [tenantId, setTenantId] = useState('')
+  const [newTenantName, setNewTenantName] = useState('')
+  const [newAccountName, setNewAccountName] = useState('')
+  const [segmentId, setSegmentId] = useState('')
+  const [lifecycleStage, setLifecycleStage] = useState('prospect')
+  const [busy, setBusy] = useState(false)
+  const [error, setError] = useState('')
+
+  useEffect(() => {
+    if (resolution) {
+      setDecision('map_existing')
+      setOrgId(resolution.scope === 'tenant' ? resolution.knownOrgId ?? '' : '')
+      setTenantId('')
+      setNewTenantName('')
+      setNewAccountName(resolution.observedName)
+      setSegmentId('')
+      setLifecycleStage('prospect')
+      setError('')
+    }
+  }, [resolution])
+
+  async function submit(e: React.FormEvent) {
+    e.preventDefault()
+    if (!resolution) return
+    setBusy(true)
+    setError('')
+    try {
+      if (decision === 'map_existing') {
+        if (!orgId) throw new Error('Choose an account')
+        await resolveAccountProposal({ resolutionId: resolution.id, decision, orgId })
+      } else if (decision === 'map_tenant') {
+        if (!orgId) throw new Error('Choose an account')
+        if (!tenantId && !newTenantName.trim()) throw new Error('Choose an existing tenant or name a new one')
+        await resolveAccountProposal({ resolutionId: resolution.id, decision, orgId, tenantId: tenantId || undefined, newTenantName: tenantId ? undefined : newTenantName.trim() })
+      } else if (decision === 'create_account') {
+        if (!newAccountName.trim()) throw new Error('Account name is required')
+        await resolveAccountProposal({ resolutionId: resolution.id, decision, name: newAccountName.trim(), segmentId: segmentId || null, lifecycleStage })
+      } else {
+        await resolveAccountProposal({ resolutionId: resolution.id, decision: 'ignore' })
+      }
+      onDone()
+      onClose()
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Failed to resolve')
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  return (
+    <Modal open={!!resolution} onClose={onClose} title="Resolve account match">
+      {resolution && (
+        <form onSubmit={submit} className="space-y-4">
+          <p className="text-sm text-muted-foreground">
+            "{resolution.observedName}" — {resolution.heldCount} record{resolution.heldCount === 1 ? '' : 's'} waiting.
+            {resolution.scope === 'tenant' && <> Seen as a possible tenant of <span className="font-medium text-foreground">{resolution.knownOrgName}</span>.</>}
+          </p>
+
+          <div className="grid grid-cols-2 gap-2">
+            {([
+              ['map_existing', 'Map to existing account'],
+              ['map_tenant', 'Map as tenant of…'],
+              ['create_account', 'Create new account'],
+              ['ignore', 'Ignore — not a customer'],
+            ] as [ResolveDecision, string][]).map(([value, label]) => (
+              <button key={value} type="button" onClick={() => setDecision(value)} className={`text-left rounded-md border px-3 py-2 text-xs font-medium transition-colors ${decision === value ? 'border-primary bg-primary/5 text-foreground' : 'border-border text-muted-foreground hover:bg-muted'}`}>
+                {label}
+              </button>
+            ))}
+          </div>
+
+          {decision === 'map_existing' && (
+            <div>
+              <label className="block text-sm font-medium text-foreground mb-1.5">Account</label>
+              <select value={orgId} onChange={(e) => setOrgId(e.target.value)} className="w-full rounded-md border border-border px-3 py-2 text-sm bg-white">
+                <option value="">Choose…</option>
+                {(accounts ?? []).map((a) => <option key={a.id} value={a.id}>{a.name}</option>)}
+              </select>
+            </div>
+          )}
+
+          {decision === 'map_tenant' && (
+            <div className="space-y-3">
+              <div>
+                <label className="block text-sm font-medium text-foreground mb-1.5">Account</label>
+                <select value={orgId} onChange={(e) => { setOrgId(e.target.value); setTenantId('') }} className="w-full rounded-md border border-border px-3 py-2 text-sm bg-white">
+                  <option value="">Choose…</option>
+                  {(accounts ?? []).map((a) => <option key={a.id} value={a.id}>{a.name}</option>)}
+                </select>
+              </div>
+              {orgId && (tenants ?? []).length > 0 && (
+                <div>
+                  <label className="block text-sm font-medium text-foreground mb-1.5">Existing tenant</label>
+                  <select value={tenantId} onChange={(e) => { setTenantId(e.target.value); if (e.target.value) setNewTenantName('') }} className="w-full rounded-md border border-border px-3 py-2 text-sm bg-white">
+                    <option value="">None — create new below</option>
+                    {(tenants ?? []).map((t) => <option key={t.id} value={t.id}>{t.name}</option>)}
+                  </select>
+                </div>
+              )}
+              {!tenantId && (
+                <div>
+                  <label className="block text-sm font-medium text-foreground mb-1.5">New tenant name</label>
+                  <input value={newTenantName} onChange={(e) => setNewTenantName(e.target.value)} placeholder={resolution.observedName} className="w-full rounded-md border border-border px-3 py-2 text-sm" />
+                </div>
+              )}
+            </div>
+          )}
+
+          {decision === 'create_account' && (
+            <div className="space-y-3">
+              <div>
+                <label className="block text-sm font-medium text-foreground mb-1.5">Account name</label>
+                <input value={newAccountName} onChange={(e) => setNewAccountName(e.target.value)} className="w-full rounded-md border border-border px-3 py-2 text-sm" />
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-foreground mb-1.5">Segment <span className="text-muted-foreground font-normal">(optional)</span></label>
+                <select value={segmentId} onChange={(e) => setSegmentId(e.target.value)} className="w-full rounded-md border border-border px-3 py-2 text-sm bg-white">
+                  <option value="">—</option>
+                  {(segments ?? []).map((s) => <option key={s.id} value={s.id}>{s.name}</option>)}
+                </select>
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-foreground mb-1.5">Lifecycle stage</label>
+                <select value={lifecycleStage} onChange={(e) => setLifecycleStage(e.target.value)} className="w-full rounded-md border border-border px-3 py-2 text-sm bg-white">
+                  <option value="prospect">Prospect</option>
+                  <option value="poc">POC</option>
+                  <option value="onboarding">Onboarding</option>
+                  <option value="live">Live</option>
+                </select>
+              </div>
+            </div>
+          )}
+
+          {decision === 'ignore' && (
+            <p className="text-sm text-muted-foreground">
+              Every record waiting on this will be discarded, and "{resolution.observedName}" will be added to the ignore list so it never re-proposes itself.
+            </p>
+          )}
+
+          {error && <p className="text-xs text-red-600">{error}</p>}
+          <button type="submit" disabled={busy} className="w-full rounded-md bg-primary px-3 py-2.5 text-sm font-medium text-white hover:bg-primary/90 disabled:opacity-40 disabled:cursor-not-allowed">
+            {busy ? 'Resolving…' : 'Resolve'}
+          </button>
         </form>
       )}
     </Modal>

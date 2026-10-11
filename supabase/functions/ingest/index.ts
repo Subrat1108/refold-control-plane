@@ -14,8 +14,28 @@
 // Never log a request body, a record's `data`, or an evidence excerpt —
 // only ids, counts, and error codes (docs/ingest-api.md states this as a
 // guarantee).
+//
+// 7.5-pre2 Session 2 — "account match needed": the agent never invents an
+// account or promotes a tenant. When an account/tenant identifier can't be
+// resolved via an exact account_sources match, this function files an
+// `account_resolution` proposal and HOLDS the dependent record against it
+// (status = 'held') instead of guessing or rejecting it. A human resolves
+// it from the Approvals inbox (provisioning's resolve_account_proposal
+// action), which releases every held record through the exact same
+// decideAndFile tree this function uses for a fresh sighting
+// (supabase/functions/_shared/dedupe.ts).
 
 import { createClient, type SupabaseClient } from 'jsr:@supabase/supabase-js@2'
+import {
+  TARGET_TABLE,
+  REQUIRED_FIELDS,
+  NEEDS_PROJECT,
+  filterKnownFields,
+  resolveProject,
+  resolveTenant,
+  decideAndFile,
+  type DecideCtx,
+} from '../_shared/dedupe.ts'
 
 const SUPABASE_URL = Deno.env.get('SUPABASE_URL')!
 const SERVICE_ROLE_KEY = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!
@@ -56,78 +76,6 @@ async function readBodyCapped(req: Request, maxBytes: number): Promise<{ text: s
   return { text: new TextDecoder().decode(buf) }
 }
 
-// ── record-type schemas — the exact allow-list apply_proposal() (7.3,
-// D-080) already recognizes, so anything proposed here is guaranteed
-// approvable with no changes on that side. ────────────────────────────────
-
-const TARGET_TABLE: Record<string, string> = {
-  milestone: 'milestones',
-  accomplishment: 'accomplishments',
-  risk: 'risks',
-  escalation: 'escalations',
-  ticket: 'tickets',
-  metric: 'metric_values',
-  health: 'organizations',
-}
-const KNOWN_FIELDS: Record<string, string[]> = {
-  milestone: ['period', 'description', 'status'],
-  accomplishment: ['period', 'text'],
-  risk: ['risk', 'impact', 'mitigation', 'severity', 'status', 'owner'],
-  escalation: ['title', 'severity', 'status', 'raised_by'],
-  ticket: ['external_key', 'title', 'priority', 'status', 'url', 'system'],
-  metric: ['metric_key', 'period', 'value', 'baseline_value'],
-  health: ['health', 'health_reason'],
-}
-const REQUIRED_FIELDS: Record<string, string[]> = {
-  milestone: ['period', 'description'],
-  accomplishment: ['period', 'text'],
-  risk: ['risk', 'impact'],
-  escalation: ['title'],
-  ticket: ['external_key', 'title', 'system'],
-  metric: ['metric_key', 'period', 'value'],
-  health: ['health'],
-}
-const NEEDS_PROJECT: Record<string, 'required' | 'optional' | 'none'> = {
-  milestone: 'required',
-  accomplishment: 'required',
-  risk: 'optional',
-  escalation: 'optional',
-  ticket: 'none',
-  metric: 'optional',
-  health: 'none',
-}
-
-// ── normalized equality — compares ONLY the fields the caller actually
-// sent (an omitted field is never "changed"), after normalizing dates to
-// ISO, numbers via coercion, strings via trim, enums via lowercase. Without
-// this, a daily sync run files a false proposed_update for every unchanged
-// ticket just because a date arrived in a different (but equal) format. ──
-
-const DATE_FIELDS = new Set(['period', 'due_date'])
-const NUMBER_FIELDS = new Set(['value', 'baseline_value'])
-const ENUM_FIELDS = new Set(['health', 'status', 'severity', 'priority'])
-
-function normalizeValue(key: string, value: unknown): unknown {
-  if (value === null || value === undefined) return null
-  if (DATE_FIELDS.has(key)) {
-    const d = new Date(value as string)
-    return Number.isNaN(d.getTime()) ? value : d.toISOString().slice(0, 10)
-  }
-  if (NUMBER_FIELDS.has(key)) return Number(value)
-  if (ENUM_FIELDS.has(key)) return String(value).trim().toLowerCase()
-  if (typeof value === 'string') return value.trim()
-  return value
-}
-
-function valuesEqual(incoming: Record<string, unknown>, current: Record<string, unknown>): boolean {
-  for (const key of Object.keys(incoming)) {
-    const a = normalizeValue(key, incoming[key])
-    const b = normalizeValue(key, current[key])
-    if (a !== b) return false
-  }
-  return true
-}
-
 function tally(results: Array<{ status: string }>): Record<string, number> {
   const out: Record<string, number> = {}
   for (const r of results) out[r.status] = (out[r.status] ?? 0) + 1
@@ -142,10 +90,9 @@ interface RunCtx {
 }
 
 // 7.5-pre2 Session 1 — account_sources is the structured, exact-match
-// source of truth for resolving an account or a tenant (never a fuzzy
-// guess; the agent/caller supplies the identifier, this is a lookup, not
-// an inference). Supersedes the old `organizations.aliases` free-text
-// array, which is now backfilled and no longer read here.
+// source of truth for resolving an account (never a fuzzy guess; the
+// agent/caller supplies the identifier, this is a lookup, not an
+// inference). Supersedes the old `organizations.aliases` free-text array.
 async function resolveAccount(svc: SupabaseClient, ref: string | undefined): Promise<{ id: string } | null> {
   if (!ref) return null
   if (UUID_RE.test(ref)) {
@@ -156,46 +103,64 @@ async function resolveAccount(svc: SupabaseClient, ref: string | undefined): Pro
   return data ? { id: data.org_id as string } : null
 }
 
-// A tenant is an end-customer/program/sub-account under one account — never
-// an account itself. Resolved the same way (id or a structured source), but
-// scoped to the already-resolved org so an identifier that happens to match
-// a tenant under a DIFFERENT account can never cross-attribute a record.
-async function resolveTenant(svc: SupabaseClient, orgId: string, ref: string | undefined): Promise<{ id: string } | null> {
-  if (!ref) return null
-  if (UUID_RE.test(ref)) {
-    const { data } = await svc.from('tenants').select('id').eq('id', ref).eq('org_id', orgId).maybeSingle()
-    if (data) return data
-  }
-  const { data } = await svc.from('account_sources').select('tenant_id').eq('value', ref).eq('org_id', orgId).not('tenant_id', 'is', null).maybeSingle()
-  return data ? { id: data.tenant_id as string } : null
+// Is this exact identifier on the ignore list (a human already said "not a
+// customer" for it)? Checked before ever filing a new account_resolution —
+// otherwise the same non-customer name would re-propose itself every run.
+async function isIgnored(svc: SupabaseClient, identifier: string): Promise<boolean> {
+  const { data } = await svc.from('sync_learnings').select('id').eq('kind', 'ignore').eq('status', 'active').filter('content->>identifier', 'eq', identifier).maybeSingle()
+  return !!data
 }
 
-async function resolveProject(svc: SupabaseClient, orgId: string, ref: string): Promise<{ id: string } | null> {
-  if (UUID_RE.test(ref)) {
-    const { data } = await svc.from('projects').select('id').eq('id', ref).eq('org_id', orgId).maybeSingle()
-    if (data) return data
+interface ResolutionCandidate { type: 'account' | 'tenant'; id: string; name: string; confidence: number; why: string }
+
+// Finds a still-pending account_resolution for this exact identifier
+// (so 50 sightings of the same unknown name over a week file ONE
+// resolution, not 50), or files a new one. `proposals_resolution_dedupe`
+// is the race-safety backstop under concurrency, same philosophy as 7.4's
+// proposals_pending_dedupe.
+async function findOrCreateResolution(
+  svc: SupabaseClient,
+  scope: 'account' | 'tenant',
+  observedName: string,
+  knownOrgId: string | null,
+  candidates: ResolutionCandidate[] | undefined,
+  ctx: RunCtx,
+): Promise<string> {
+  const sourceRef = scope === 'account' ? observedName : `${knownOrgId}:${observedName}`
+  const { data: existing } = await svc.from('proposals').select('id').eq('target_table', 'account_resolution').eq('source_ref', sourceRef).eq('status', 'pending').maybeSingle()
+  if (existing) return existing.id as string
+
+  const { data, error } = await svc
+    .from('proposals')
+    .insert({
+      org_id: knownOrgId,
+      target_table: 'account_resolution',
+      operation: 'create',
+      payload: { scope, observedName, knownOrgId, candidates: (candidates ?? []).slice(0, 3) },
+      source: ctx.source,
+      source_ref: sourceRef,
+      proposed_by: 'cs-sync-agent',
+      triggered_by: ctx.triggeredBy,
+      run_id: ctx.runId,
+      ingest_token_id: ctx.tokenId,
+      status: 'pending',
+    })
+    .select('id')
+    .single()
+
+  if (error) {
+    if (error.code === '23505') {
+      const { data: raced } = await svc.from('proposals').select('id').eq('target_table', 'account_resolution').eq('source_ref', sourceRef).eq('status', 'pending').maybeSingle()
+      if (raced) return raced.id as string
+    }
+    throw new Error(`failed to file account_resolution: ${error.message}`)
   }
-  const { data } = await svc.from('projects').select('id').eq('org_id', orgId).eq('name', ref).maybeSingle()
-  return data ?? null
+  return data.id as string
 }
 
-// The "real row" this record maps to, if one exists. `health` is always
-// the organizations row itself (no source_ref lookup needed — the org
-// already exists); everything else is looked up by (org_id, source_ref).
-async function resolveRealRow(svc: SupabaseClient, recordType: string, targetTable: string, orgId: string, sourceRef: string | undefined): Promise<Record<string, unknown> | null> {
-  if (recordType === 'health') {
-    const { data } = await svc.from('organizations').select('id, health, health_reason').eq('id', orgId).maybeSingle()
-    return data
-  }
-  if (!sourceRef) return null
-  const { data } = await svc.from(targetTable).select('*').eq('org_id', orgId).eq('source_ref', sourceRef).maybeSingle()
-  return data
-}
-
-interface ProposalArgs {
-  orgId: string
+interface HoldArgs {
+  orgId: string | null // known org for a tenant-scope hold, null for an account-scope hold
   targetTable: string
-  targetId: string | null
   operation: 'create' | 'update' | 'delete'
   payload: Record<string, unknown>
   sourceRef: string | undefined
@@ -204,13 +169,27 @@ interface ProposalArgs {
   confidence: number | null
 }
 
-async function fileProposal(svc: SupabaseClient, args: ProposalArgs, ctx: RunCtx, statusLabel: string, strippedFields?: string[]) {
+// Holds a record against an unresolved account_resolution. Merges into an
+// existing held proposal for the same (org-or-null, table, source_ref) key
+// if the same fact was already held by an earlier sighting — held records
+// must survive across runs and dedupe against new sightings, exactly like
+// pending ones already do.
+async function holdRecord(svc: SupabaseClient, args: HoldArgs, ctx: RunCtx, resolutionId: string) {
+  if (args.sourceRef) {
+    let query = svc.from('proposals').select('id').eq('target_table', args.targetTable).eq('source_ref', args.sourceRef).eq('status', 'held')
+    query = args.orgId ? query.eq('org_id', args.orgId) : query.is('org_id', null)
+    const { data: existing } = await query.maybeSingle()
+    if (existing) {
+      await svc.from('proposals').update({ payload: args.payload, evidence_url: args.evidenceUrl, evidence_excerpt: args.evidenceExcerpt, confidence: args.confidence, blocked_by_resolution_id: resolutionId }).eq('id', existing.id)
+      return { source_ref: args.sourceRef, status: 'held_pending_resolution', proposalId: existing.id, resolutionId }
+    }
+  }
+
   const { data, error } = await svc
     .from('proposals')
     .insert({
       org_id: args.orgId,
       target_table: args.targetTable,
-      target_id: args.targetId,
       operation: args.operation,
       payload: args.payload,
       source: ctx.source,
@@ -222,33 +201,26 @@ async function fileProposal(svc: SupabaseClient, args: ProposalArgs, ctx: RunCtx
       triggered_by: ctx.triggeredBy,
       run_id: ctx.runId,
       ingest_token_id: ctx.tokenId,
-      status: 'pending',
+      status: 'held',
+      blocked_by_resolution_id: resolutionId,
     })
     .select('id')
     .single()
 
   if (error) {
-    // Race: the partial unique index caught a concurrent insert for the
-    // same (org, table, source_ref) pending key — merge into theirs
-    // instead of failing; the caller never sees the race.
     if (error.code === '23505' && args.sourceRef) {
-      const { data: existing } = await svc
-        .from('proposals')
-        .select('id')
-        .eq('org_id', args.orgId)
-        .eq('target_table', args.targetTable)
-        .eq('source_ref', args.sourceRef)
-        .eq('status', 'pending')
-        .maybeSingle()
-      if (existing) {
-        await svc.from('proposals').update({ payload: args.payload, evidence_url: args.evidenceUrl, evidence_excerpt: args.evidenceExcerpt, confidence: args.confidence }).eq('id', existing.id)
-        return { source_ref: args.sourceRef, status: 'updated_pending', proposalId: existing.id, strippedFields }
+      let query = svc.from('proposals').select('id').eq('target_table', args.targetTable).eq('source_ref', args.sourceRef).eq('status', 'held')
+      query = args.orgId ? query.eq('org_id', args.orgId) : query.is('org_id', null)
+      const { data: raced } = await query.maybeSingle()
+      if (raced) {
+        await svc.from('proposals').update({ payload: args.payload, evidence_url: args.evidenceUrl, evidence_excerpt: args.evidenceExcerpt, confidence: args.confidence, blocked_by_resolution_id: resolutionId }).eq('id', raced.id)
+        return { source_ref: args.sourceRef, status: 'held_pending_resolution', proposalId: raced.id, resolutionId }
       }
     }
-    console.error('ingest: proposal insert failed', error.code)
-    return { source_ref: args.sourceRef, status: 'rejected_invalid', reason: 'internal error filing proposal' }
+    console.error('ingest: hold insert failed', error.code)
+    return { source_ref: args.sourceRef, status: 'rejected_invalid', reason: 'internal error holding record' }
   }
-  return { source_ref: args.sourceRef, status: statusLabel, proposalId: data.id, strippedFields }
+  return { source_ref: args.sourceRef, status: 'held_pending_resolution', proposalId: data.id, resolutionId }
 }
 
 async function processRecord(svc: SupabaseClient, record: Record<string, unknown>, tokenRow: { id: string; allowed_org_ids: string[] | null }, ctx: RunCtx) {
@@ -259,14 +231,54 @@ async function processRecord(svc: SupabaseClient, record: Record<string, unknown
   if (!TARGET_TABLE[recordType]) return reject(`unknown record_type: ${recordType}`)
   const targetTable = TARGET_TABLE[recordType]
 
-  const org = await resolveAccount(svc, record.account as string | undefined)
-  if (!org) return reject('unknown account')
+  const evidence = record.evidence as { url?: string; excerpt?: string } | undefined
+  const evidenceUrl = typeof evidence?.url === 'string' ? evidence.url : null
+  const evidenceExcerpt = typeof evidence?.excerpt === 'string' ? evidence.excerpt.slice(0, 280) : null
+  const confidence = typeof record.confidence === 'number' ? record.confidence : null
+  const operation = record.operation as string
+  const candidates = Array.isArray(record.candidates) ? (record.candidates as ResolutionCandidate[]) : undefined
+  const accountRef = record.account as string | undefined
+
+  const org = await resolveAccount(svc, accountRef)
+  if (!org) {
+    if (!accountRef) return reject('account is required')
+    if (await isIgnored(svc, accountRef)) return reject('ignored: not a customer')
+    const resolutionId = await findOrCreateResolution(svc, 'account', accountRef, null, candidates, ctx)
+    // Held with whatever the record already told us — project/tenant can't
+    // be resolved without an org, so they're carried as raw refs and
+    // attempted again at release time, not validated now.
+    return await holdRecord(svc, {
+      orgId: null,
+      targetTable,
+      operation: operation as 'create' | 'update' | 'delete',
+      payload: { recordType, rawData: record.data ?? {}, rawTenantRef: record.tenant ?? null, rawProjectRef: record.project ?? null },
+      sourceRef,
+      evidenceUrl,
+      evidenceExcerpt,
+      confidence,
+    }, ctx, resolutionId)
+  }
   if (tokenRow.allowed_org_ids && !tokenRow.allowed_org_ids.includes(org.id)) return reject("account outside this token's scope")
 
   let tenantId: string | null = null
   if (record.tenant) {
-    const tenant = await resolveTenant(svc, org.id, record.tenant as string)
-    if (!tenant) return reject('unknown tenant')
+    const tenantRef = record.tenant as string
+    const tenant = await resolveTenant(svc, org.id, tenantRef)
+    if (!tenant) {
+      const ignoreKey = `${org.id}:${tenantRef}`
+      if (await isIgnored(svc, ignoreKey)) return reject('ignored: not a customer')
+      const resolutionId = await findOrCreateResolution(svc, 'tenant', tenantRef, org.id, candidates, ctx)
+      return await holdRecord(svc, {
+        orgId: org.id,
+        targetTable,
+        operation: operation as 'create' | 'update' | 'delete',
+        payload: { recordType, rawData: record.data ?? {}, rawProjectRef: record.project ?? null },
+        sourceRef,
+        evidenceUrl,
+        evidenceExcerpt,
+        confidence,
+      }, ctx, resolutionId)
+    }
     tenantId = tenant.id
   }
 
@@ -280,37 +292,18 @@ async function processRecord(svc: SupabaseClient, record: Record<string, unknown
     return reject('project is required for this record_type')
   }
 
-  const evidence = record.evidence as { url?: string; excerpt?: string } | undefined
-  const evidenceUrl = typeof evidence?.url === 'string' ? evidence.url : null
-  const evidenceExcerpt = typeof evidence?.excerpt === 'string' ? evidence.excerpt.slice(0, 280) : null
-  const confidence = typeof record.confidence === 'number' ? record.confidence : null
-  const operation = record.operation as string
-
   // Delete carries no `data` payload to validate against KNOWN_FIELDS/
   // REQUIRED_FIELDS — those only apply to create/update. Must be handled
   // before that validation runs, not after.
   if (operation === 'delete') {
     if (recordType === 'health') return reject('delete is not valid for health')
     if (!sourceRef) return reject('source_ref is required for delete')
-    const { data: pending } = await svc.from('proposals').select('id').eq('org_id', org.id).eq('target_table', targetTable).eq('source_ref', sourceRef).eq('status', 'pending').maybeSingle()
-    const realRow = await resolveRealRow(svc, recordType, targetTable, org.id, sourceRef)
-    if (!realRow && pending) {
-      await svc.from('proposals').update({ status: 'superseded' }).eq('id', pending.id)
-      return { source_ref: sourceRef, status: 'superseded_pending' }
-    }
-    if (!realRow) return reject('nothing to delete')
-    return await fileProposal(svc, { orgId: org.id, targetTable, targetId: realRow.id as string, operation: 'delete', payload: {}, sourceRef, evidenceUrl, evidenceExcerpt, confidence }, ctx, 'proposed')
+    const ctxForDedupe: DecideCtx = { source: ctx.source, triggeredBy: ctx.triggeredBy, runId: ctx.runId, tokenId: ctx.tokenId, proposedBy: 'cs-sync-agent' }
+    return await decideAndFile(svc, { recordType, targetTable, orgId: org.id, operation: 'delete', data: {}, sourceRef, evidenceUrl, evidenceExcerpt, confidence }, ctxForDedupe)
   }
 
-  const known = KNOWN_FIELDS[recordType]
   const required = REQUIRED_FIELDS[recordType]
-  const rawData = (record.data ?? {}) as Record<string, unknown>
-  const strippedFields: string[] = []
-  const data: Record<string, unknown> = {}
-  for (const [k, v] of Object.entries(rawData)) {
-    if (known.includes(k)) data[k] = v
-    else strippedFields.push(k)
-  }
+  const { data, stripped } = filterKnownFields(recordType, (record.data ?? {}) as Record<string, unknown>)
   for (const field of required) {
     if (data[field] === undefined || data[field] === null || data[field] === '') return reject(`missing required field: ${field}`)
   }
@@ -324,28 +317,9 @@ async function processRecord(svc: SupabaseClient, record: Record<string, unknown
   }
   if (projectId) data.project_id = projectId
   if (tenantId) data.tenant_id = tenantId
-  const stripped = strippedFields.length ? strippedFields : undefined
 
-  if (sourceRef) {
-    const { data: pending } = await svc.from('proposals').select('id').eq('org_id', org.id).eq('target_table', targetTable).eq('source_ref', sourceRef).eq('status', 'pending').maybeSingle()
-    if (pending) {
-      await svc.from('proposals').update({ payload: data, evidence_url: evidenceUrl, evidence_excerpt: evidenceExcerpt, confidence }).eq('id', pending.id)
-      return { source_ref: sourceRef, status: 'updated_pending', proposalId: pending.id, strippedFields: stripped }
-    }
-
-    const { data: rejected } = await svc.from('proposals').select('id, payload').eq('org_id', org.id).eq('target_table', targetTable).eq('source_ref', sourceRef).eq('status', 'rejected').order('decided_at', { ascending: false }).limit(1).maybeSingle()
-    if (rejected && valuesEqual(data, rejected.payload as Record<string, unknown>)) {
-      return { source_ref: sourceRef, status: 'previously_rejected' }
-    }
-
-    const realRow = await resolveRealRow(svc, recordType, targetTable, org.id, sourceRef)
-    if (realRow) {
-      if (valuesEqual(data, realRow)) return { source_ref: sourceRef, status: 'duplicate_skipped', strippedFields: stripped }
-      return await fileProposal(svc, { orgId: org.id, targetTable, targetId: realRow.id as string, operation: 'update', payload: data, sourceRef, evidenceUrl, evidenceExcerpt, confidence }, ctx, 'proposed_update', stripped)
-    }
-  }
-
-  return await fileProposal(svc, { orgId: org.id, targetTable, targetId: null, operation: 'create', payload: data, sourceRef, evidenceUrl, evidenceExcerpt, confidence }, ctx, 'proposed', stripped)
+  const ctxForDedupe: DecideCtx = { source: ctx.source, triggeredBy: ctx.triggeredBy, runId: ctx.runId, tokenId: ctx.tokenId, proposedBy: 'cs-sync-agent' }
+  return await decideAndFile(svc, { recordType, targetTable, orgId: org.id, operation: operation as 'create' | 'update' | 'delete', data, sourceRef, evidenceUrl, evidenceExcerpt, confidence }, ctxForDedupe, stripped.length ? stripped : undefined)
 }
 
 Deno.serve(async (req: Request) => {

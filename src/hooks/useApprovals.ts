@@ -5,7 +5,7 @@
 // decision is audited with action='approve'/'reject', not just a status flag.
 import { useQuery } from '@tanstack/react-query'
 import { supabase } from '@/lib/supabase'
-import type { AuditLogEntry, ProposalRow, ProposalStatus } from '@/types'
+import type { AccountResolutionRow, AuditLogEntry, ProposalRow, ProposalStatus, ResolutionCandidate } from '@/types'
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 function firstOf<T>(v: any): T | null {
@@ -31,6 +31,12 @@ async function fetchProposals(filters: ProposalFilters): Promise<ProposalRow[]> 
     .order('created_at', { ascending: false })
 
   query = query.eq('status', filters.status ?? 'pending')
+  // account_resolution (7.5-pre2 Session 2) has its own pinned UI
+  // (useAccountResolutions) with dedicated resolve actions — it's never a
+  // normal approve/reject target, so it's excluded from this list entirely
+  // rather than rendering a generic Approve button that would just fail
+  // against apply_proposal()'s allow-list.
+  query = query.neq('target_table', 'account_resolution')
   if (filters.targetTable) query = query.eq('target_table', filters.targetTable)
   if (filters.orgId) query = query.eq('org_id', filters.orgId)
   if (filters.source) query = query.eq('source', filters.source)
@@ -123,6 +129,50 @@ export async function approveProposal(id: string, decidedBy: string, payloadOver
 export async function rejectProposal(id: string, decidedBy: string, reason: string): Promise<void> {
   const { error } = await supabase.rpc('reject_proposal', { p_proposal_id: id, p_decided_by: decidedBy, p_reason: reason })
   if (error) throw new Error(error.message)
+}
+
+// ── Account resolution ("account match needed", 7.5-pre2 Session 2) ────────
+// Pinned on top of the Approvals inbox: an unresolved account/tenant
+// identifier, plus every record held against it. Resolving it (one of four
+// decisions, provisioning's resolve_account_proposal) releases every held
+// record through the same dedupe tree ingest uses.
+
+async function fetchAccountResolutions(): Promise<AccountResolutionRow[]> {
+  const { data, error } = await supabase
+    .from('proposals')
+    .select('id, payload, created_at, organizations!proposals_org_id_fkey(name)')
+    .eq('target_table', 'account_resolution')
+    .eq('status', 'pending')
+    .order('created_at', { ascending: true })
+  if (error) throw new Error(error.message)
+
+  const resolutions = (data ?? []).map((row) => {
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const payload = (row.payload ?? {}) as any
+    return {
+      id: row.id as string,
+      scope: payload.scope as 'account' | 'tenant',
+      observedName: payload.observedName as string,
+      knownOrgId: payload.knownOrgId ?? null,
+      knownOrgName: firstOf<{ name: string }>(row.organizations)?.name ?? null,
+      candidates: (payload.candidates ?? []) as ResolutionCandidate[],
+      heldCount: 0,
+      createdAt: row.created_at as string,
+    }
+  })
+  if (resolutions.length === 0) return resolutions
+
+  const { data: held } = await supabase.from('proposals').select('blocked_by_resolution_id').eq('status', 'held').in('blocked_by_resolution_id', resolutions.map((r) => r.id))
+  const counts = new Map<string, number>()
+  for (const h of held ?? []) {
+    const id = h.blocked_by_resolution_id as string
+    counts.set(id, (counts.get(id) ?? 0) + 1)
+  }
+  return resolutions.map((r) => ({ ...r, heldCount: counts.get(r.id) ?? 0 }))
+}
+
+export function useAccountResolutions() {
+  return useQuery({ queryKey: ['account-resolutions'], queryFn: fetchAccountResolutions })
 }
 
 // ── Audit log screen ────────────────────────────────────────────────────────

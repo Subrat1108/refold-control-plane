@@ -75,6 +75,27 @@ export function revokeIngestToken(tokenId: string) {
   return invoke<{ ok: true }>({ action: 'revoke_ingest_token', tokenId })
 }
 
+// 7.5-pre2 Session 2 — "account match needed." One action, four decisions;
+// each releases every held record blocked on this resolution through the
+// same dedupe tree `ingest` uses for a fresh sighting.
+export interface ResolveAccountInput {
+  resolutionId: string
+  decision: 'map_existing' | 'map_tenant' | 'create_account' | 'ignore'
+  orgId?: string
+  tenantId?: string
+  newTenantName?: string
+  name?: string
+  segmentId?: string | null
+  deploymentModel?: string | null
+  deploymentType?: string
+  lifecycleStage?: string
+  sourceType?: string
+}
+
+export function resolveAccountProposal(input: ResolveAccountInput) {
+  return invoke<{ ok: true; decision: string; orgId?: string; tenantId?: string | null; releasedCount: number }>({ action: 'resolve_account_proposal', ...input })
+}
+
 export function acceptInvite() {
   return invoke<{ ok: true; alreadyActive?: boolean }>({ action: 'accept_invite' })
 }

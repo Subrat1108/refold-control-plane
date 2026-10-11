@@ -22,6 +22,7 @@
 // only ever touch the caller's own org / own customer type, never super-admins.
 
 import { createClient, type SupabaseClient } from 'jsr:@supabase/supabase-js@2'
+import { TARGET_TABLE, REQUIRED_FIELDS, NEEDS_PROJECT, filterKnownFields, resolveProject, decideAndFile, type DecideCtx } from '../_shared/dedupe.ts'
 
 const INTERNAL_ORG_ID = '00000000-0000-0000-0000-000000000001'
 
@@ -372,6 +373,163 @@ async function revokeIngestToken(caller: Caller, body: Record<string, unknown>) 
   return json({ ok: true })
 }
 
+// ── resolve_account_proposal (7.5-pre2 Session 2) ──────────────────────────────
+// A human decides what an unresolved account/tenant identifier actually is.
+// Four decisions: map_existing (an existing account), map_tenant (a tenant
+// of an existing account, creating the tenant if needed), create_account (a
+// brand-new account), or ignore (not a customer). On the first three, the
+// observed identifier is saved to account_sources so it resolves instantly
+// next time, and every held record blocked on this resolution is released
+// through the SAME decideAndFile dedupe tree `ingest` uses (_shared/
+// dedupe.ts) — never a second copy of that logic. On ignore, held records
+// are discarded (rejected, logged) and the identifier joins sync_learnings'
+// ignore list so it never re-proposes itself.
+
+async function resolveAccountProposal(caller: Caller, body: Record<string, unknown>) {
+  const resolutionId = body.resolutionId as string
+  const decision = body.decision as string
+  if (!resolutionId || !['map_existing', 'map_tenant', 'create_account', 'ignore'].includes(decision)) {
+    return json({ error: 'resolutionId and a valid decision are required' }, 400)
+  }
+
+  const svc = caller.service
+  const { data: resolution } = await svc.from('proposals').select('*').eq('id', resolutionId).eq('target_table', 'account_resolution').maybeSingle()
+  if (!resolution) return json({ error: 'resolution proposal not found' }, 404)
+  if (resolution.status !== 'pending') return json({ error: `resolution is not pending (status=${resolution.status})` }, 400)
+
+  const resolutionPayload = resolution.payload as { scope: 'account' | 'tenant'; observedName: string; knownOrgId: string | null }
+
+  if (decision === 'ignore') {
+    const { data: held } = await svc.from('proposals').select('id').eq('blocked_by_resolution_id', resolutionId).eq('status', 'held')
+    for (const h of held ?? []) {
+      await svc.from('proposals').update({ status: 'rejected', decided_by: caller.id, decided_at: new Date().toISOString(), reason: 'ignored: not a customer' }).eq('id', h.id)
+    }
+    await svc.from('sync_learnings').insert({
+      kind: 'ignore',
+      org_id: resolutionPayload.knownOrgId,
+      content: { identifier: resolution.source_ref },
+      source_decision_ids: [resolutionId],
+      created_by: caller.id,
+    })
+    await svc.from('proposals').update({ status: 'rejected', decided_by: caller.id, decided_at: new Date().toISOString(), reason: 'ignored: not a customer' }).eq('id', resolutionId)
+    await writeAudit(svc, caller.id, 'resolve_account_ignore', 'proposals', resolutionId, resolutionPayload.knownOrgId, { releasedCount: (held ?? []).length })
+    return json({ ok: true, decision: 'ignore', releasedCount: (held ?? []).length })
+  }
+
+  // map_existing / map_tenant / create_account all resolve to a final
+  // (resolvedOrgId, resolvedTenantId) pair, then share the same release path.
+  let resolvedOrgId: string
+  let resolvedTenantId: string | null = null
+
+  if (decision === 'map_existing') {
+    resolvedOrgId = body.orgId as string
+    if (!resolvedOrgId) return json({ error: 'orgId is required for map_existing' }, 400)
+    const { data: org } = await svc.from('organizations').select('id').eq('id', resolvedOrgId).maybeSingle()
+    if (!org) return json({ error: 'orgId does not match any account' }, 400)
+  } else if (decision === 'map_tenant') {
+    resolvedOrgId = body.orgId as string
+    if (!resolvedOrgId) return json({ error: 'orgId is required for map_tenant' }, 400)
+    const { data: org } = await svc.from('organizations').select('id').eq('id', resolvedOrgId).maybeSingle()
+    if (!org) return json({ error: 'orgId does not match any account' }, 400)
+    const existingTenantId = body.tenantId as string | undefined
+    const newTenantName = (body.newTenantName as string | undefined)?.trim()
+    if (existingTenantId) {
+      resolvedTenantId = existingTenantId
+    } else if (newTenantName) {
+      const { data: tenant, error } = await svc.from('tenants').insert({ org_id: resolvedOrgId, name: newTenantName, created_by: caller.id }).select('id').single()
+      if (error) return json({ error: error.message }, 400)
+      resolvedTenantId = tenant.id
+    } else {
+      return json({ error: 'tenantId or newTenantName is required for map_tenant' }, 400)
+    }
+  } else {
+    // create_account
+    const name = (body.name as string)?.trim()
+    if (!name) return json({ error: 'name is required for create_account' }, 400)
+    const { data: newOrg, error } = await svc
+      .from('organizations')
+      .insert({
+        name,
+        segment_id: (body.segmentId as string) || null,
+        deployment_model: (body.deploymentModel as string) || null,
+        deployment_type: (body.deploymentType as string) || 'cloud',
+        lifecycle_stage: (body.lifecycleStage as string) || 'prospect',
+        status: 'active',
+      })
+      .select('id')
+      .single()
+    if (error) return json({ error: error.message }, 400)
+    resolvedOrgId = newOrg.id
+  }
+
+  // Save the observed identifier so it resolves instantly next time.
+  const ACCOUNT_SOURCE_TYPES = ['slack_channel', 'email_domain', 'zendesk_org_id', 'fireflies_hint', 'name_variant']
+  const sourceType = (body.sourceType as string) || 'name_variant'
+  if (!ACCOUNT_SOURCE_TYPES.includes(sourceType)) return json({ error: `sourceType must be one of ${ACCOUNT_SOURCE_TYPES.join(', ')}` }, 400)
+  const { error: sourceError } = await svc.from('account_sources').insert({
+    org_id: resolvedOrgId,
+    tenant_id: resolvedTenantId,
+    source_type: sourceType,
+    value: resolutionPayload.observedName,
+    created_by: caller.id,
+  })
+  if (sourceError) return json({ error: `could not save the identifier: ${sourceError.message}` }, 400)
+  await svc.from('sync_learnings').insert({
+    kind: 'alias_map',
+    org_id: resolvedOrgId,
+    tenant_id: resolvedTenantId,
+    content: { identifier: resolutionPayload.observedName, resolvedOrgId, resolvedTenantId },
+    source_decision_ids: [resolutionId],
+    created_by: caller.id,
+  })
+
+  // Release every held record blocked on this resolution through the same
+  // dedupe tree `ingest` uses for a fresh sighting.
+  const { data: held } = await svc.from('proposals').select('*').eq('blocked_by_resolution_id', resolutionId).eq('status', 'held')
+  let releasedCount = 0
+  for (const h of held ?? []) {
+    const heldPayload = h.payload as { recordType: string; rawData: Record<string, unknown>; rawProjectRef?: string | null; rawTenantRef?: string | null }
+    const recordType = heldPayload.recordType
+    const targetTable = TARGET_TABLE[recordType]
+    const { data, stripped } = filterKnownFields(recordType, heldPayload.rawData ?? {})
+
+    let missingField: string | null = null
+    for (const field of REQUIRED_FIELDS[recordType] ?? []) {
+      if (data[field] === undefined || data[field] === null || data[field] === '') { missingField = field; break }
+    }
+    if (missingField) {
+      await svc.from('proposals').update({ status: 'rejected', decided_by: caller.id, decided_at: new Date().toISOString(), reason: `missing required field: ${missingField}` }).eq('id', h.id)
+      continue
+    }
+
+    const needsProject = NEEDS_PROJECT[recordType]
+    let projectId: string | null = null
+    if (heldPayload.rawProjectRef) {
+      const proj = await resolveProject(svc, resolvedOrgId, heldPayload.rawProjectRef)
+      if (proj) projectId = proj.id
+      else if (needsProject === 'required') {
+        await svc.from('proposals').update({ status: 'rejected', decided_by: caller.id, decided_at: new Date().toISOString(), reason: 'unknown project (after account resolution)' }).eq('id', h.id)
+        continue
+      }
+    } else if (needsProject === 'required') {
+      await svc.from('proposals').update({ status: 'rejected', decided_by: caller.id, decided_at: new Date().toISOString(), reason: 'project is required for this record_type' }).eq('id', h.id)
+      continue
+    }
+    if (projectId) data.project_id = projectId
+    if (resolvedTenantId) data.tenant_id = resolvedTenantId
+
+    const ctxForDedupe: DecideCtx = { source: h.source, triggeredBy: h.triggered_by, runId: h.run_id, tokenId: h.ingest_token_id, proposedBy: h.proposed_by }
+    await decideAndFile(svc, { recordType, targetTable, orgId: resolvedOrgId, operation: h.operation, data, sourceRef: h.source_ref, evidenceUrl: h.evidence_url, evidenceExcerpt: h.evidence_excerpt, confidence: h.confidence }, ctxForDedupe, stripped.length ? stripped : undefined)
+    await svc.from('proposals').update({ status: 'superseded', decided_by: caller.id, decided_at: new Date().toISOString(), reason: `resolved via account_resolution ${resolutionId}` }).eq('id', h.id)
+    releasedCount++
+  }
+
+  await svc.from('proposals').update({ status: 'approved', decided_by: caller.id, decided_at: new Date().toISOString(), target_id: resolvedOrgId }).eq('id', resolutionId)
+  await writeAudit(svc, caller.id, 'resolve_account_' + decision, 'proposals', resolutionId, resolvedOrgId, { decision, resolvedOrgId, resolvedTenantId, releasedCount })
+
+  return json({ ok: true, decision, orgId: resolvedOrgId, tenantId: resolvedTenantId, releasedCount })
+}
+
 // ── set_user_status ───────────────────────────────────────────────────────────
 async function setUserStatus(caller: Caller, body: Record<string, unknown>) {
   const userId = body.userId as string
@@ -527,7 +685,7 @@ async function ownerSetUserStatus(caller: Caller, body: Record<string, unknown>)
   return json({ ok: true })
 }
 
-const SUPER_ACTIONS = new Set(['provision_org', 'invite_super_admin', 'assign_sub_role', 'set_user_status', 'set_reports_to', 'create_ingest_token', 'revoke_ingest_token'])
+const SUPER_ACTIONS = new Set(['provision_org', 'invite_super_admin', 'assign_sub_role', 'set_user_status', 'set_reports_to', 'create_ingest_token', 'revoke_ingest_token', 'resolve_account_proposal'])
 const OWNER_ACTIONS = new Set(['owner_invite_user', 'owner_assign_sub_role', 'owner_set_user_status'])
 
 Deno.serve(async (req: Request) => {
@@ -569,6 +727,8 @@ Deno.serve(async (req: Request) => {
         return createIngestToken(caller, body)
       case 'revoke_ingest_token':
         return revokeIngestToken(caller, body)
+      case 'resolve_account_proposal':
+        return resolveAccountProposal(caller, body)
     }
   }
 

@@ -759,6 +759,28 @@ export interface ProposalRow extends Proposal {
   accountName: string | null
 }
 
+// 7.5-pre2 Session 2 — "account match needed." An unresolved account/
+// tenant identifier (proposals.target_table = 'account_resolution'), plus
+// every record held against it.
+export interface ResolutionCandidate {
+  type: 'account' | 'tenant'
+  id: string
+  name: string
+  confidence: number
+  why: string
+}
+
+export interface AccountResolutionRow {
+  id: string
+  scope: 'account' | 'tenant'
+  observedName: string
+  knownOrgId: string | null
+  knownOrgName: string | null
+  candidates: ResolutionCandidate[]
+  heldCount: number
+  createdAt: string
+}
+
 export interface AuditLogEntry {
   id: string
   actorId: string | null

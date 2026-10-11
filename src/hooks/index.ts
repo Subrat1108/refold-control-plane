@@ -142,6 +142,7 @@ export {
   useAuditLog,
   auditLogToCsv,
   downloadCsv,
+  useAccountResolutions,
 } from './useApprovals'
 export type { ProposalFilters, AuditLogFilters } from './useApprovals'
 export {
