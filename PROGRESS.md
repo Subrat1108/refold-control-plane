@@ -42,7 +42,7 @@
 - [x] Equal admins — people simplification (Part 1): `account_roles` (per-account role tag, record-keeping, history) replaces titles/teams/account_assignments/owner_profile_id; `reports_to` (optional, UX-only, cycle-checked); rewritten scope helpers; People directory screen; Portfolio/Account 360 "Add to my accounts"/"Leave account"; nav reorder + collapsed Admin group (D-081–D-086)
 - [x] Home + Standups + People activity (Parts 2–4): Home (personal "my day" — my accounts, needs attention, my reports, recent activity, all scoped); Standups (anyone hosts, standups/standup_entries/action_items, host-can-edit-any RLS, remembered participant set via saved_views, deterministic "since last standup" draft, live mode, blocker→ask/action-item); People activity (role history, recent activity, open action items, recent standup entries on the existing People directory) (D-087–D-090). Performance indexes/KPIs stay deferred — the data they need (account_roles history, project_members, audit actor, approvals, standups) is confirmed fully captured.
 - [x] 7.4 — Ingest API: `ingest_tokens` table (select super-admin-only, no client insert/update), `create_ingest_token`/`revoke_ingest_token` provisioning actions, new `ingest` Edge Function (bearer-token auth, verify_jwt disabled, upsert/dedupe decision tree, race-safe via partial unique index), Ingest Tokens admin screen
-- [ ] 7.5 — CS Sync Skill + runner + Refresh (was 6.5). **7.5-pre done** (D-097–D-099): Refold MCP connection confirmed and the `cs-sync` skill finalized against the real server (`skills/cs-sync/`, `docs/refold-mcp.md`) — connected live, confirmed the agent-mode `RESOLVE_ACTIONS`/`EXECUTE_ACTION` contract, real action IDs/schema enums filled in, health-dedupe tested against local ingest. Four real connection/app-admin gaps found (not code issues): Zendesk/Gmail not connected for the `cs-hub` linked account, Slack's bot is not in any channel, `search_messages` is structurally unavailable (bot vs. user token), and zero Refold workflows exist (blocks `metric` entirely). **7.5-pre2 Sessions 1–2 of 6 done.** Session 1 (D-100–D-103): accounts/tenants are the only truth — `tenants` + `account_sources` tables (supersede `aliases` for matching), `dormant` lifecycle value, `tenant_id` on 9 record tables, `apply_proposal()`/`ingest` updated, Account 360 sources panel. Session 2 (D-104–D-107): "account match needed" — `held` proposal status + `account_resolution` meta-proposals, the `ingest` dedupe tree extracted to `supabase/functions/_shared/dedupe.ts` (shared with the new release path), a pinned Approvals-inbox section with all 4 resolution decisions (map to existing / map as tenant / create new account / ignore), `sync_learnings` pulled forward minimally for the ignore-list + alias-map audit trail. Sessions 3–6 (learning loop proper, skill realignment + new record types, the runner itself, context-store bootstrap) remain per the plan, built only as approved session-by-session.
+- [ ] 7.5 — CS Sync Skill + runner + Refresh (was 6.5). **7.5-pre done** (D-097–D-099): Refold MCP connection confirmed and the `cs-sync` skill finalized against the real server (`skills/cs-sync/`, `docs/refold-mcp.md`) — connected live, confirmed the agent-mode `RESOLVE_ACTIONS`/`EXECUTE_ACTION` contract, real action IDs/schema enums filled in, health-dedupe tested against local ingest. Four real connection/app-admin gaps found (not code issues): Zendesk/Gmail not connected for the `cs-hub` linked account, Slack's bot is not in any channel, `search_messages` is structurally unavailable (bot vs. user token), and zero Refold workflows exist (blocks `metric` entirely). **7.5-pre2 Sessions 1–2 of 6 done.** Session 1 (D-100–D-103): accounts/tenants are the only truth — `tenants` + `account_sources` tables (supersede `aliases` for matching), `dormant` lifecycle value, `tenant_id` on 9 record tables, `apply_proposal()`/`ingest` updated, Account 360 sources panel. Session 2 (D-104–D-107): "account match needed" — `held` proposal status + `account_resolution` meta-proposals, the `ingest` dedupe tree extracted to `supabase/functions/_shared/dedupe.ts` (shared with the new release path), a pinned Approvals-inbox section with all 4 resolution decisions (map to existing / map as tenant / create new account / ignore), `sync_learnings` pulled forward minimally for the ignore-list + alias-map audit trail. **Order changed (D-108):** Session 4 (skill realignment + new record types) → Session 5 (runner) → first real sync → Session 3 (learning loop proper) → Session 6 (context-store bootstrap) — the learning loop needs real approval decisions to learn from, which don't exist until 4/5 ship and a real sync runs. **Session 4 of 6 done** (D-109–D-113): `action_item`/`engagement` record types wired end to end (`ingest`, `apply_proposal()`, `_shared/dedupe.ts`, schema/docs); `skills/cs-sync/` fully revised against the real daily-CS-workflow rules + live Slack-connector discovery (user-token + custom-app support confirmed, `search:read` scope gap found); `refold-skill.md` regenerated for Refold → MCP → CS Hub → Skills. Early real-data check against Fireflies (local-only, reset after) validated the resolution path against real transcripts and surfaced one skill rule (skip meetings with no identifiable customer domain). Remaining sessions (5, first real sync, 3, 6) built only as approved.
 - [ ] 7.6 — Ask the Hub (chat agent)
 - [ ] 7.7 — Reports (monthly status, EBR, QBR — was 6.6)
 - [ ] 7.8 — Air-gapped import
@@ -75,6 +75,63 @@ Points, streaks, badges, team leaderboards — computed from the audit log + pro
 
 ## Last session
 (See docs/devlog.md for full session history — this is just the pointer.)
+
+Date: 2026-10-11 (yet later same day)
+Completed: Order change logged (D-108): 7.5-pre2 runs Session 4 → 5 →
+first real sync → 3 → 6, not 1-2-3-4-5-6 as originally planned, since the
+learning loop (Session 3) needs real approval decisions to learn from.
+7.5-pre2 Session 4 of 6 — align the skill + new record types. Two new
+CS-sync record types end to end: `action_item` (reuses standups'
+`action_items`, gains `project_id`/`tenant_id`, a `priority` enum,
+`owner_text` fallback, the standard provenance set, its dedupe index, and
+the `action_items_delete` policy every other record table has — 2
+migrations, since a brand-new enum value can't be used in the same
+transaction that adds it) and `engagement` (already-built 7.1 table, pure
+wiring). New `resolveOwner()` in `_shared/dedupe.ts` (exact
+case-insensitive `profiles.full_name` match, free-text fallback on no/
+multiple matches). `ingest`, `apply_proposal()`, `payload.schema.json`,
+`docs/ingest-api.md` extended; `provisioning`'s held-record release loop
+extended to validate both new types at release time (plus a pre-existing
+metric/health validation gap there, found and fixed as an in-scope
+adjacent fix). `skills/cs-sync/` fully revised (Slack/Gmail/Fireflies/
+Zendesk/Drive rules, `httprequest` read-only hard rule, account/tenant
+"send your best guess" rule, `learnings`-following contract) against the
+real daily-CS-workflow skill's rules (read locally, never committed) plus
+live, read-only Slack-connector discovery: user-token OAuth support
+confirmed (`workspace_token` field + a live authorize URL with a
+populated `user_scope`), the fixed redirect URI
+(`https://api.gocobalt.io/api/v1/slack/callback`), custom-app support via
+Auth Profiles, and a real gap — the default app's scopes don't include
+`search:read`, so re-auth alone won't fix Slack search. `refold-skill.md`
+regenerated — the file for Refold → MCP → CS Hub → Skills.
+One field-naming correction: the ingest API's `action_item` fields are
+`description`/`due_date` (matching the table's real columns), not the
+task wording's `task`/`due` — the mismatch would have silently broken
+dedupe. Two real bugs found+fixed while testing: array fields compared by
+reference not value in `_shared/dedupe.ts`'s normalization, and
+`engagement_date` missing from `DATE_FIELDS`. Closing step: acted as the
+agent, synced real Fireflies transcripts (last 7 days) against a
+**local-only** ingest token — 1 external customer call produced 1
+`engagement` + 3 `action_item` records, 2 internal meetings correctly
+produced no records; all held pending resolution as expected, merged
+under one shared `account_resolution`. One generalizable finding folded
+into the skill: skip meetings with no identifiable customer domain
+outright rather than filing `account_resolution` for them. Local DB reset
+immediately after; no real content committed anywhere (confidentiality
+rule).
+Verified: fresh db reset; rls_test.sql new block ("CS-sync action_items/
+engagements") + all 9 prior blocks green; smoke-login all 3 roles;
+typecheck/lint/build green (no UI changes this session, so no e2e run).
+Cloud: db push --dry-run matched exactly the 2 new migrations;
+migration list 35/35 local=remote; `ingest` and `provisioning` both
+redeployed (both were modified).
+Decisions made: D-109–D-113
+Known issues: the `httprequest` read-only rule is documented in the skill
+but not yet enforced server-side — that's an explicit Session 5 runner
+requirement, not a gap in this session's scope. Sessions 5, the first
+real sync, 3, and 6 remain, built only as separately approved.
+
+---
 
 Date: 2026-10-11 (later same day)
 Completed: 7.5-pre2 Session 2 of 6 — "Account match needed." An

@@ -1362,6 +1362,115 @@ doesn't resolve even with the account now known, is marked `rejected` with
 a clear reason rather than being filed as a normal pending proposal that
 would later violate a NOT NULL constraint on approval.
 
+## D-108 — 7.5-pre2 session order changed: 4 → 5 → first real sync → 3 (2026-10-11)
+The approved 6-session plan (devlog Session 35) ran Session 3 (the
+learning loop) third. Reordered to run Session 4 (align the skill + new
+record types) and Session 5 (the runner + unauthorized-connector skip)
+first, then the first real sync, then Session 3 last. Reason: the learning
+loop's whole point is to learn from real approval/rejection decisions —
+`rule`/`example` entries written from "rejections with reasons,
+edit-then-approve diffs, resolution choices" (the original §C.8 spec). None
+of that exists yet; building Session 3 before any real proposals flow
+through the Hub would ship an admin screen and a write path with nothing
+to show and nothing to learn from. Sessions 1–2's schema
+(`sync_learnings`'s table + `alias_map`/`ignore` write paths) is already
+live and unaffected — this reorder only moves the *rest* of Session 3
+(agent-written `rule`/`example`, the admin screen, guardrails) later.
+
+## D-109 — `action_item`/`engagement` record types wired end to end (2026-10-11)
+7.5-pre2 Session 4. `action_items` (reused from standups) gains the
+plumbing a synced CS fact needs that a standup-internal task never did:
+`project_id`/`tenant_id`, a `priority` enum (`p0`/`high`/`medium`/`low`,
+new `action_item_priority` type), an `owner_text` free-text fallback,
+two new `action_item_status` values (`in_progress`/`blocked`, additive —
+`open`/`done` unchanged since `PeoplePage.tsx`/`useStandups.ts` already
+depend on those literal strings), the standard provenance set every other
+record table has, its `(org_id, source_ref)` dedupe index, and the
+`action_items_delete` policy every other record table has. `engagements`
+(already fully built in 7.1) needed no schema change — only an
+`apply_proposal()` branch and `_shared/dedupe.ts` wiring. Both go through
+`ingest`'s existing hold/dedupe/resolution pipeline unchanged. New
+`resolveOwner()` helper in `_shared/dedupe.ts` resolves `action_item.data.
+owner` against `profiles.full_name` — exact case-insensitive match only
+(`.limit(2)` + length check, never `.maybeSingle()`, so two same-named
+people fall back to free text instead of an arbitrary pick or a throw).
+One field-naming correction from the literal task wording: the ingest
+API's public field names are `description`/`due_date` (matching the
+`action_items` table's real columns 1:1, like every other record type),
+not `task`/`due` — the latter would have made `_shared/dedupe.ts`'s
+caller-sent-field comparison silently unable to ever reach
+`duplicate_skipped` for this type, since `current[key]` always reads
+`undefined` for a key that isn't a real column.
+
+## D-110 — Two real dedupe bugs found and fixed while testing the new types (2026-10-11)
+A throwaway verification script's "resend with equivalent date/whitespace
+→ `duplicate_skipped`" check for `engagement` failed, returning
+`proposed_update` instead. Two independent causes, both in
+`_shared/dedupe.ts`: (1) `normalizeValue`'s fallback branch returned
+arrays by reference, so `attendees` (freshly parsed JSON on every call)
+was never `===` across two calls with identical contents — fixed by
+giving arrays their own branch (order-independent, stringified, trimmed).
+(2) `engagement_date` was missing from `DATE_FIELDS` entirely, so it was
+compared as a raw string (`'2026-10-05'` vs. `'2026-10-05T00:00:00Z'`,
+always "different") — fixed by adding it. Both are generic fixes, not
+engagement-specific — they'd have silently affected any future record
+type with an array or date field whose name wasn't already on one of
+these two lists.
+
+## D-111 — `provisioning`'s held-record release path never validated metric/health — fixed while here (2026-10-11)
+Found while extending `resolveAccountProposal`'s release loop to validate
+newly-held `action_item`/`engagement` records the same way `ingest`
+validates a fresh sighting: the release loop never replicated `ingest`'s
+metric_key-existence or health-value checks for held `metric`/`health`
+records either — only the generic required-field check existed, a gap
+since Session 2. A held metric/health record could have been released
+with a value that would later fail unpredictably at `apply_proposal()`'s
+enum/FK cast instead of being rejected cleanly at release time. Fixed as
+one in-scope adjacent fix, grouped under the same `rejectReason` variable
+as the new action_item/engagement checks so all four record types share
+one rejection path.
+
+## D-112 — Slack connector: user-token + custom-app support confirmed, `search:read` scope gap found (2026-10-11)
+Live, read-only discovery against Refold's public Auth Structure / Auth
+Profile / OAuth-URL-generation APIs (no writes). Confirmed: Slack's
+connector schema has a `workspace_token` field alongside `bot_token`
+(user-token support is real, not just schema-possible); the live
+authorize URL Refold's current default app generates carries a populated
+`user_scope` parameter, confirming it's already wired end to end; the
+fixed OAuth redirect URI is `https://api.gocobalt.io/api/v1/slack/
+callback` regardless of which Slack app initiates the flow ("Cobalt" is
+Refold's prior product name); a custom app (bring-your-own client id/
+secret) is supported via the Auth Profiles API, not exercised live since
+it would create a real org-level credential. Important gap found: the
+current default app's scope lists (`scope` and `user_scope` both) do not
+include `search:read` — re-authorizing Slack as a user under the default
+app fixes channel reads but will *not* fix `search_messages`, which needs
+a custom Auth Profile with that scope explicitly requested. Reported to
+the Head of CS as part of their own Slack-app setup.
+
+## D-113 — Early real-data check: Fireflies-only, local-only, one real finding folded into the skill (2026-10-11)
+7.5-pre2 Session 4's closing verification step. Acting as the agent per
+the revised skill, synced Fireflies transcripts from the last 7 days
+(`httprequest` → GraphQL, read-only) against a freshly minted
+**local-only** ingest token — never production. Listed 50 transcripts,
+sampled 5 for summaries (2 had no summary — too short/non-substantive to
+summarize), found 3 with real content: 1 external customer/prospect call
+(domain not named here per the confidentiality rule) producing 1
+`engagement` + 3 `action_item` records, and 2 clearly internal meetings
+(hiring, team sync) with no identifiable customer domain at all. All 4
+non-skipped records correctly came back `held_pending_resolution`, merged
+under one shared `account_resolution` (same best-guess identifier) —
+validating the resolution mechanism against genuinely novel real data,
+not just synthetic fixtures. One generalizable finding folded into
+`skills/cs-sync/SKILL.md`: most meetings in any given window are
+internal, and a transcript with no identifiable external business domain
+at all should be `skip`ped outright ("no identifiable customer account"),
+not routed through `account_resolution` — that path is for "this is
+clearly a customer/prospect, just not one we've mapped yet," not "this
+might not be a customer meeting at all." Local DB reset immediately after
+to remove all real content; nothing real was committed to git/docs/devlog
+per the standing confidentiality rule.
+
 # Parked
 
 Out-of-scope ideas land here instead of derailing the current prompt block.

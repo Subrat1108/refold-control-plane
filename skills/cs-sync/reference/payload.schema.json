@@ -26,11 +26,12 @@
         "required": ["record_type", "operation", "account", "source_ref", "data", "evidence", "confidence"],
         "additionalProperties": false,
         "properties": {
-          "record_type": { "enum": ["milestone", "accomplishment", "risk", "escalation", "ticket", "metric", "health"] },
+          "record_type": { "enum": ["milestone", "accomplishment", "risk", "escalation", "ticket", "metric", "health", "action_item", "engagement"] },
           "operation": { "enum": ["create", "update", "delete"] },
           "account": { "type": "string", "minLength": 1 },
           "tenant": { "type": "string", "description": "Optional. An end-customer/program/sub-account under the account (e.g. a platform customer's bank program) — never an account itself. Must resolve via an exact account_sources match scoped to this account; the agent never invents or promotes one." },
           "project": { "type": "string" },
+          "type": { "enum": ["call", "check_in", "qbr", "ebr", "note"], "description": "Required for record_type 'engagement' only — the engagement's kind. Unused for every other record_type." },
           "source_ref": { "type": "string", "minLength": 3 },
           "observed_at": { "type": "string", "format": "date-time" },
           "data": { "type": "object" },
@@ -61,7 +62,13 @@
           { "if": { "properties": { "record_type": { "const": "metric" }, "operation": { "enum": ["create", "update"] } } },
             "then": { "properties": { "data": { "required": ["metric_key", "period", "value"] } } } },
           { "if": { "properties": { "record_type": { "const": "health" } } },
-            "then": { "properties": { "operation": { "enum": ["create", "update"] }, "data": { "required": ["health"], "properties": { "health": { "enum": ["active", "caution", "risk"] } } } } } }
+            "then": { "properties": { "operation": { "enum": ["create", "update"] }, "data": { "required": ["health"], "properties": { "health": { "enum": ["active", "caution", "risk"] } } } } } },
+          { "if": { "properties": { "record_type": { "const": "action_item" }, "operation": { "enum": ["create", "update"] } } },
+            "then": { "properties": { "data": { "required": ["description"] } } } },
+          { "if": { "properties": { "record_type": { "const": "engagement" } } },
+            "then": { "required": ["type"] } },
+          { "if": { "properties": { "record_type": { "const": "engagement" }, "operation": { "enum": ["create", "update"] } } },
+            "then": { "properties": { "data": { "required": ["engagement_date", "summary"] } } } }
         ]
       }
     },

@@ -16,6 +16,45 @@ Template:
 
 ---
 
+## Session 37 — 2026-10-11 — 7.5-pre2 Session 4: align the skill + new record types
+**Built:** Order changed (D-108, logged last session): Session 4 now runs
+before Session 5/first-real-sync/Session 3. Two new CS-sync record types
+end to end — `action_item` (reuses standups' `action_items` table, gains
+`project_id`/`tenant_id`, a `priority` enum, `owner_text` fallback, the
+standard provenance set, its dedupe index, and the `action_items_delete`
+policy every other record table has — split across two migrations because
+a brand-new enum value can't be used in the same transaction that adds
+it) and `engagement` (already-built 7.1 table, pure wiring). New
+`resolveOwner()` in `_shared/dedupe.ts` (exact case-insensitive match
+against `profiles.full_name`, free-text fallback on no/multiple matches).
+`ingest`/`apply_proposal()`/`payload.schema.json`/`docs/ingest-api.md` all
+extended; `provisioning`'s held-record release loop extended to validate
+both new types at release time (plus a pre-existing metric/health gap
+found and fixed there too — D-111). `skills/cs-sync/` fully revised
+(Slack/Gmail/Fireflies/Zendesk/Drive rules, `httprequest` read-only hard
+rule, account/tenant "send your best guess, let the Hub hold it" rule,
+`learnings`-following contract) against the real daily-CS-workflow
+skill's rules (read locally, never committed) plus this session's live
+Slack-connector discovery (D-112). `refold-skill.md` regenerated — the
+file for Refold → MCP → CS Hub → Skills.
+**Deviations:** Ingest API field names for `action_item` are
+`description`/`due_date`, not the task wording's `task`/`due` — matching
+the table's real columns (D-109; the mismatch would have broken dedupe
+silently). Two real bugs found+fixed during testing: array fields compared
+by reference not value, and `engagement_date` missing from `DATE_FIELDS`
+(D-110). The `httprequest` read-only rule is documented but not yet
+enforced in code — that's an explicit Session 5 runner requirement, not a
+gap in this session's scope. An early real-data check against Fireflies
+(local-only token, reset after) found most meetings in-window are
+internal with no identifiable customer domain — folded into the skill as
+a new `skip` rule rather than routing those through `account_resolution`
+(D-113).
+**Decisions:** D-109–D-113
+**Next:** 7.5-pre2 Session 5 — the runner + unauthorized-connector skip.
+**Issues:** none outstanding from this session's own scope.
+
+---
+
 ## Session 36 — 2026-10-11 — 7.5-pre2 Session 2: "Account match needed"
 **Built:** `held` proposal status + `account_resolution` meta-proposals
 (`proposals.blocked_by_resolution_id`); two race-safety indexes mirroring

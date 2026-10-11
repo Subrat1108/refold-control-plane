@@ -1,38 +1,73 @@
 ---
 name: cs-sync
-description: Sync customer-success facts for Refold accounts — tickets, escalations, risks, milestones, accomplishments, metrics and account health — from Slack, email, ticketing and Refold platform tools (via the Refold MCP server) into the Refold CS Hub as proposals for human approval. Use for a full backfill, the daily incremental sync, or a scoped refresh of one account and one record type. Also use when someone asks to "sync", "refresh" or "pull updates" for a customer account into the CS Hub.
+description: Sync customer-success facts for Refold accounts — tickets, escalations, risks, milestones, accomplishments, metrics, action items, engagements and account health — from Slack, email, ticketing and Fireflies (via the Refold MCP server) into the Refold CS Hub as proposals for human approval. Use for a full backfill, the daily incremental sync, or a scoped refresh of one account and one record type. Also use when someone asks to "sync", "refresh" or "pull updates" for a customer account into the CS Hub.
 ---
 
 # CS Sync
 
 You turn what is happening with Refold's customers — in Slack, email, the
-ticketing tool and the Refold platform — into structured **records** for the
-Refold CS Hub. Every record you produce becomes a **proposal**; a person on the
-CS team approves or rejects it. You never change the Hub directly.
+ticketing tool and Fireflies — into structured **records** for the Refold
+CS Hub. Every record you produce becomes a **proposal**; a person on the
+CS team approves or rejects it. You never change the Hub directly, and you
+never write to Slack/Zendesk/Gmail/Fireflies — every connected app is
+read-only for this skill.
 
 ## Golden rules
 
 1. **Report facts, never invent them.** Every record must be supported by a
-   concrete source item (message, email, ticket, metric result). If a field
+   concrete source item (message, email, ticket, transcript). If a field
    isn't stated or clearly derivable, leave it out.
 2. **Every record needs `evidence` and a stable `source_ref`.** Evidence is a
-   link plus a verbatim excerpt (≤ 280 characters). `source_ref` rules are in
-   §Source refs; they make re-runs safe.
+   link plus a verbatim excerpt (≤ 280 characters) — except for `engagement`
+   and `action_item` summaries, which come from a transcript's own summary
+   or action-item list, never the raw verbatim transcript. `source_ref`
+   rules are in §Source refs; they make re-runs safe.
 3. **Report current state; let the server dedupe.** Don't try to work out
    whether the Hub already has something. Send what you see with the right
    `source_ref` — the ingest API decides create vs. update vs. skip. The only
    exception: when the sync context lists `known_records`, reuse an existing
    record's `source_ref` when you're reporting a change to that same thing
-   (e.g. a milestone date slipped).
+   (e.g. a milestone date slipped, an action item moved to done).
 4. **When unsure, skip.** Prefer ten accurate records over fifty noisy ones.
    Don't emit anything with confidence below 0.5. Put it in `skipped` with a
    short reason instead.
-5. **One account per record.** If an item can't be tied to exactly one account
-   (by alias, channel, domain or explicit mention), skip it.
-6. **Confidentiality.** Never include credentials, tokens, API keys, passwords
-   or secrets in any field or excerpt — even if they appear in the source. Keep
-   personal data to names and roles already visible in the source. Never echo
-   the ingest token.
+5. **Accounts and tenants come from the Hub, never from you.** Attribute a
+   fact to an account/tenant **only** via an exact source match (a mapped
+   Slack channel, email domain, Zendesk org id, Fireflies hint) or a name
+   already listed in the sync context's known roster. You never create an
+   account, and you never treat a tenant as its own account (a platform
+   customer's own program/sub-account is a *tenant* of that customer, not a
+   new logo) — when you're not sure which it is, or whether it's a known
+   account at all, send the record anyway with your best-guess `account`/
+   `tenant` string: the ingest API itself will hold it and raise an
+   "account match needed" item for a human, rather than you guessing. This
+   is exactly the failure mode this rule exists to prevent — an agent that
+   silently decided "Amex" was its own account rather than a tenant of a
+   known platform customer. Never pre-filter a record out just because you
+   personally aren't sure which account/tenant it is — that's the Hub's
+   decision to make, not yours, as long as you have *some* identifier.
+6. **Follow active `learnings` over your own judgment.** The sync context's
+   `learnings` array (empty until the CS team has made enough decisions for
+   patterns to emerge) carries rules and examples written from real
+   approval/rejection history. When non-empty, apply them, and report which
+   ones you used (by id) in your summary — this is how the Hub tracks which
+   rules are actually earning their keep.
+7. **Confidentiality.** Never include credentials, tokens, API keys,
+   passwords or secrets in any field or excerpt — even if they appear in
+   the source. Keep personal data to names and roles already visible in
+   the source. Never echo the ingest token. **Never read any document,
+   file, or Drive item whose name or path suggests credentials or login
+   details, under any circumstances** — this applies even if such a
+   document happens to be reachable through a connected tool; Drive itself
+   is out of scope for this skill entirely (no Drive tool is ever called).
+8. **`httprequest` (the generic escape-hatch action on Fireflies/Zendesk) is
+   read-only, with no exceptions.** Fireflies: only `POST /graphql` bodies
+   containing a GraphQL `query` — never a `mutation`. Zendesk: only `GET`
+   requests (search, `tickets/{id}`, incremental export) — never `POST`/
+   `PUT`/`DELETE`. If a plan you're building would need `httprequest` to
+   write anything, stop and skip that step instead — it is never correct
+   for this skill to use `httprequest` for a write, regardless of what the
+   runner environment does or doesn't enforce server-side.
 
 ## Inputs: the sync context
 
@@ -52,6 +87,7 @@ what they tell you.
         "id": "uuid",
         "name": "Prism Analytics",
         "aliases": ["prism-analytics", "prismanalytics.io", "#ext-prism"],
+        "tenants": [{ "id": "uuid", "name": "Northwind Program", "aliases": ["northwind", "C0NORTHWIND"] }],
         "current_health": "active",
         "projects": [{ "id": "uuid", "name": "Prism — Data Platform" }]
       },
@@ -62,17 +98,20 @@ what they tell you.
   "known_records": {
     "<account id>": {
       "milestones": [{ "source_ref": "...", "description": "...", "period": "2026-10-01", "status": "planned" }],
-      "risks": [], "escalations": [], "tickets": []
+      "risks": [], "escalations": [], "tickets": [], "action_items": [], "engagements": []
     }
   },
   "metric_definitions": [{ "key": "execution_volume", "label": "Execution volume", "unit": "count" }],
-  "allowed_values": { "milestone_status": [], "risk_status": [], "escalation_status": [], "severity": [], "ticket_status": [], "ticket_priority": [] }
+  "allowed_values": { "milestone_status": [], "risk_status": [], "escalation_status": [], "severity": [], "ticket_status": [], "ticket_priority": [], "action_item_priority": [], "action_item_status": [] },
+  "learnings": [{ "id": "uuid", "kind": "rule | example", "scope": "global | account | tenant", "content": "..." }]
 }
 ```
 
-Aliases carry the bindings: Slack channel names, customer email domains,
-ticketing organization/project keys, and slugs. Use them to find each
-account's sources and to tie items back to the account.
+Account/tenant `aliases` carry the bindings: Slack channel ids, customer
+email domains, ticketing organization/project keys, and name variants —
+these are `account_sources` rows the Hub itself maintains. Use them to find
+each account's/tenant's sources and to tie items back to the right one.
+Never widen a search beyond what's listed here on your own judgment.
 
 ## Modes
 
@@ -86,17 +125,50 @@ Only produce record types listed in each unit's `record_types`.
 
 ## Workflow
 
-1. **Read the sync context.** Note each unit's account, aliases, projects,
-   record types and `since`.
-2. **Gather** source items for each unit, using the tools in
-   `reference/tool-map.md`. Deterministic sources come first: tickets from the
-   ticketing tool, metrics from Refold platform workflows. Then conversational
-   sources: Slack channels, then email.
+1. **Read the sync context.** Note each unit's account, tenants, aliases,
+   projects, record types, `since`, and any `learnings`.
+2. **Gather**, per connector (full detail and real action ids in
+   `reference/tool-map.md`):
+   - **Zendesk (tickets):** tickets updated since `since`, via a read-only
+     search (currently `httprequest` → `GET /api/v2/search.json` or the
+     incremental export endpoint, once Zendesk is connected — see the
+     Known-gap note in `reference/record-types.md` if it still isn't).
+     Deterministic, never inferred from chat.
+   - **Slack (escalation, risk, milestone, accomplishment, health, action
+     items, engagements mentioned in a thread):** read each account's and
+     tenant's **mapped channels** since `since` (never limited to channels/
+     threads *you* happen to be in — the account's full mapped set, every
+     time), plus a supplementary keyword search — one keyword per query,
+     **never a boolean OR** (`escalation`, `blocker`, `P0`, `go-live`,
+     `POC`, `kickoff`) — including DMs and group DMs. Cap how much thread
+     context you pull per call; you don't need an entire channel's history
+     to extract one fact.
+   - **Gmail (same record types as Slack):** search the CS mailbox using
+     the account's/tenant's email-domain sources plus the same keyword
+     list; exclude sent mail, promotions, and social
+     (`-in:sent -category:promotions -category:social`).
+   - **Fireflies (engagement, action_item, risk, milestone/accomplishment
+     mentioned in a meeting):** list transcripts by **explicit date range**
+     (`httprequest` → Fireflies' GraphQL API), capped at 50 per call,
+     paging with `skip` and splitting a long range into multiple ≤50-item
+     windows rather than one huge pull. Then read each transcript's
+     **summary and action-items list** — never the raw transcript text.
+     **A real-data check found most meetings in any given window are
+     internal (hiring, vendor, team syncs), not customer calls** — if a
+     transcript's attendees carry no account-mapped or otherwise
+     recognizable external business domain at all, that's grounds to
+     `skip` it outright (reason: "no identifiable customer account"), not
+     to file an `account_resolution` for it. `account_resolution` is for
+     "this is clearly a customer/prospect but not one we've mapped yet,"
+     not "this might not be a customer meeting at all."
+   - **Drive: out of scope.** No Drive tool is ever called by this skill.
 3. **Extract** candidate facts per record type, following
    `reference/record-types.md` — what counts, field mapping, confidence.
-4. **Attach** each fact to exactly one account, and to a project where the type
-   needs one (matched against the account's `projects` by name; skip if none
-   fits).
+4. **Attach** each fact to exactly one account (and a tenant, when the
+   source clearly indicates one), and to a project where the type needs
+   one (matched against the account's listed projects; skip if none fits).
+   If the account/tenant itself is unclear, send your best-guess
+   identifier anyway (Golden rule 5) — don't drop the record.
 5. **Build records** in the ingest format below, with `source_ref`, `evidence`
    and `confidence`.
 6. **Self-check** every record against the checklist below; drop or fix
@@ -105,7 +177,7 @@ Only produce record types listed in each unit's `record_types`.
    - **Runner mode** (a sync context was given): reply with ONLY the output
      JSON (§Output). No prose before or after. The runner posts it.
    - **Hand-run mode**: post to the ingest API yourself (§Posting), then give
-     the user a short summary.
+     the user a short summary, including which `learnings` (if any) you used.
 
 ## Output (runner mode)
 
@@ -125,6 +197,17 @@ full schema.
       "data": { "title": "Order sync failures blocking month-end close", "severity": "high", "status": "open", "raised_by": "Customer VP Finance" },
       "evidence": { "url": "https://example.slack.test/archives/C04PRISM/p1728480000001200", "excerpt": "This is now blocking our month-end close — we need someone on this today." },
       "confidence": 0.85
+    },
+    {
+      "record_type": "engagement",
+      "operation": "create",
+      "account": "prism-analytics",
+      "type": "call",
+      "source_ref": "fireflies:f1a2b3c4",
+      "observed_at": "2026-10-07T15:00:00Z",
+      "data": { "engagement_date": "2026-10-07", "summary": "Quarterly check-in — reviewed Q3 usage, agreed on Q4 rollout plan.", "attendees": ["Customer VP Ops", "Account EDL"], "follow_ups": "Send updated rollout timeline by Friday." },
+      "evidence": { "url": "https://app.fireflies.ai/view/f1a2b3c4", "excerpt": "Reviewed Q3 usage trends and agreed on a phased Q4 rollout." },
+      "confidence": 0.95
     }
   ],
   "skipped": [
@@ -153,16 +236,19 @@ Body: { "run": {...}, "records": [...] }   (no "skipped")
 
 - Batches of ≤ 200 records; reuse one `run.id` across batches of a run.
 - Read `results[]`. Outcomes `proposed`, `proposed_update`, `updated_pending`,
-  `duplicate_skipped`, `previously_rejected` and `superseded_pending` are all
-  fine.
+  `duplicate_skipped`, `previously_rejected`, `superseded_pending`, and
+  `held_pending_resolution` are all fine — the last one means the Hub
+  couldn't resolve the account/tenant and has filed an "account match
+  needed" item for a human; it is not an error.
 - For `rejected_invalid`: fix it once if the `reason` points at something
   fixable (e.g. a wrong project name), otherwise report it. No retry loops.
 - `401` → stop and tell the user the token is invalid, expired or revoked.
   `409` → use a new `run.id`. `413` → halve the batch. `5xx` → retry once with
   the same `run.id`.
-- Summarize for the user: counts per outcome, plus the `rejected_invalid`
-  items with their reasons. Remind them that proposals wait in the CS Hub's
-  Approvals inbox.
+- Summarize for the user: counts per outcome, which `learnings` you used (if
+  any), plus the `rejected_invalid` items with their reasons. Remind them
+  that proposals wait in the CS Hub's Approvals inbox, and held items wait
+  in its pinned "Account match needed" section.
 
 ## Source refs
 
@@ -174,28 +260,37 @@ run. Patterns:
 | Ticketing | `<system>:<ticket key>` (lowercase system) | `zendesk:SUP-4821`, `jira:PRISM-112` |
 | Slack | `slack:<channel id>/<message ts>` (root message of the thread where the fact is first stated) | `slack:C04PRISM/1728480000.001200` |
 | Email | `email:<RFC Message-ID without angle brackets>` (first message stating the fact) | `email:CAF1x9…@mail.example.test` |
+| Fireflies meeting (engagement) | `fireflies:<transcript id>` | `fireflies:f1a2b3c4` |
+| Fireflies action item | `fireflies:<transcript id>#<n>` (the transcript's own action-item index) | `fireflies:f1a2b3c4#2` |
 | Refold metric | `refold:<metric_key>:<account id>:<period YYYY-MM-DD>` | `refold:execution_volume:5f1c…:2026-09-01` |
 | Health | `health:<account id>` (one ref per account; the server compares against current health) | `health:5f1c…` |
 
 When a later message changes something you already reported (a date slips, an
-escalation is resolved), **reuse the original `source_ref`** — from
-`known_records`, or from the first message in the thread — so it updates the
-same item instead of creating a duplicate.
+escalation is resolved, an action item moves to done), **reuse the original
+`source_ref`** — from `known_records`, or from the first message/transcript —
+so it updates the same item instead of creating a duplicate.
 
 ## Self-check (before delivering)
 
 - [ ] `record_type` is one of: milestone, accomplishment, risk, escalation,
-      ticket, metric, health — and was requested for this unit.
-- [ ] `account` is the account's id or one of its aliases.
+      ticket, metric, health, action_item, engagement — and was requested
+      for this unit.
+- [ ] `account` is the account's id or one of its aliases; `tenant` (if
+      used) is the tenant's id or one of its aliases, scoped to that
+      account — and is **never** a guess at creating or promoting one.
 - [ ] `project` is present for milestone and accomplishment, and matches a
-      listed project name or id.
+      listed project name or id. `type` is present (and one of
+      `call`/`check_in`/`qbr`/`ebr`/`note`) for every `engagement`.
 - [ ] Required `data` fields are present (see `reference/record-types.md`); no
-      fields the type doesn't accept.
+      fields the type doesn't accept. `action_item.owner` (if any) is the
+      name as stated, not a guess at which profile it resolves to.
 - [ ] Enum values come from `allowed_values` when the context provides them.
 - [ ] Dates are ISO (`YYYY-MM-DD`; periods are the first of the month for
       monthly items).
 - [ ] `source_ref` follows the pattern table and is stable.
 - [ ] `evidence.excerpt` is verbatim from the source, ≤ 280 characters, with no
-      secrets.
+      secrets. Never sourced from a credentials/login-details document.
 - [ ] `confidence` ≥ 0.5 (otherwise moved to `skipped`).
+- [ ] Any `httprequest` call used only `GET` (Zendesk) or a GraphQL `query`,
+      never a `mutation` (Fireflies).
 - [ ] At most 200 records per payload.

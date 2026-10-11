@@ -22,7 +22,11 @@
 // only ever touch the caller's own org / own customer type, never super-admins.
 
 import { createClient, type SupabaseClient } from 'jsr:@supabase/supabase-js@2'
-import { TARGET_TABLE, REQUIRED_FIELDS, NEEDS_PROJECT, filterKnownFields, resolveProject, decideAndFile, type DecideCtx } from '../_shared/dedupe.ts'
+import { TARGET_TABLE, REQUIRED_FIELDS, NEEDS_PROJECT, filterKnownFields, resolveProject, resolveOwner, decideAndFile, type DecideCtx } from '../_shared/dedupe.ts'
+
+const ACTION_ITEM_PRIORITIES = ['p0', 'high', 'medium', 'low']
+const ACTION_ITEM_STATUSES = ['open', 'in_progress', 'blocked', 'done']
+const ENGAGEMENT_TYPES = ['call', 'check_in', 'qbr', 'ebr', 'note']
 
 const INTERNAL_ORG_ID = '00000000-0000-0000-0000-000000000001'
 
@@ -488,7 +492,7 @@ async function resolveAccountProposal(caller: Caller, body: Record<string, unkno
   const { data: held } = await svc.from('proposals').select('*').eq('blocked_by_resolution_id', resolutionId).eq('status', 'held')
   let releasedCount = 0
   for (const h of held ?? []) {
-    const heldPayload = h.payload as { recordType: string; rawData: Record<string, unknown>; rawProjectRef?: string | null; rawTenantRef?: string | null }
+    const heldPayload = h.payload as { recordType: string; rawData: Record<string, unknown>; rawProjectRef?: string | null; rawTenantRef?: string | null; rawType?: string | null }
     const recordType = heldPayload.recordType
     const targetTable = TARGET_TABLE[recordType]
     const { data, stripped } = filterKnownFields(recordType, heldPayload.rawData ?? {})
@@ -499,6 +503,42 @@ async function resolveAccountProposal(caller: Caller, body: Record<string, unkno
     }
     if (missingField) {
       await svc.from('proposals').update({ status: 'rejected', decided_by: caller.id, decided_at: new Date().toISOString(), reason: `missing required field: ${missingField}` }).eq('id', h.id)
+      continue
+    }
+
+    // Same per-type validation `ingest` runs for a fresh sighting — a held
+    // record skipped it originally (the account wasn't known yet), so it
+    // has to happen here instead, not be silently skipped forever.
+    let rejectReason: string | null = null
+    if (recordType === 'metric') {
+      const { data: def } = await svc.from('metric_definitions').select('key').eq('key', data.metric_key as string).maybeSingle()
+      if (!def) rejectReason = 'unknown metric_key'
+      else if (Number.isNaN(new Date(data.period as string).getTime())) rejectReason = 'invalid period'
+    } else if (recordType === 'health' && !['active', 'caution', 'risk'].includes(String(data.health).toLowerCase())) {
+      rejectReason = 'invalid health value'
+    } else if (recordType === 'action_item') {
+      const owner = await resolveOwner(svc, heldPayload.rawData?.owner as string | undefined)
+      if (owner) {
+        if (owner.profileId) data.owner_profile_id = owner.profileId
+        else data.owner_text = owner.text
+      }
+      if (data.priority) {
+        const p = String(data.priority).toLowerCase()
+        if (!ACTION_ITEM_PRIORITIES.includes(p)) rejectReason = 'invalid priority value'
+        else data.priority = p
+      }
+      if (!rejectReason && data.status) {
+        const s = String(data.status).toLowerCase()
+        if (!ACTION_ITEM_STATUSES.includes(s)) rejectReason = 'invalid status value'
+        else data.status = s
+      }
+    } else if (recordType === 'engagement') {
+      const type = String(heldPayload.rawType ?? '').toLowerCase()
+      if (!ENGAGEMENT_TYPES.includes(type)) rejectReason = 'type is required and must be one of: ' + ENGAGEMENT_TYPES.join(', ')
+      else data.type = type
+    }
+    if (rejectReason) {
+      await svc.from('proposals').update({ status: 'rejected', decided_by: caller.id, decided_at: new Date().toISOString(), reason: rejectReason }).eq('id', h.id)
       continue
     }
 

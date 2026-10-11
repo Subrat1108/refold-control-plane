@@ -11,14 +11,22 @@ enums): `milestone_status` — `not_started`/`in_progress`/`done`/`at_risk`;
 `escalation_status` — `open`/`in_progress`/`resolved`/`closed`; `severity`
 (shared by risk and escalation) — `low`/`medium`/`high`/`critical`;
 `ticket_status` — `open`/`pending`/`resolved`/`closed`; `ticket_priority` —
-`p1`/`p2`/`p3`/`p4`; `health` — `active`/`caution`/`risk`.
+`p1`/`p2`/`p3`/`p4`; `health` — `active`/`caution`/`risk`;
+`action_item_priority` — `p0`/`high`/`medium`/`low`; `action_item_status`
+(the sync-relevant subset — standups also uses `open`/`done` internally,
+unrelated) — `open`/`in_progress`/`blocked`/`done`.
 
-**Known gap affecting every Slack-sourced type below** (escalation, risk,
-milestone, accomplishment, health) — see `reference/tool-map.md` §Connected
-apps: as of 2026-10-10 the CS Hub's Slack connection is not a member of any
-channel, so channel-history reads return nothing (`not_in_channel`) until
-someone invites it into the channels this skill needs to read. Treat an
-empty channel-history result as "can't read this channel yet," not as "no
+**Known gap, as of 2026-10-11** (see `reference/tool-map.md` §Connected
+apps and `docs/refold-mcp.md`'s Slack connector addendum): Slack is still
+connected as a **bot**, not a user — channel-history reads still return
+`not_in_channel` and `search_messages` still fails
+(`not_allowed_token_type`) until that's switched. Confirmed this session
+that Refold's Slack connector *does* support a user token (and a custom
+app with its own scopes), but re-authorizing is a separate, not-yet-done
+step — and even once done, Refold's *current default app*'s scopes don't
+include `search:read`, so `search_messages` specifically needs a custom
+app with that scope added, not just a user-token re-auth. Treat an empty
+channel-history result as "can't read this channel yet," not as "no
 activity" — don't let it suppress a `health` reassessment that would
 otherwise fire.
 
@@ -54,11 +62,15 @@ CS Hub MCP server (`reference/tool-map.md`).
 - `operation: delete` only if the ticket was deleted in the source system
   (rare). Closed tickets are an update to `status`, never a delete.
 - Confidence 0.95.
-- **Known gap (`reference/tool-map.md` §Connected apps):** Zendesk's only
-  resolvable action today is `get_ticket_by_id` — there is no list/search
-  action, so "every ticket updated since `since`" has no direct source yet.
-  Until that's added (or another signal supplies ticket ids), skip this
-  record type rather than guessing.
+- **Discovery (`reference/tool-map.md` §Connected apps):** Zendesk has no
+  native list/search action — `get_ticket_by_id` only. Tickets updated
+  since the watermark are fetched via the `httprequest` action running a
+  **read-only `GET`** against Zendesk's own `/api/v2/search.json` (or
+  `tickets/{id}`, or the incremental export endpoint) — confirmed as a
+  working mechanism for Fireflies, expected to work the same way for
+  Zendesk once it's connected (not yet verified live — Zendesk isn't
+  connected to test against). Still blocked until that connection exists;
+  skip this record type rather than guessing in the meantime.
 
 ## escalation → `escalations`
 
@@ -175,3 +187,50 @@ Rubric:
 - Confidence: 0.6–0.8 (it's interpretation); 0.85+ only when the customer says
   it outright.
 - `delete` is never valid for health.
+
+## action_item → `action_items`
+
+**Signals:** a concrete, assignable task someone committed to — "I'll send
+the SOC2 doc by Friday," a Fireflies transcript's own action-items list, a
+Slack thread ending in "can you do X."
+
+| Field | Required | Mapping |
+|---|---|---|
+| `description` | yes | The task, one line, specific enough to act on without the source. |
+| `owner` | no | Name as it appears in the source (e.g. "Divyansh" or a "/"-joined list of several names if that's genuinely how it was said) — resolved server-side against profile names; never pick one person out of a joined list yourself. |
+| `priority` | no | `p0`/`high`/`medium`/`low` — normalize any source casing ("P0", "High") to this. |
+| `due_date` | no | ISO date, if a deadline was actually stated — never invent one. |
+| `status` | no | `open` when first captured; `in_progress`/`blocked`/`done` only when the source says so later (reuse the original `source_ref` for that update, don't create a new item). |
+| *(record-level)* `project` | no | If the task is clearly about one project. |
+
+- `source_ref`: a stable id from the source — `fireflies:<transcript
+  id>#<n>` (the transcript's own action-item index) or
+  `slack:<channel id>/<root message ts>`.
+- Confidence 0.9+ when read directly from a transcript's own action-items
+  list or a ticket; 0.6–0.8 for one inferred from conversational commitment
+  language.
+- A blocker someone raises in a standup context (product-overview.md §5.7's
+  "blocker → ask/action item") is the same shape — this skill doesn't touch
+  standups directly, but a transcript/Slack-sourced equivalent is this type.
+
+## engagement → `engagements`
+
+**Signals:** a meeting, call, or structured touchpoint actually happened —
+not a scheduled-but-not-yet-held one.
+
+| Field | Required | Mapping |
+|---|---|---|
+| *(record-level)* `type` | **yes** | `call`/`check_in`/`qbr`/`ebr`/`note` — the kind of engagement, not part of `data`. |
+| `engagement_date` | yes | The date it happened (`YYYY-MM-DD`). |
+| `summary` | yes | What was covered/decided, from the transcript's own summary — never the raw verbatim transcript. |
+| `attendees` | no | Names as they appear in the source (meeting participants, email thread, Slack thread). |
+| `follow_ups` | no | Open items from the meeting that aren't already captured as a separate `action_item`. |
+
+- `source_ref`: `fireflies:<transcript id>` for a Fireflies-sourced
+  engagement; an email Message-ID or Slack ref otherwise.
+- Confidence 0.9+ — this is deterministic (a meeting either happened and
+  was transcribed, or it didn't), not interpretation.
+- Extract decisions/risks/commitments mentioned in the summary as their
+  own `milestone`/`risk`/`action_item` records too, each with their own
+  `source_ref` — don't let a decision only live inside an engagement's
+  `summary` text where it's not separately actionable.

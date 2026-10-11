@@ -29,6 +29,8 @@ export const TARGET_TABLE: Record<string, string> = {
   ticket: 'tickets',
   metric: 'metric_values',
   health: 'organizations',
+  action_item: 'action_items',
+  engagement: 'engagements',
 }
 export const KNOWN_FIELDS: Record<string, string[]> = {
   milestone: ['period', 'description', 'status'],
@@ -38,6 +40,16 @@ export const KNOWN_FIELDS: Record<string, string[]> = {
   ticket: ['external_key', 'title', 'priority', 'status', 'url', 'system'],
   metric: ['metric_key', 'period', 'value', 'baseline_value'],
   health: ['health', 'health_reason'],
+  // 7.5-pre2 Session 4 — field names match the action_items table's own
+  // columns directly, same convention as every other type (valuesEqual
+  // compares `data`'s keys against the real row's column names verbatim,
+  // so a field name that doesn't match a column would never dedupe —
+  // always look "changed" even when nothing is). owner_profile_id/
+  // owner_text are resolved server-side from the caller's `owner` string
+  // (ingest's resolveOwner) before this filtering ever runs — never sent
+  // by the caller directly.
+  action_item: ['description', 'owner_profile_id', 'owner_text', 'priority', 'due_date', 'status'],
+  engagement: ['engagement_date', 'attendees', 'summary', 'follow_ups'],
 }
 export const REQUIRED_FIELDS: Record<string, string[]> = {
   milestone: ['period', 'description'],
@@ -47,6 +59,8 @@ export const REQUIRED_FIELDS: Record<string, string[]> = {
   ticket: ['external_key', 'title', 'system'],
   metric: ['metric_key', 'period', 'value'],
   health: ['health'],
+  action_item: ['description'],
+  engagement: ['engagement_date', 'summary'],
 }
 export const NEEDS_PROJECT: Record<string, 'required' | 'optional' | 'none'> = {
   milestone: 'required',
@@ -56,6 +70,8 @@ export const NEEDS_PROJECT: Record<string, 'required' | 'optional' | 'none'> = {
   ticket: 'none',
   metric: 'optional',
   health: 'none',
+  action_item: 'optional',
+  engagement: 'none',
 }
 
 // Filters `rawData` down to the known fields for `recordType`, returning
@@ -97,13 +113,30 @@ export async function resolveTenant(svc: SupabaseClient, orgId: string, ref: str
   return data ? { id: data.tenant_id as string } : null
 }
 
+// action_item's `owner` is a caller claim, resolved the same spirit as
+// account/tenant matching — exact only, never a fuzzy guess between two
+// same-named people. profiles aren't org-scoped, so this isn't scoped to
+// orgId either. Returns exactly one of {profileId, text}, never both —
+// apply_proposal()'s action_items branch relies on that to know whether
+// `owner` was sent at all this call.
+export async function resolveOwner(svc: SupabaseClient, ownerRaw: string | undefined): Promise<{ profileId: string | null; text: string | null } | null> {
+  if (!ownerRaw) return null
+  const trimmed = ownerRaw.trim()
+  if (!trimmed) return null
+  // .limit(2), not .maybeSingle() — two people sharing a name must fall
+  // back to text too, not throw or pick one arbitrarily.
+  const { data } = await svc.from('profiles').select('id').ilike('full_name', trimmed).limit(2)
+  if (data && data.length === 1) return { profileId: data[0].id as string, text: null }
+  return { profileId: null, text: trimmed }
+}
+
 // ── normalized equality — compares ONLY the fields the caller actually
 // sent (an omitted field is never "changed"), after normalizing dates to
 // ISO, numbers via coercion, strings via trim, enums via lowercase. Without
 // this, a daily sync run files a false proposed_update for every unchanged
 // ticket just because a date arrived in a different (but equal) format. ──
 
-const DATE_FIELDS = new Set(['period', 'due_date'])
+const DATE_FIELDS = new Set(['period', 'due_date', 'engagement_date'])
 const NUMBER_FIELDS = new Set(['value', 'baseline_value'])
 const ENUM_FIELDS = new Set(['health', 'status', 'severity', 'priority'])
 
@@ -116,6 +149,11 @@ export function normalizeValue(key: string, value: unknown): unknown {
   if (NUMBER_FIELDS.has(key)) return Number(value)
   if (ENUM_FIELDS.has(key)) return String(value).trim().toLowerCase()
   if (typeof value === 'string') return value.trim()
+  // Arrays (e.g. engagement.attendees) compare by reference otherwise —
+  // two freshly-parsed JSON arrays with identical contents are never
+  // `===`, which would make every resend look "changed." Order-independent
+  // (a source re-listing attendees in a different order isn't a change).
+  if (Array.isArray(value)) return JSON.stringify([...value].map((v) => String(v).trim()).sort())
   return value
 }
 

@@ -124,6 +124,48 @@ Confirmed this session: metrics have no deterministic source yet because no
 Refold workflow exists in this org, not because of anything about this
 endpoint.
 
+## Slack connector addendum (7.5-pre2 Session 4, 2026-10-11)
+
+Read-only discovery for the Head of CS's new Slack app, via Refold's
+public API — no write actions taken, nothing in the org was changed.
+
+- **User-token OAuth is genuinely supported, not just schema-possible.**
+  `GET /api/v2/public/auth-structure/slack` (unauthenticated) shows the
+  `oauth2` field shape: `bot_token`, **`workspace_token`**, `client_id`,
+  `client_secret`, an optional `callback_url` — `workspace_token` is the
+  user-level credential alongside the bot one.
+- **Confirmed live**, not just from the schema: `GET /api/v2/public/
+  linked-account/integration/oauth-url/slack` (read-only — it only builds
+  a URL, same mechanism as `EXECUTE_ACTION`'s underlying REST path but for
+  OAuth) returned the real Slack authorize URL Refold's current default
+  app would redirect through, and it carries a populated `user_scope`
+  parameter alongside the bot `scope` one — the user-token path is live
+  and wired today, for whichever Slack app is connected.
+- **The exact OAuth redirect URI Refold uses:** extracted from that same
+  authorize URL's own `redirect_uri` query parameter —
+  `https://api.gocobalt.io/api/v1/slack/callback` ("Cobalt" was Refold's
+  product name before the Refold rebrand; this is the platform's one
+  fixed OAuth callback, independent of which Slack app initiates the
+  flow). **This is the URL to register as a Redirect URL** in the new
+  Slack app's OAuth & Permissions page.
+- **Bringing a custom Slack app (your own client id/secret) is supported**
+  via the "Auth Profiles" API: `POST /api/v2/public/auth-profile/slack`
+  with `{name, product, auth_type: "oauth2", oauth2: {client_id,
+  client_secret, scopes, grant_type}}` registers an org-level credential
+  set Refold's connect flow then uses instead of its own default app. Not
+  exercised live this session (creating one is a real write against the
+  org's config, outside "read-only discovery").
+- **The one real gap even after re-authorizing:** Refold's *current
+  default app*'s scope lists (both the `scope` and `user_scope` seen in
+  the live authorize URL above) do **not** include `search:read`. Simply
+  re-authorizing Slack as a user under the existing default app will fix
+  channel reads (a user token isn't restricted to channels a bot was
+  separately invited to) but will **not** fix `search_messages` — that
+  specifically needs a custom Auth Profile whose requested scopes
+  explicitly add `search:read`. Worth knowing before assuming "re-auth as
+  a user" alone closes both gaps from 7.5-pre's findings — it only closes
+  one of the two.
+
 ## Not yet implemented / parked
 
 See `docs/decisions.md`'s Parked list: rotating the Refold API key (per the

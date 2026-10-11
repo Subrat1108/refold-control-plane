@@ -33,9 +33,14 @@ import {
   filterKnownFields,
   resolveProject,
   resolveTenant,
+  resolveOwner,
   decideAndFile,
   type DecideCtx,
 } from '../_shared/dedupe.ts'
+
+const ACTION_ITEM_PRIORITIES = ['p0', 'high', 'medium', 'low']
+const ACTION_ITEM_STATUSES = ['open', 'in_progress', 'blocked', 'done']
+const ENGAGEMENT_TYPES = ['call', 'check_in', 'qbr', 'ebr', 'note']
 
 const SUPABASE_URL = Deno.env.get('SUPABASE_URL')!
 const SERVICE_ROLE_KEY = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!
@@ -251,7 +256,7 @@ async function processRecord(svc: SupabaseClient, record: Record<string, unknown
       orgId: null,
       targetTable,
       operation: operation as 'create' | 'update' | 'delete',
-      payload: { recordType, rawData: record.data ?? {}, rawTenantRef: record.tenant ?? null, rawProjectRef: record.project ?? null },
+      payload: { recordType, rawData: record.data ?? {}, rawTenantRef: record.tenant ?? null, rawProjectRef: record.project ?? null, rawType: record.type ?? null },
       sourceRef,
       evidenceUrl,
       evidenceExcerpt,
@@ -272,7 +277,7 @@ async function processRecord(svc: SupabaseClient, record: Record<string, unknown
         orgId: org.id,
         targetTable,
         operation: operation as 'create' | 'update' | 'delete',
-        payload: { recordType, rawData: record.data ?? {}, rawProjectRef: record.project ?? null },
+        payload: { recordType, rawData: record.data ?? {}, rawProjectRef: record.project ?? null, rawType: record.type ?? null },
         sourceRef,
         evidenceUrl,
         evidenceExcerpt,
@@ -302,8 +307,9 @@ async function processRecord(svc: SupabaseClient, record: Record<string, unknown
     return await decideAndFile(svc, { recordType, targetTable, orgId: org.id, operation: 'delete', data: {}, sourceRef, evidenceUrl, evidenceExcerpt, confidence }, ctxForDedupe)
   }
 
+  const rawData = (record.data ?? {}) as Record<string, unknown>
   const required = REQUIRED_FIELDS[recordType]
-  const { data, stripped } = filterKnownFields(recordType, (record.data ?? {}) as Record<string, unknown>)
+  const { data, stripped } = filterKnownFields(recordType, rawData)
   for (const field of required) {
     if (data[field] === undefined || data[field] === null || data[field] === '') return reject(`missing required field: ${field}`)
   }
@@ -314,6 +320,33 @@ async function processRecord(svc: SupabaseClient, record: Record<string, unknown
   }
   if (recordType === 'health' && !['active', 'caution', 'risk'].includes(String(data.health).toLowerCase())) {
     return reject('invalid health value')
+  }
+  if (recordType === 'action_item') {
+    // `owner` isn't in KNOWN_FIELDS (it's resolved, not stored as-is) — read
+    // it from rawData, before filterKnownFields stripped it.
+    const owner = await resolveOwner(svc, rawData.owner as string | undefined)
+    if (owner) {
+      if (owner.profileId) data.owner_profile_id = owner.profileId
+      else data.owner_text = owner.text
+    }
+    if (data.priority) {
+      const p = String(data.priority).toLowerCase()
+      if (!ACTION_ITEM_PRIORITIES.includes(p)) return reject('invalid priority value')
+      data.priority = p
+    }
+    if (data.status) {
+      const s = String(data.status).toLowerCase()
+      if (!ACTION_ITEM_STATUSES.includes(s)) return reject('invalid status value')
+      data.status = s
+    }
+  }
+  if (recordType === 'engagement') {
+    // `type` is record-level (like `project`/`tenant`), not in KNOWN_FIELDS,
+    // so it survives filterKnownFields's stripping only via this explicit
+    // merge — required here, not in REQUIRED_FIELDS, for the same reason.
+    const type = String(record.type ?? '').toLowerCase()
+    if (!ENGAGEMENT_TYPES.includes(type)) return reject('type is required and must be one of: ' + ENGAGEMENT_TYPES.join(', '))
+    data.type = type
   }
   if (projectId) data.project_id = projectId
   if (tenantId) data.tenant_id = tenantId

@@ -723,3 +723,68 @@ begin
 
   raise notice 'ALL ACCOUNT RESOLUTION RLS TESTS PASSED';
 end $$;
+
+-- ── CS-sync record types: action_items + engagements (7.5-pre2 Session 4) ──
+-- action_items' new columns (project_id/tenant_id/priority/owner_text/
+-- source/source_ref/updated_by/verified_at/proposal_id) and its new DELETE
+-- policy are additive onto the existing standups-era RLS shape (checked
+-- above at line ~563) — confirms they don't weaken it: same super-admin-
+-- under-AAL2 read/write/delete, customer roles still 0 rows, and the new
+-- (org_id, source_ref) dedupe index rejects a real duplicate. engagements
+-- (7.1 table, newly wired to apply_proposal() this session, no schema
+-- change) gets the same standard shape check since it was never
+-- individually asserted before.
+do $$
+declare
+  n int;
+  v_item_id uuid;
+begin
+  set local role authenticated;
+  set local request.jwt.claims = '{"sub":"00000000-0000-0000-0000-000000001001","aal":"aal2"}';
+
+  insert into public.action_items (org_id, tenant_id, description, priority, owner_text, source, source_ref)
+    values ('00000000-0000-0000-0000-000000000002', null, 'rls test synced action item', 'high', 'Someone Else', 'agent', 'rls-test:action-item:1')
+    returning id into v_item_id;
+  select count(*) into n from public.action_items where id = v_item_id;
+  assert n = 1, 'a super admin must be able to read a CS-sync action_item with the new columns';
+
+  -- The new (org_id, source_ref) dedupe index rejects a real duplicate.
+  begin
+    insert into public.action_items (org_id, description, source, source_ref)
+      values ('00000000-0000-0000-0000-000000000002', 'duplicate', 'agent', 'rls-test:action-item:1');
+    assert false, 'a duplicate (org_id, source_ref) must be rejected by the new dedupe index';
+  exception when unique_violation then
+    null; -- expected
+  end;
+
+  -- The new DELETE policy (every other record table already has one;
+  -- action_items only ever got insert/select/update from standups).
+  delete from public.action_items where id = v_item_id;
+  select count(*) into n from public.action_items where id = v_item_id;
+  assert n = 0, 'a super admin must be able to delete an action_item via the new action_items_delete policy';
+  select count(*) into n from public.audit_log where record_table = 'action_items' and record_id = v_item_id and action = 'delete';
+  assert n > 0, 'deleting an action_item must still be audited (generic trigger, unaffected by the new policy)';
+
+  -- engagements (7.1 table, newly wired to apply_proposal() this session) —
+  -- same standard shape, not previously asserted on its own.
+  insert into public.engagements (org_id, type, engagement_date, summary, source, source_ref)
+    values ('00000000-0000-0000-0000-000000000002', 'call', current_date, 'rls test engagement', 'agent', 'rls-test:engagement:1');
+  select count(*) into n from public.engagements where source_ref = 'rls-test:engagement:1';
+  assert n = 1, 'a super admin must be able to read/write an engagement';
+  reset role;
+
+  -- Customer roles see 0 rows across both.
+  set local role authenticated;
+  set local request.jwt.claims = '{"sub":"00000000-0000-0000-0000-000000001002","aal":"aal2"}'; -- Prism owner
+  select count(*) into n from public.action_items where source_ref = 'rls-test:action-item:1'; assert n = 0, format('Prism owner must see 0 of this action_item, saw %s', n);
+  select count(*) into n from public.engagements where source_ref = 'rls-test:engagement:1'; assert n = 0, format('Prism owner must see 0 of this engagement, saw %s', n);
+  reset role;
+
+  set local role authenticated;
+  set local request.jwt.claims = '{"sub":"00000000-0000-0000-0000-000000001003","aal":"aal2"}'; -- Meridian owner
+  select count(*) into n from public.action_items where source_ref = 'rls-test:action-item:1'; assert n = 0, format('Meridian owner must see 0 of this action_item, saw %s', n);
+  select count(*) into n from public.engagements where source_ref = 'rls-test:engagement:1'; assert n = 0, format('Meridian owner must see 0 of this engagement, saw %s', n);
+  reset role;
+
+  raise notice 'ALL CS-SYNC ACTION_ITEMS/ENGAGEMENTS RLS TESTS PASSED';
+end $$;

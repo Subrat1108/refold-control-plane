@@ -94,11 +94,12 @@ dropped rather than assuming it stuck.
 
 | Field | Required | Notes |
 |---|---|---|
-| `record_type` | yes | One of `milestone`, `accomplishment`, `risk`, `escalation`, `ticket`, `metric`, `health`. |
+| `record_type` | yes | One of `milestone`, `accomplishment`, `risk`, `escalation`, `ticket`, `metric`, `health`, `action_item`, `engagement`. |
 | `operation` | yes | `create` \| `update` \| `delete`. The server decides the actual create-vs-update outcome itself (see Upsert semantics) — this is advisory for everything except `delete`, which is handled specially. |
 | `account` | yes | An account id (UUID) or a structured `account_sources` identifier (Slack channel id, email domain, Zendesk org id, Fireflies hint, or name variant). Unresolvable → `rejected_invalid`. |
 | `tenant` | no | An end-customer/program/sub-account under the account (e.g. a platform customer's bank program) — id or a structured identifier, scoped to this account. A tenant is never an account; the caller reports one it already knows about, it's never created here. Unresolvable → `rejected_invalid` ("unknown tenant"). |
-| `project` | depends | An id or exact project name within the account. Required for `milestone`/`accomplishment`; optional for `risk`/`escalation`/`metric`; not used for `ticket`/`health`. |
+| `project` | depends | An id or exact project name within the account. Required for `milestone`/`accomplishment`; optional for `risk`/`escalation`/`metric`/`action_item`; not used for `ticket`/`health`/`engagement`. |
+| `type` | depends | Required for `engagement` only: `call` \| `check_in` \| `qbr` \| `ebr` \| `note`. Unused otherwise. |
 | `source_ref` | strongly recommended | An opaque, caller-chosen key identifying this fact in its source system (e.g. `zendesk:SUP-4821`, `slack:C123/1727.0012`). Drives all dedupe/upsert behavior — omit it and every post creates a new `create` proposal with no merge. |
 | `observed_at` | no | Informational timestamp; not currently validated or stored separately from `data`. |
 | `data` | yes | Record-type-specific fields — see table below. Unknown keys are stripped, not fatal (see Limits). |
@@ -116,6 +117,15 @@ dropped rather than assuming it stuck.
 | `ticket` | `tickets` | `external_key`, `title`, `system` | `priority`, `status`, `url` |
 | `metric` | `metric_values` | `metric_key`, `period`, `value` | `baseline_value` |
 | `health` | `organizations` (the account row itself) | `health` | `health_reason` |
+| `action_item` | `action_items` | `description` | `owner` (free text — resolved server-side, see below), `priority`, `due_date`, `status` |
+| `engagement` | `engagements` | `engagement_date`, `summary` | `attendees`, `follow_ups` |
+
+`action_item.data.owner` is a caller *claim*, resolved server-side against
+`profiles.full_name` — an exact, case-insensitive match (never a fuzzy
+guess between two same-named people) sets the real `owner_profile_id`;
+anything else is stored verbatim as free text. `priority` is one of
+`p0`/`high`/`medium`/`low`; `status` is one of `open`/`in_progress`/
+`blocked`/`done` (case-insensitive on input, normalized to lowercase).
 
 This is exactly the allow-list `apply_proposal()` (7.3) already recognizes
 for each target table — anything this endpoint proposes is guaranteed
