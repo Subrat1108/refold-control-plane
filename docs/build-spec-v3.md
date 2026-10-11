@@ -252,27 +252,41 @@ trigger attached.
   (`cloud` | `onprem_managed` | `onprem_airgapped`), `health`
   (`active` | `caution` | `risk`), `lifecycle_stage`
   (`prospect` | `poc` | `onboarding` | `live` | `expansion` | `renewal` |
-  `churned`), `data_access_mode` (`api` | `manual` | `mixed`),
-  `aliases text[]`. **`owner_profile_id` retired** (equal-admins model,
+  `churned` | `dormant`), `data_access_mode` (`api` | `manual` | `mixed`),
+  `aliases text[]` (**superseded for matching by `account_sources`** — 7.5-
+  pre2 Session 1; kept, not dropped, but new code resolves accounts/tenants
+  from `account_sources` instead). "Unverified" is `verified_at is null`,
+  not a `lifecycle_stage` value — no new enum needed for it.
+  **`owner_profile_id` retired** (equal-admins model,
   superseding 7.2a's derivation design) — the account's EDL is read live
   from its active `account_roles` rows (§5 "People and account roles"), not
   stored on the organizations row.
+- `tenants` (7.5-pre2 Session 1): org, name. An end-customer/program/sub-
+  account under one account (e.g. a platform customer's bank program) —
+  never an account itself; the sync agent can never create or promote one
+  (§4.3's `account_resolution` proposal kind handles that, human-decided).
+- `account_sources` (7.5-pre2 Session 1): org, tenant? (null = account-
+  level), source_type (`slack_channel` | `email_domain` | `zendesk_org_id` |
+  `fireflies_hint` | `name_variant`), value, notes — the structured, exact-
+  match lookup the ingest function resolves accounts/tenants against,
+  editable in Account 360. Unique per `(source_type, value)`.
 - `projects`: org, name, release_no, start / go-live / expected-end dates,
   health (`completed` | `on_schedule` | `caution` | `at_risk`), live_tenants,
   dev_uat_tenants, goals text[], fdes text[], edl_profile_id,
-  issue_tracker_url.
+  issue_tracker_url, tenant_id? (7.5-pre2 Session 1).
 - `milestones` (project, period/date, description, status), `accomplishments`
   (project, period, text), `risks` (project?, risk, impact, mitigation,
-  severity, status, owner), `asks` (project?, text, owner, status).
+  severity, status, owner), `asks` (project?, text, owner, status) — each
+  also gains an optional `tenant_id` (7.5-pre2 Session 1).
 - `escalations`: org, project?, title, severity, raised_by, raised_at, status,
-  resolution.
+  resolution, tenant_id? (7.5-pre2 Session 1).
 - `tickets`: org, external_key, title, priority, status, opened_at, updated_at,
-  url, system.
+  url, system, tenant_id? (7.5-pre2 Session 1).
 - `engagements` (touchpoints): org, type (call / check-in / qbr / ebr / note),
-  date, attendees, summary, follow-ups.
+  date, attendees, summary, follow-ups, tenant_id? (7.5-pre2 Session 1).
 - `metric_definitions` (key, label, unit, category, has_baseline) — seeded with
   §2.2 (generic, safe to commit); `metric_values` (org, project?, metric_key,
-  period, value, baseline_value).
+  period, value, baseline_value, tenant_id? — 7.5-pre2 Session 1).
 - `portfolio_notes`: period, kind (milestone / recommendation), text, impact.
 - `proposals`: target_table, target_id (null on create), operation, payload,
   source, source_ref, evidence_url, evidence_excerpt, confidence,

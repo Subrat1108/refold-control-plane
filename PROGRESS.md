@@ -42,7 +42,7 @@
 - [x] Equal admins — people simplification (Part 1): `account_roles` (per-account role tag, record-keeping, history) replaces titles/teams/account_assignments/owner_profile_id; `reports_to` (optional, UX-only, cycle-checked); rewritten scope helpers; People directory screen; Portfolio/Account 360 "Add to my accounts"/"Leave account"; nav reorder + collapsed Admin group (D-081–D-086)
 - [x] Home + Standups + People activity (Parts 2–4): Home (personal "my day" — my accounts, needs attention, my reports, recent activity, all scoped); Standups (anyone hosts, standups/standup_entries/action_items, host-can-edit-any RLS, remembered participant set via saved_views, deterministic "since last standup" draft, live mode, blocker→ask/action-item); People activity (role history, recent activity, open action items, recent standup entries on the existing People directory) (D-087–D-090). Performance indexes/KPIs stay deferred — the data they need (account_roles history, project_members, audit actor, approvals, standups) is confirmed fully captured.
 - [x] 7.4 — Ingest API: `ingest_tokens` table (select super-admin-only, no client insert/update), `create_ingest_token`/`revoke_ingest_token` provisioning actions, new `ingest` Edge Function (bearer-token auth, verify_jwt disabled, upsert/dedupe decision tree, race-safe via partial unique index), Ingest Tokens admin screen
-- [ ] 7.5 — CS Sync Skill + runner + Refresh (was 6.5). **7.5-pre done** (D-097–D-099): Refold MCP connection confirmed and the `cs-sync` skill finalized against the real server (`skills/cs-sync/`, `docs/refold-mcp.md`) — connected live, confirmed the agent-mode `RESOLVE_ACTIONS`/`EXECUTE_ACTION` contract, real action IDs/schema enums filled in, health-dedupe tested against local ingest. Four real connection/app-admin gaps found (not code issues): Zendesk/Gmail not connected for the `cs-hub` linked account, Slack's bot is not in any channel, `search_messages` is structurally unavailable (bot vs. user token), and zero Refold workflows exist (blocks `metric` entirely). The runner itself (7.5 proper) is still not started — waiting on a go-ahead for the proposed plan in devlog.
+- [ ] 7.5 — CS Sync Skill + runner + Refresh (was 6.5). **7.5-pre done** (D-097–D-099): Refold MCP connection confirmed and the `cs-sync` skill finalized against the real server (`skills/cs-sync/`, `docs/refold-mcp.md`) — connected live, confirmed the agent-mode `RESOLVE_ACTIONS`/`EXECUTE_ACTION` contract, real action IDs/schema enums filled in, health-dedupe tested against local ingest. Four real connection/app-admin gaps found (not code issues): Zendesk/Gmail not connected for the `cs-hub` linked account, Slack's bot is not in any channel, `search_messages` is structurally unavailable (bot vs. user token), and zero Refold workflows exist (blocks `metric` entirely). **7.5-pre2 Session 1 of 6 done** (D-100–D-103): accounts/tenants are the only truth — `tenants` + `account_sources` tables (supersede `aliases` for matching), `dormant` lifecycle value, `tenant_id` on 9 record tables, `apply_proposal()`/`ingest` updated, Account 360 sources panel. Sessions 2–6 (account-match-needed/held records, learning loop, skill realignment + new record types, the runner itself, context-store bootstrap) remain per the plan, built only as approved session-by-session.
 - [ ] 7.6 — Ask the Hub (chat agent)
 - [ ] 7.7 — Reports (monthly status, EBR, QBR — was 6.6)
 - [ ] 7.8 — Air-gapped import
@@ -75,6 +75,52 @@ Points, streaks, badges, team leaderboards — computed from the audit log + pro
 
 ## Last session
 (See docs/devlog.md for full session history — this is just the pointer.)
+
+Date: 2026-10-11
+Completed: 7.5-pre2 Session 1 of 6 — accounts & tenants are the only
+truth. Plan first (a 6-session split, approved after 4 clarifying
+questions) derived from two local confidential sources (never committed):
+the real daily-CS-report skill and its context store, surfacing a known
+flaw (the agent invents/duplicates accounts, e.g. treating a program as
+its own account). New `tenants` table (an end-customer/program/sub-account
+under one account — never an account itself) and `account_sources`
+(structured, exact-match Slack-channel/email-domain/Zendesk-org-id/
+Fireflies-hint/name-variant lookups per account and per tenant, editable
+in Account 360) supersede `organizations.aliases` for matching. Checked
+and ruled out reusing `projects` (delivery concept, orthogonal) and the
+on-prem `NamespaceOrg` (frozen-portal mock-data concept, not a real table)
+before adding the new table. `dormant` added as a new `lifecycle_stage`
+value; "unverified" deliberately reuses `verified_at is null` (7.2b),
+no new value. `tenant_id` added to 9 record tables (7 planned +
+engagements/asks, added for consistency); `apply_proposal()` and
+`ingest`'s account/tenant resolution updated to match. Also did this
+session's connector discovery (Refold's full action catalogs for Slack/
+Gmail/Fireflies/Zendesk, independent of what's attached) feeding the
+6-session plan: confirmed Zendesk/Fireflies genuinely have no list/search
+action at all (not an attachment gap), but found and live-confirmed a
+working `httprequest`-based deterministic workaround for Fireflies (date-
+range transcript listing via its GraphQL API, Refold auto-injecting the
+stored credential) — expected to work the same way for Zendesk once
+connected.
+Verified: a throwaway script covering account/tenant resolution (incl.
+scoping — a tenant's identifier must not cross-resolve under a different
+account), dedupe with tenant_id included, and the apply_proposal write-
+through; rls_test.sql new block + all 7 prior green; smoke-login; npm run
+e2e (found and fixed 3 pre-existing latent test bugs unrelated to this
+session's own feature code — EmptyState headings substring-matching their
+page title's exact-match assertion on a truly fresh/empty database for
+Ingest Tokens, Standups, and People — never caught before because e2e had
+apparently never run against a 100% pristine reset); typecheck/lint/build
+green. Found and fixed one real bug in my own work before reporting it:
+the migration's aliases→account_sources backfill runs before local
+fixture aliases are seeded (migrations apply before seeds on `db reset`),
+so it correctly backfills on cloud (where aliases already exist) but
+needed a matching local-fixture insert to work on a fresh local reset too.
+Decisions made: D-100–D-103.
+Known issues: none outstanding from this session's own scope. Sessions
+2–6 of the 7.5-pre2 plan remain, built only as separately approved.
+
+---
 
 Date: 2026-10-10
 Completed: 7.5-pre — Refold MCP discovery + finalized the CS Sync Skill.

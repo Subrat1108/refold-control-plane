@@ -49,6 +49,12 @@ import {
   useMetricValues,
   upsertMetricValue,
   deleteMetricValue,
+  useTenants,
+  createTenant,
+  deleteTenant,
+  useAccountSources,
+  createAccountSource,
+  deleteAccountSource,
 } from '@/hooks'
 import { DataTable, type Column } from '@/components/DataTable'
 import { StatusBadge } from '@/components/StatusBadge'
@@ -63,6 +69,7 @@ import { EmptyState } from '@/components/EmptyState'
 import { formatDate } from '@/utils/formatDate'
 import type {
   Account,
+  AccountSourceType,
   AssignmentRole,
   EngagementType,
   Project,
@@ -313,7 +320,229 @@ function OverviewTab({ account, onChangeHealth, onMarkVerified }: { account: Acc
           </ul>
         )}
       </section>
+
+      <TenantsAndSourcesCard orgId={account.id} />
     </div>
+  )
+}
+
+// ── Tenants & sources (7.5-pre2 Session 1) ──────────────────────────────────
+// The CS Hub is the only source of truth for which Slack channel/email
+// domain/Zendesk org id/Fireflies hint/name variant belongs to this account
+// or one of its tenants — the sync agent resolves against this, it never
+// invents or edits it.
+
+const SOURCE_TYPE_LABELS: Record<AccountSourceType, string> = {
+  slack_channel: 'Slack channel',
+  email_domain: 'Email domain',
+  zendesk_org_id: 'Zendesk org id',
+  fireflies_hint: 'Fireflies hint',
+  name_variant: 'Name variant',
+}
+
+function TenantsAndSourcesCard({ orgId }: { orgId: string }) {
+  const qc = useQueryClient()
+  const { profile } = useSupabaseAuth()
+  const { data: tenants, isLoading: tenantsLoading } = useTenants(orgId)
+  const { data: sources, isLoading: sourcesLoading } = useAccountSources(orgId)
+  const [addTenantOpen, setAddTenantOpen] = useState(false)
+  const [addSourceOpen, setAddSourceOpen] = useState(false)
+
+  const refresh = () => {
+    qc.invalidateQueries({ queryKey: ['tenants', orgId] })
+    qc.invalidateQueries({ queryKey: ['account-sources', orgId] })
+  }
+
+  async function removeTenant(id: string) {
+    if (!confirm('Delete this tenant? Its sources are deleted too; existing records keep their tenant_id as a historical reference.')) return
+    await deleteTenant(id)
+    refresh()
+  }
+
+  async function removeSource(id: string) {
+    await deleteAccountSource(id)
+    refresh()
+  }
+
+  const accountSources = (sources ?? []).filter((s) => s.tenantId === null)
+
+  return (
+    <section className="bg-white rounded-xl shadow-card p-6 space-y-4 md:col-span-2">
+      <div className="flex items-center justify-between">
+        <h2 className="text-sm font-semibold text-foreground">Tenants &amp; sources</h2>
+        <div className="flex gap-3">
+          <button onClick={() => setAddTenantOpen(true)} className="text-xs font-medium text-primary hover:underline">Add tenant</button>
+          <button onClick={() => setAddSourceOpen(true)} className="text-xs font-medium text-primary hover:underline">Add source</button>
+        </div>
+      </div>
+      <p className="text-xs text-muted-foreground">
+        Structured identifiers the ingest API resolves accounts and tenants from — never free text. A tenant is an
+        end-customer/program under this account (e.g. a platform customer's own programs), never an account itself.
+      </p>
+
+      {tenantsLoading || sourcesLoading ? <CardSkeleton /> : (
+        <div className="space-y-3">
+          <div>
+            <h3 className="text-xs font-semibold text-muted-foreground uppercase tracking-wide mb-1.5">Account-level sources</h3>
+            {accountSources.length === 0 ? <p className="text-sm text-muted-foreground">None yet.</p> : (
+              <ul className="space-y-1">
+                {accountSources.map((s) => (
+                  <li key={s.id} className="text-sm flex items-center justify-between gap-2">
+                    <span><span className="text-muted-foreground">{SOURCE_TYPE_LABELS[s.sourceType]}:</span> {s.value}</span>
+                    <Tooltip content="Remove source">
+                      <button onClick={() => removeSource(s.id)} className="p-1 rounded-md hover:bg-muted text-muted-foreground hover:text-red-600"><Trash2 size={14} /></button>
+                    </Tooltip>
+                  </li>
+                ))}
+              </ul>
+            )}
+          </div>
+
+          <div>
+            <h3 className="text-xs font-semibold text-muted-foreground uppercase tracking-wide mb-1.5">Tenants ({(tenants ?? []).length})</h3>
+            {(tenants ?? []).length === 0 ? <p className="text-sm text-muted-foreground">None yet.</p> : (
+              <ul className="space-y-2">
+                {(tenants ?? []).map((t) => (
+                  <li key={t.id} className="border border-border rounded-md p-2.5">
+                    <div className="flex items-center justify-between">
+                      <span className="text-sm font-medium text-foreground">{t.name}</span>
+                      <Tooltip content="Delete tenant">
+                        <button onClick={() => removeTenant(t.id)} className="p-1 rounded-md hover:bg-muted text-muted-foreground hover:text-red-600"><Trash2 size={14} /></button>
+                      </Tooltip>
+                    </div>
+                    {t.notes && <p className="text-xs text-muted-foreground mt-0.5">{t.notes}</p>}
+                    <ul className="mt-1.5 space-y-1">
+                      {(sources ?? []).filter((s) => s.tenantId === t.id).map((s) => (
+                        <li key={s.id} className="text-xs flex items-center justify-between gap-2">
+                          <span><span className="text-muted-foreground">{SOURCE_TYPE_LABELS[s.sourceType]}:</span> {s.value}</span>
+                          <Tooltip content="Remove source">
+                            <button onClick={() => removeSource(s.id)} className="p-1 rounded-md hover:bg-muted text-muted-foreground hover:text-red-600"><Trash2 size={12} /></button>
+                          </Tooltip>
+                        </li>
+                      ))}
+                    </ul>
+                  </li>
+                ))}
+              </ul>
+            )}
+          </div>
+        </div>
+      )}
+
+      <AddTenantModal orgId={orgId} actorId={profile?.id ?? null} open={addTenantOpen} onClose={() => setAddTenantOpen(false)} onDone={refresh} />
+      <AddSourceModal orgId={orgId} actorId={profile?.id ?? null} tenants={tenants ?? []} open={addSourceOpen} onClose={() => setAddSourceOpen(false)} onDone={refresh} />
+    </section>
+  )
+}
+
+function AddTenantModal({ orgId, actorId, open, onClose, onDone }: { orgId: string; actorId: string | null; open: boolean; onClose: () => void; onDone: () => void }) {
+  const [name, setName] = useState('')
+  const [notes, setNotes] = useState('')
+  const [busy, setBusy] = useState(false)
+  const [error, setError] = useState('')
+
+  function reset() {
+    setName(''); setNotes(''); setError('')
+  }
+
+  async function submit(e: React.FormEvent) {
+    e.preventDefault()
+    if (!actorId) return
+    setBusy(true)
+    setError('')
+    try {
+      await createTenant(orgId, name.trim(), notes.trim() || null, actorId)
+      reset()
+      onDone()
+      onClose()
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Create failed')
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  return (
+    <Modal open={open} onClose={() => { reset(); onClose() }} title="Add tenant">
+      <form onSubmit={submit} className="space-y-4">
+        <div>
+          <label className="block text-sm font-medium text-foreground mb-1.5">Name</label>
+          <input value={name} onChange={(e) => setName(e.target.value)} placeholder="Northwind Program" className="w-full rounded-md border border-border px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary/40" />
+        </div>
+        <div>
+          <label className="block text-sm font-medium text-foreground mb-1.5">Notes <span className="text-muted-foreground font-normal">(optional)</span></label>
+          <textarea value={notes} onChange={(e) => setNotes(e.target.value)} rows={2} className="w-full rounded-md border border-border px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary/40" />
+        </div>
+        {error && <p className="text-xs text-red-600">{error}</p>}
+        <button type="submit" disabled={busy || !name.trim()} className="w-full rounded-md bg-primary px-3 py-2.5 text-sm font-medium text-white hover:bg-primary/90 disabled:opacity-40 disabled:cursor-not-allowed">
+          {busy ? 'Adding…' : 'Add tenant'}
+        </button>
+      </form>
+    </Modal>
+  )
+}
+
+function AddSourceModal({ orgId, actorId, tenants, open, onClose, onDone }: {
+  orgId: string
+  actorId: string | null
+  tenants: { id: string; name: string }[]
+  open: boolean
+  onClose: () => void
+  onDone: () => void
+}) {
+  const [sourceType, setSourceType] = useState<AccountSourceType>('slack_channel')
+  const [value, setValue] = useState('')
+  const [tenantId, setTenantId] = useState('')
+  const [busy, setBusy] = useState(false)
+  const [error, setError] = useState('')
+
+  function reset() {
+    setSourceType('slack_channel'); setValue(''); setTenantId(''); setError('')
+  }
+
+  async function submit(e: React.FormEvent) {
+    e.preventDefault()
+    if (!actorId) return
+    setBusy(true)
+    setError('')
+    try {
+      await createAccountSource(orgId, tenantId || null, sourceType, value.trim(), actorId)
+      reset()
+      onDone()
+      onClose()
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Create failed — this value may already be in use by another account or tenant')
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  return (
+    <Modal open={open} onClose={() => { reset(); onClose() }} title="Add source">
+      <form onSubmit={submit} className="space-y-4">
+        <div>
+          <label className="block text-sm font-medium text-foreground mb-1.5">Type</label>
+          <select value={sourceType} onChange={(e) => setSourceType(e.target.value as AccountSourceType)} className="w-full rounded-md border border-border px-3 py-2 text-sm bg-white focus:outline-none focus:ring-2 focus:ring-primary/40">
+            {Object.entries(SOURCE_TYPE_LABELS).map(([k, label]) => <option key={k} value={k}>{label}</option>)}
+          </select>
+        </div>
+        <div>
+          <label className="block text-sm font-medium text-foreground mb-1.5">Value</label>
+          <input value={value} onChange={(e) => setValue(e.target.value)} placeholder="e.g. C04PRISM or prismanalytics.io" className="w-full rounded-md border border-border px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary/40" />
+        </div>
+        <div>
+          <label className="block text-sm font-medium text-foreground mb-1.5">Scope</label>
+          <select value={tenantId} onChange={(e) => setTenantId(e.target.value)} className="w-full rounded-md border border-border px-3 py-2 text-sm bg-white focus:outline-none focus:ring-2 focus:ring-primary/40">
+            <option value="">Account-level</option>
+            {tenants.map((t) => <option key={t.id} value={t.id}>{t.name}</option>)}
+          </select>
+        </div>
+        {error && <p className="text-xs text-red-600">{error}</p>}
+        <button type="submit" disabled={busy || !value.trim()} className="w-full rounded-md bg-primary px-3 py-2.5 text-sm font-medium text-white hover:bg-primary/90 disabled:opacity-40 disabled:cursor-not-allowed">
+          {busy ? 'Adding…' : 'Add source'}
+        </button>
+      </form>
+    </Modal>
   )
 }
 

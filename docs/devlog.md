@@ -16,6 +16,49 @@ Template:
 
 ---
 
+## Session 35 — 2026-10-11 — 7.5-pre2 Session 1: accounts & tenants are the only truth
+**Built:** plan first (large task — proposed and got approval for a
+6-session split, plus 4 clarifying questions on judgment calls), then only
+Session 1. Derived from two local confidential sources, read for structure/
+rules only and never committed: the real daily CS workflow's skill and its
+context store — surfacing a known flaw (the agent invents/duplicates
+accounts, treating an end-customer program as its own account). New
+`tenants` table (an end-customer/program/sub-account — never an account)
+and `account_sources` (structured, exact-match identifiers per account and
+per tenant, editable in Account 360) supersede `organizations.aliases` for
+matching; `ingest`'s account/tenant resolution and `apply_proposal()`
+updated accordingly. Checked and ruled out two candidate reuses before
+adding a table: `projects` (delivery concept, orthogonal) and the on-prem
+`NamespaceOrg` (frozen-portal mock-data concept, never a real table).
+`dormant` added as a new `lifecycle_stage` enum value; "unverified"
+deliberately reuses the existing `verified_at is null` (7.2b) rather than a
+second mechanism. `tenant_id` added to 9 record tables (D-102). Also did
+this session's own connector discovery (full Refold action catalogs for
+Slack/Gmail/Fireflies/Zendesk) to ground the 6-session plan — confirmed
+Zendesk/Fireflies genuinely have no list/search action (not an attachment
+gap) but found and live-confirmed a working `httprequest` deterministic
+workaround for Fireflies.
+**Deviations:** `tenant_id` added to `engagements`/`asks` too, beyond the
+7 tables originally scoped (D-102) — flagged, not silently expanded.
+Found mid-session that `engagements` already existed from 7.1 (the
+approved plan's "genuinely new table" assumption for a later session was
+wrong — D-103). Found and fixed a real bug in my own migration before
+reporting it: the aliases→account_sources backfill runs during migrations,
+before local fixture aliases are seeded (seeds run after migrations on
+`db reset`), so it works correctly on cloud but needed a matching local-
+fixture insert to backfill correctly on a fresh local reset too.
+**Decisions:** D-100–D-103.
+**Next:** 7.5-pre2 Session 2 — "Account match needed" (held proposals +
+the account-resolution Approvals flow) — awaiting go-ahead, per the
+approved session split.
+**Issues:** `npm run e2e` surfaced 3 pre-existing latent bugs, unrelated to
+this session's feature code, never caught before because this repo's e2e
+suite had apparently never actually run against a 100%-pristine `db
+reset` before now: on a genuinely empty list, the Ingest Tokens/Standups/
+People EmptyState headings ("No ingest tokens"/"No standups yet"/"No
+people yet") substring-match their page's own exact-match heading
+assertion. Fixed with `exact: true` on those three assertions.
+
 ## Session 34 — 2026-10-10 — 7.5-pre: Refold MCP discovery + finalize cs-sync
 **Built:** discovery and documentation only — no app code, no schema, no
 runner. Authenticated against the real Refold API (session-token flow,

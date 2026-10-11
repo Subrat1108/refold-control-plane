@@ -411,7 +411,7 @@ export interface Invitation {
 // (those stay as-is, still backing the frozen customer-facing mock UI).
 
 export type OrgHealth = 'active' | 'caution' | 'risk'
-export type LifecycleStage = 'prospect' | 'poc' | 'onboarding' | 'live' | 'expansion' | 'renewal' | 'churned'
+export type LifecycleStage = 'prospect' | 'poc' | 'onboarding' | 'live' | 'expansion' | 'renewal' | 'churned' | 'dormant'
 export type DeploymentModel = 'cloud' | 'onprem_managed' | 'onprem_airgapped'
 export type DataAccessMode = 'api' | 'manual' | 'mixed'
 
@@ -457,6 +457,32 @@ export interface Account {
   healthReason: string | null // 7.2b
   verifiedAt: string | null // 7.2b
   updatedBy: string | null // 7.2b
+  createdAt: string
+}
+
+// 7.5-pre2 Session 1 — an end-customer/program/sub-account under one
+// account (e.g. a platform customer's bank program). Never an account
+// itself; the sync agent can never create or promote one on its own.
+export interface Tenant {
+  id: string
+  orgId: string
+  name: string
+  notes: string | null
+  createdAt: string
+}
+
+export type AccountSourceType = 'slack_channel' | 'email_domain' | 'zendesk_org_id' | 'fireflies_hint' | 'name_variant'
+
+// The structured, exact-match lookup the ingest function resolves accounts/
+// tenants against — supersedes free-text `organizations.aliases` for
+// matching (D-1xx). `tenantId` null = an account-level source.
+export interface AccountSource {
+  id: string
+  orgId: string
+  tenantId: string | null
+  sourceType: AccountSourceType
+  value: string
+  notes: string | null
   createdAt: string
 }
 

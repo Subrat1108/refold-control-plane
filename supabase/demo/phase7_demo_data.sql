@@ -60,6 +60,33 @@ begin
     aliases = array['meridian-labs', 'meridian-labs.jp']
   where id = '00000000-0000-0000-0000-000000000003';
 
+  -- 7.5-pre2 Session 1 — account_sources mirrors the aliases set just above.
+  -- The migration's own aliases->account_sources backfill runs BEFORE this
+  -- seed script does (migrations apply first, then seeds on `db reset`), so
+  -- on a fresh local reset it finds nothing to backfill yet; these rows are
+  -- the local-fixture equivalent. On cloud, real aliases already exist
+  -- before the migration runs there, so the migration's backfill covers it
+  -- and this insert is a no-op (on conflict do nothing).
+  insert into public.account_sources (org_id, source_type, value) values
+    ('00000000-0000-0000-0000-000000000002', 'name_variant', 'prism-analytics'),
+    ('00000000-0000-0000-0000-000000000002', 'name_variant', 'prismanalytics.io'),
+    ('00000000-0000-0000-0000-000000000003', 'name_variant', 'meridian-labs'),
+    ('00000000-0000-0000-0000-000000000003', 'name_variant', 'meridian-labs.jp')
+  on conflict (source_type, value) do nothing;
+
+  -- One fictional tenant fixture (Meridian — Northwind Program), mirroring
+  -- the real "a platform customer's bank programs" shape: an end-customer
+  -- program under an account, never an account itself, with its own
+  -- structured sources.
+  insert into public.tenants (id, org_id, name) values
+    ('30000000-0000-0000-0000-000000000001', '00000000-0000-0000-0000-000000000003', 'Northwind Program')
+  on conflict (id) do nothing;
+
+  insert into public.account_sources (org_id, tenant_id, source_type, value) values
+    ('00000000-0000-0000-0000-000000000003', '30000000-0000-0000-0000-000000000001', 'slack_channel', 'C0MERIDIANNORTHWIND'),
+    ('00000000-0000-0000-0000-000000000003', '30000000-0000-0000-0000-000000000001', 'name_variant', 'northwind')
+  on conflict (source_type, value) do nothing;
+
   -- Projects
   insert into public.projects
     (id, org_id, name, release_no, start_date, go_live_date, expected_end_date,

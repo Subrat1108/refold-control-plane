@@ -1222,6 +1222,79 @@ Pre-checks / Steps / On success / On failure, real action ids throughout)
 meant to be pasted into Refold → MCP → CS Hub → Skills → Add Skill by a
 human — not uploaded automatically, since no skill CRUD API exists (D-097).
 
+## D-100 — Tenants are a new table; `account_sources` supersedes `aliases` for matching, kept distinct from `sync_learnings` (2026-10-11)
+7.5-pre2 Session 1. A tenant (an end-customer/program/sub-account under one
+account — e.g. a platform customer's own bank programs) is never an
+account, and the sync agent can never create or promote one. Checked both
+candidate reuses before adding a table: `projects` (delivery/
+implementation concept — release_no, go_live_date, FDEs) is orthogonal,
+not a substitute; the on-prem `NamespaceOrg` (R2) is a mock-data-era
+deployment-hierarchy concept for the frozen on-prem portal, never a real
+Postgres table, and unrelated. New `tenants` (org_id, name, notes) is the
+simplest correct model. Structured sources — Slack channel id, email
+domain, Zendesk org id, Fireflies hint, name variant, per account *and*
+per tenant, editable in Account 360 — live in a new `account_sources`
+table (`unique(source_type, value)`, so one identifier names exactly one
+account/tenant), which **supersedes `organizations.aliases` for matching**:
+the ingest function's `resolveAccount`/new `resolveTenant` now query
+`account_sources` exclusively; `aliases` is backfilled into it (migration-
+time for existing data, a demo-fixture insert locally since local aliases
+are set by the seed script which runs *after* migrations) and kept on the
+organizations row, unused by new code, not dropped. Kept deliberately
+distinct from `sync_learnings` (the learning-loop table, not yet built):
+`account_sources` is the authoritative exact-match lookup; resolving an
+`account_resolution` proposal (Session 2) will write here *and* log a
+`sync_learnings` `alias_map` row purely for the admin-visible audit trail
+— `sync_learnings` itself is never queried for matching.
+
+## D-101 — Lifecycle tags: `dormant` is a new enum value; "unverified" reuses `verified_at is null`, no new value (2026-10-11)
+The real CS workflow's five roster tags (active/prospect/dormant/churned/
+unverified) map onto the existing `lifecycle_stage` enum
+(`prospect/poc/onboarding/live/expansion/renewal/churned`,confirmed via
+`20261007000001_phase7_enums.sql`) rather than replacing it: `prospect`/
+`churned` are unchanged; `active` (the daily report's catch-all) resolves
+to whichever of `onboarding`/`live`/`expansion`/`renewal` actually fits —
+the CS Hub's enum is already more granular, this is a refinement, not a
+new value. `dormant` is added additively (`alter type lifecycle_stage add
+value 'dormant'`) since it's genuinely a new stage (went quiet after being
+active) with no existing match. `unverified` gets **no new enum value** —
+`organizations.verified_at is null` already means exactly that (7.2b's
+"mark verified" button); a second mechanism would be redundant. A real
+edge case found in the source data (an account tagged "at-risk/win-back")
+needed no schema change either — it already fits `health = 'risk'` +
+`health_reason`.
+
+## D-102 — `tenant_id` added to 9 record tables, not the 7 originally scoped; `apply_proposal()` extended (2026-10-11)
+Added nullable `tenant_id` (references `tenants(id)`) to milestones,
+accomplishments, risks, escalations, tickets, metric_values, and projects
+as planned, **plus `engagements` and `asks`** — not in the original
+session scope, added because they're structurally identical CS-record
+tables and the alternative (redoing this in a later session) was pure
+rework for a free, additive, nullable column. `apply_proposal()`'s six
+reachable branches (milestones/accomplishments/risks/escalations/tickets/
+metric_values) now read/write `tenant_id` from the proposal payload the
+same way they already handle `project_id`; `engagements`/`asks`/`projects`
+stay manual-only (unreachable via `apply_proposal()`), their `tenant_id`
+settable directly from the same Account 360 UI that writes everything
+else about them. `ingest`'s `processRecord` merges a resolved `tenant_id`
+into `data` before the dedupe/equality comparison, exactly mirroring the
+existing `project_id` pattern — an omitted `tenant` on a resend is never
+treated as "the tenant was removed" (same caller-sent-fields-only rule
+every other field already follows).
+
+## D-103 — `engagements` already existed from 7.1; the 7.5-pre2 plan's "new table" assumption was wrong (2026-10-11)
+Correction, not a new design: the approved 7.5-pre2 plan described
+`engagement` (meeting/touchpoint) as "a genuinely new table" for a later
+session. Reading `20261007000006_account_records.sql` while doing Session
+1 found it already exists (org, type, engagement_date, attendees, summary,
+follow_ups) with the exact provenance pattern every other record table
+has, plus an already-defined `engagement_type` enum
+(`call/check_in/qbr/ebr/note`) that's never been used anywhere — `asks`
+also predates this session. Both now also carry `tenant_id` (D-102). No
+plan change needed beyond noting it: the later session that wires
+`engagement` into the ingest allow-list extends an existing table instead
+of creating one.
+
 # Parked
 
 Out-of-scope ideas land here instead of derailing the current prompt block.

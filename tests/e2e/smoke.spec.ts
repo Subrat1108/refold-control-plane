@@ -76,6 +76,14 @@ test('super admin smoke: Home, Portfolio, Account 360, Approvals, Audit log, Sta
     await expectNoErrors(page, errors)
   }
 
+  // ── Tenants & sources (7.5-pre2 Session 1): add a tenant, confirm it shows ──
+  await page.getByRole('tab', { name: 'Overview' }).click()
+  await page.getByRole('button', { name: 'Add tenant' }).click()
+  await page.getByPlaceholder('Northwind Program').fill('Smoke test tenant')
+  await page.getByRole('button', { name: 'Add tenant' }).last().click()
+  await expect(page.getByText('Smoke test tenant')).toBeVisible()
+  await expectNoErrors(page, errors)
+
   // one write: add a milestone on the first project, if one exists
   const addProjectButton = page.getByRole('button', { name: 'Add project' })
   await page.getByRole('tab', { name: 'Projects' }).click()
@@ -107,7 +115,10 @@ test('super admin smoke: Home, Portfolio, Account 360, Approvals, Audit log, Sta
 
   // ── Ingest tokens (7.4): create one, see the plaintext once, revoke it ──
   await page.getByRole('link', { name: 'Ingest Tokens' }).click()
-  await expect(page.getByRole('heading', { name: 'Ingest tokens' })).toBeVisible()
+  // exact: true — on a truly fresh DB (no tokens yet) the EmptyState's "No
+  // ingest tokens" heading substring-matches "Ingest tokens" too, a latent
+  // ambiguity this session's genuinely-empty-first-run exposed.
+  await expect(page.getByRole('heading', { name: 'Ingest tokens', exact: true })).toBeVisible()
   await expectNoErrors(page, errors)
 
   await page.getByRole('button', { name: 'Create token' }).click()
@@ -128,7 +139,9 @@ test('super admin smoke: Home, Portfolio, Account 360, Approvals, Audit log, Sta
 
   // ── Standups: start one, edit own entry, open live mode ─────────────
   await page.getByRole('link', { name: 'Standups' }).click()
-  await expect(page.getByRole('heading', { name: 'Standups' })).toBeVisible()
+  // exact: true — a genuinely empty standups list renders an EmptyState
+  // whose "No standups yet" heading substring-matches "Standups" too.
+  await expect(page.getByRole('heading', { name: 'Standups', exact: true })).toBeVisible()
   await expectNoErrors(page, errors)
 
   await page.getByRole('button', { name: 'Start a standup' }).click()
@@ -151,7 +164,9 @@ test('super admin smoke: Home, Portfolio, Account 360, Approvals, Audit log, Sta
 
   // ── People: open a person's detail slide-over ───────────────────────
   await page.getByRole('link', { name: 'People' }).click()
-  await expect(page.getByRole('heading', { name: 'People' })).toBeVisible()
+  // exact: true — PeoplePage's EmptyState "No people yet" heading would
+  // otherwise substring-match "People" too.
+  await expect(page.getByRole('heading', { name: 'People', exact: true })).toBeVisible()
   await expectNoErrors(page, errors)
 
   await page.getByRole('button', { name: 'Manage roles' }).first().click()

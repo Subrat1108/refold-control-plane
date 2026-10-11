@@ -141,14 +141,33 @@ interface RunCtx {
   tokenId: string
 }
 
+// 7.5-pre2 Session 1 — account_sources is the structured, exact-match
+// source of truth for resolving an account or a tenant (never a fuzzy
+// guess; the agent/caller supplies the identifier, this is a lookup, not
+// an inference). Supersedes the old `organizations.aliases` free-text
+// array, which is now backfilled and no longer read here.
 async function resolveAccount(svc: SupabaseClient, ref: string | undefined): Promise<{ id: string } | null> {
   if (!ref) return null
   if (UUID_RE.test(ref)) {
     const { data } = await svc.from('organizations').select('id').eq('id', ref).maybeSingle()
     if (data) return data
   }
-  const { data } = await svc.from('organizations').select('id').contains('aliases', [ref]).maybeSingle()
-  return data ?? null
+  const { data } = await svc.from('account_sources').select('org_id').eq('value', ref).is('tenant_id', null).maybeSingle()
+  return data ? { id: data.org_id as string } : null
+}
+
+// A tenant is an end-customer/program/sub-account under one account — never
+// an account itself. Resolved the same way (id or a structured source), but
+// scoped to the already-resolved org so an identifier that happens to match
+// a tenant under a DIFFERENT account can never cross-attribute a record.
+async function resolveTenant(svc: SupabaseClient, orgId: string, ref: string | undefined): Promise<{ id: string } | null> {
+  if (!ref) return null
+  if (UUID_RE.test(ref)) {
+    const { data } = await svc.from('tenants').select('id').eq('id', ref).eq('org_id', orgId).maybeSingle()
+    if (data) return data
+  }
+  const { data } = await svc.from('account_sources').select('tenant_id').eq('value', ref).eq('org_id', orgId).not('tenant_id', 'is', null).maybeSingle()
+  return data ? { id: data.tenant_id as string } : null
 }
 
 async function resolveProject(svc: SupabaseClient, orgId: string, ref: string): Promise<{ id: string } | null> {
@@ -244,6 +263,13 @@ async function processRecord(svc: SupabaseClient, record: Record<string, unknown
   if (!org) return reject('unknown account')
   if (tokenRow.allowed_org_ids && !tokenRow.allowed_org_ids.includes(org.id)) return reject("account outside this token's scope")
 
+  let tenantId: string | null = null
+  if (record.tenant) {
+    const tenant = await resolveTenant(svc, org.id, record.tenant as string)
+    if (!tenant) return reject('unknown tenant')
+    tenantId = tenant.id
+  }
+
   let projectId: string | null = null
   const needsProject = NEEDS_PROJECT[recordType]
   if (record.project) {
@@ -297,6 +323,7 @@ async function processRecord(svc: SupabaseClient, record: Record<string, unknown
     return reject('invalid health value')
   }
   if (projectId) data.project_id = projectId
+  if (tenantId) data.tenant_id = tenantId
   const stripped = strippedFields.length ? strippedFields : undefined
 
   if (sourceRef) {

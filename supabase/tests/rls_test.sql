@@ -635,3 +635,50 @@ begin
 
   raise notice 'ALL INGEST TOKENS RLS TESTS PASSED';
 end $$;
+
+-- ── Tenants & account_sources (7.5-pre2 Session 1) ──────────────────────────
+-- Same shape as every other CS-adjacent table: super-admin read/write under
+-- AAL2, customer roles see 0 rows. Plus the one thing specific to this
+-- table: (source_type, value) is globally unique, so a second account can't
+-- claim an identifier already bound to another account/tenant.
+do $$
+declare
+  n int;
+  v_tenant_id uuid;
+begin
+  set local role authenticated;
+  set local request.jwt.claims = '{"sub":"00000000-0000-0000-0000-000000001001","aal":"aal2"}';
+
+  insert into public.tenants (org_id, name) values ('00000000-0000-0000-0000-000000000002', 'rls test tenant') returning id into v_tenant_id;
+  insert into public.account_sources (org_id, tenant_id, source_type, value) values ('00000000-0000-0000-0000-000000000002', v_tenant_id, 'name_variant', 'rls-test-source-value');
+
+  select count(*) into n from public.tenants where id = v_tenant_id;
+  assert n = 1, 'a super admin must be able to read a tenant they just created';
+  select count(*) into n from public.account_sources where tenant_id = v_tenant_id;
+  assert n = 1, 'a super admin must be able to read an account_source they just created';
+
+  -- (source_type, value) is globally unique — a second account can't claim
+  -- an identifier already bound to this tenant.
+  begin
+    insert into public.account_sources (org_id, source_type, value) values ('00000000-0000-0000-0000-000000000003', 'name_variant', 'rls-test-source-value');
+    assert false, 'a duplicate (source_type, value) must be rejected regardless of which account/tenant claims it first';
+  exception when unique_violation then
+    null; -- expected
+  end;
+  reset role;
+
+  -- Customer roles see 0 rows across both tables.
+  set local role authenticated;
+  set local request.jwt.claims = '{"sub":"00000000-0000-0000-0000-000000001002","aal":"aal2"}'; -- Prism owner
+  select count(*) into n from public.tenants; assert n = 0, format('Prism owner must see 0 tenants, saw %s', n);
+  select count(*) into n from public.account_sources; assert n = 0, format('Prism owner must see 0 account_sources, saw %s', n);
+  reset role;
+
+  set local role authenticated;
+  set local request.jwt.claims = '{"sub":"00000000-0000-0000-0000-000000001003","aal":"aal2"}'; -- Meridian owner
+  select count(*) into n from public.tenants; assert n = 0, format('Meridian owner must see 0 tenants, saw %s', n);
+  select count(*) into n from public.account_sources; assert n = 0, format('Meridian owner must see 0 account_sources, saw %s', n);
+  reset role;
+
+  raise notice 'ALL TENANTS/ACCOUNT_SOURCES RLS TESTS PASSED';
+end $$;

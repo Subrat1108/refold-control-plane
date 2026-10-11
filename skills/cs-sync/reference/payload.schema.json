@@ -29,6 +29,7 @@
           "record_type": { "enum": ["milestone", "accomplishment", "risk", "escalation", "ticket", "metric", "health"] },
           "operation": { "enum": ["create", "update", "delete"] },
           "account": { "type": "string", "minLength": 1 },
+          "tenant": { "type": "string", "description": "Optional. An end-customer/program/sub-account under the account (e.g. a platform customer's bank program) — never an account itself. Must resolve via an exact account_sources match scoped to this account; the agent never invents or promotes one." },
           "project": { "type": "string" },
           "source_ref": { "type": "string", "minLength": 3 },
           "observed_at": { "type": "string", "format": "date-time" },
