@@ -16,6 +16,57 @@ Template:
 
 ---
 
+## Session 38 — 2026-10-11 — 7.5-pre2 Session 5: the sync runner
+**Built:** Pre-session fix: SKILL.md's domain-only Fireflies skip rule
+revised to attribute via domain OR a named account/tenant mention (D-114).
+New `cs-sync-runner` Edge Function — the first real caller of the `cs-sync`
+skill. Reuses 7.1's `sync_runs`/`sync_state` (never actually driven by any
+code before now, D-115); new `sync_settings` (singleton kill switch/cron
+time/caps) + `sync_queue` (daily/backfill fan-out); 6 new SECURITY DEFINER
+functions (lock/watermark/queue-claim/enqueue/dispatch) + `get_enum_values`.
+`pg_cron`/`pg_net` tick every 5 minutes; dispatch authenticates via a
+Postgres Vault secret holding the service-role key. The runner builds the
+sync context, runs skill.md as an Anthropic tool-use agent (session-token/
+MCP for `RESOLVE_ACTIONS`, the deterministic REST path for `EXECUTE_ACTION`
+once validated — D-116), proxying every tool call itself so a non-read-only
+`httprequest` call is rejected server-side before reaching Refold
+(`allowlist.ts`). Output validated (`validate.ts`, reusing `_shared/
+dedupe.ts`'s REQUIRED_FIELDS — D-117) with one repair attempt, then posted
+to local `ingest`. Scoped (Refresh button) runs synchronously; queued
+(pg_cron) runs process one `sync_queue` row per invocation. New `update_
+sync_settings`/`enqueue_backfill` `provisioning` actions. Frontend: new
+Action Items tab on Account 360 (D-119, nowhere else for its Refresh button
+to live), a shared `RefreshButton` component wired into every CS-sync
+section (Escalations/Tickets/Projects/Engagements/Action items/Metrics/
+health, plus a "refresh everything" header button), and a new `/sync-status`
+admin screen (recent runs, settings form, backfill trigger).
+**Deviations:** Model id corrected to `claude-sonnet-5` (the instruction
+said `claude-sonnet-5-5`, not real — D-118). Two real test-environment bugs
+found and fixed while verifying: (1) a default-privilege rule on this
+project grants EXECUTE/table access directly to `anon`/`authenticated`, not
+just `public` — `revoke ... from public` alone didn't block a direct call;
+every revoke now names all three (D-121). (2) the stub-mode e2e fixture's
+nonsense `account` value was quietly inflating the "Account match needed"
+count a later part of the same e2e test depends on being exactly 4 — fixed
+by pointing the fixture at a real seeded account id, and separately seeded
+a fixed local-only ingest token (same fixture category as the seeded TOTP
+factor) so the stub-mode token stops going stale on every `db reset`.
+**Decisions:** D-114–D-121
+**Next:** the user runs the first real sync themselves (explicitly not
+triggered this session) — then 7.5-pre2 Session 3 (the learning loop
+proper), then Session 6 (context-store bootstrap).
+**Issues:** `kill_switch` set to `true` on cloud immediately after this
+session's migrations shipped, specifically so the new 5-minute pg_cron tick
+can't autonomously enqueue anything before the user is ready — flip it off
+from `/sync-status` (or ask) when ready to go live. Five Edge Function
+secrets (`REFOLD_API_KEY`, `REFOLD_LINKED_ACCOUNT_ID`, `REFOLD_MCP_SERVER_ID`,
+`ANTHROPIC_API_KEY`, `CS_HUB_INGEST_TOKEN`) and one Postgres Vault secret
+(`cs_sync_runner_auth`, for pg_cron's dispatch auth) are not yet set on
+cloud — confirmed via `supabase secrets list`, none exist today beyond the
+platform defaults.
+
+---
+
 ## Session 37 — 2026-10-11 — 7.5-pre2 Session 4: align the skill + new record types
 **Built:** Order changed (D-108, logged last session): Session 4 now runs
 before Session 5/first-real-sync/Session 3. Two new CS-sync record types

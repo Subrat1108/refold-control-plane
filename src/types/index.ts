@@ -663,6 +663,36 @@ export interface SyncRun {
   status: SyncRunStatus
   counts: Record<string, unknown> | null
   cost: number | null
+  // 7.5-pre2 Session 5
+  tokensUsed: number | null
+  skippedConnectors: string[] | null
+}
+
+// 7.5-pre2 Session 5 — the runner's own admin-editable config (singleton
+// row) and daily/backfill fan-out queue.
+export interface SyncSettings {
+  killSwitch: boolean
+  dailyRunAtUtc: string // "HH:MM:SS"
+  maxUnitsPerRun: number
+  maxUnitsPerDay: number
+  maxTokensPerUnit: number
+  updatedBy: string | null
+  updatedAt: string
+}
+
+export type SyncQueueStatus = 'queued' | 'processing' | 'done' | 'error'
+
+export interface SyncQueueItem {
+  id: string
+  orgId: string
+  recordType: string
+  mode: SyncRunMode
+  runId: string | null
+  status: SyncQueueStatus
+  enqueuedAt: string
+  claimedAt: string | null
+  finishedAt: string | null
+  error: string | null
 }
 
 // ── Equal-admins model (supersedes 7.2a's titles/teams/account_assignments;
@@ -801,7 +831,10 @@ export interface AuditLogEntry {
 // Anyone hosts; participants are pre-filled from reports_to + a remembered
 // set (saved_views), not a fixed team roster.
 
-export type ActionItemStatus = 'open' | 'done'
+// 'in_progress'/'blocked' added additively in 7.5-pre2 Session 4 for the
+// CS-sync record type — standups itself still only ever sets 'open'/'done'.
+export type ActionItemStatus = 'open' | 'in_progress' | 'blocked' | 'done'
+export type ActionItemPriority = 'p0' | 'high' | 'medium' | 'low'
 
 export interface Standup {
   id: string
@@ -839,4 +872,15 @@ export interface ActionItem {
   status: ActionItemStatus
   createdBy: string | null
   createdAt: string
+  // 7.5-pre2 Session 4 — CS-sync plumbing, optional since standups-created
+  // rows (and existing code that builds this type) never set these.
+  tenantId?: string | null
+  projectId?: string | null
+  priority?: ActionItemPriority
+  ownerText?: string | null
+  source?: RecordSource
+  sourceRef?: string | null
+  updatedBy?: string | null
+  verifiedAt?: string | null
+  proposalId?: string | null
 }

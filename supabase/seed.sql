@@ -168,6 +168,19 @@ insert into auth.mfa_factors (id, user_id, friendly_name, factor_type, status, s
   ('00000000-0000-0000-0000-000000009001', '00000000-0000-0000-0000-000000001001', 'e2e-fixed-totp', 'totp', 'verified', 'JBSWY3DPEHPK3PXPJBSWY3DPEHPK3PXP', now(), now())
 on conflict (id) do nothing;
 
+-- A fixed, known-plaintext ingest token (7.5-pre2 Session 5) — same local-
+-- fixture category as the TOTP factor above, not a secret. Without this,
+-- the `cs-sync-runner` Edge Function's own fixed CS_HUB_INGEST_TOKEN env
+-- var (supabase/.env, gitignored) would stop matching after every fresh
+-- `db reset` regenerates ingest_tokens from scratch — a real bug this
+-- session hit directly (e2e's Refresh click silently failed with a 401
+-- from `ingest` because the token from a previous DB generation no
+-- longer existed). Plaintext: `cshub_e2e0000000000000000000000000000000000000000000`
+-- — only its SHA-256 is ever stored, same as a real token.
+insert into public.ingest_tokens (id, label, token_hash, expires_at) values
+  ('00000000-0000-0000-0000-000000009002', 'e2e fixture (local only)', '6179fc8a6e0b17c3d682b286b5abd4539556afd019659423fe8684349e0ebe39', now() + interval '10 years')
+on conflict (id) do nothing;
+
 -- Phase 7.1 CS Hub fictional demo data lives in its own file
 -- (supabase/demo/phase7_demo_data.sql) — idempotent, creates no auth users, and
 -- can also be run standalone against the cloud project's SQL Editor. Loaded on

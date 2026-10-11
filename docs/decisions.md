@@ -1471,6 +1471,120 @@ might not be a customer meeting at all." Local DB reset immediately after
 to remove all real content; nothing real was committed to git/docs/devlog
 per the standing confidentiality rule.
 
+## D-114 — D-113's domain-only Fireflies skip rule revised: too blunt (2026-10-11)
+Session owner's correction before Session 5 started: "skip if no
+account-mapped participant domain" throws away exactly the meetings where
+customer decisions most often surface — an internal deal-review or
+account-strategy call that names a customer but has no customer attendee
+at all. Revised `skills/cs-sync/SKILL.md` (and `refold-skill.md`) to
+attribute a transcript via **either** signal: a participant email domain
+matching an `account_sources` entry, **or** a known account/tenant name
+or alias mentioned anywhere in the title, summary, or action items. Skip
+outright only when neither signal finds anything; an unclear mention
+(a short name, an unmapped program) still files `account_resolution` as
+usual — unchanged from D-113's intent, just no longer gated on
+attendee domains alone.
+
+## D-115 — Sync runner architecture: reuses 7.1's unused sync_runs/sync_state, new sync_settings/sync_queue (2026-10-11)
+7.5-pre2 Session 5. `sync_runs`/`sync_state` (7.1, D-055–065) existed but
+were never actually driven by any code — `ingest` only creates/updates a
+`sync_runs` row when it receives a run; nothing had ever written
+`sync_state` (the per-unit watermark/lock). This session is the first real
+consumer of both; `sync_state`'s `(org_id, record_type)` PK + `locked_until`
+already matched the lock/watermark requirement exactly, no schema change
+needed there. Two new tables: `sync_settings` (singleton row — kill switch,
+daily run time stored as a plain `time`, not a cron expression, so the
+admin screen can change it with one UPDATE and never touch a migration or
+re-register `cron.schedule`; the three caps) and `sync_queue` (the daily/
+backfill fan-out mechanism — a scoped Refresh never touches it, running
+synchronously instead since one unit fits comfortably in one Edge Function
+invocation). Six new SECURITY DEFINER functions (`try_lock_sync_unit`,
+`finish_sync_unit`, `claim_sync_queue_item`, `enqueue_daily_sync`,
+`enqueue_backfill`, `dispatch_sync_queue`) plus `get_enum_values` (lets the
+sync-context builder read `allowed_values` live from Postgres enums instead
+of a hand-copied list that could drift). `pg_cron`/`pg_net` enabled; one job
+ticks every 5 minutes rather than at the configured time directly, for the
+same "admin-editable without a migration" reason. The daily/backfill
+dispatch authenticates to the Edge Function via a Postgres Vault secret
+holding the service-role key (set once by hand against cloud, never in a
+migration) — confirmed as the user's explicitly preferred approach over
+keeping the key out of Postgres entirely.
+
+## D-116 — Runner's EXECUTE_ACTION goes through the deterministic REST path; RESOLVE_ACTIONS keeps the session-token/MCP path as specified (2026-10-11)
+Two ways existed to call Refold for an already-resolved action: real MCP
+(session token + JSON-RPC) or the deterministic REST execute endpoint
+(`x-api-key` + `linked_account_id`, no session token — confirmed working
+live in the Session 4 real-data check). Session owner's explicit choice:
+build the session-token cache/refresh exactly as instructed, used for
+`RESOLVE_ACTIONS` (the one agent-mode-only tool with no deterministic
+equivalent) — `EXECUTE_ACTION` itself goes through the simpler
+deterministic REST path once a call is resolved and validated
+(`allowlist.ts`), matching `docs/refold-mcp.md`'s own note that this is the
+same underlying mechanism. This also made it straightforward for the
+runner to inspect and reject a non-read-only call BEFORE it reaches
+Refold — the whole reason the runner proxies tool calls itself rather
+than handing the model Anthropic's built-in MCP connector.
+
+## D-117 — Output validation reuses `_shared/dedupe.ts`'s REQUIRED_FIELDS instead of a JSON-Schema library (2026-10-11)
+Rather than add a new Deno/npm dependency (`ajv` or similar) to literally
+execute `skills/cs-sync/reference/payload.schema.json` at runtime, the
+runner's pre-ingest validator (`validate.ts`) reuses `_shared/dedupe.ts`'s
+existing per-record-type `REQUIRED_FIELDS` map — the same source `ingest`
+itself already validates `data` against — for the required-field checks,
+plus a small set of hand-coded structural checks for what that map doesn't
+cover (array size, confidence range, excerpt length, `engagement.type`,
+`milestone`/`accomplishment.project`). Zero new dependencies, and no risk
+of the validator's rules drifting from `ingest`'s own rules, which a
+second hand-copied implementation of the JSON Schema would have risked.
+`payload.schema.json` stays the documented contract for the skill itself.
+
+## D-118 — Model id correction: `claude-sonnet-5`, not `claude-sonnet-5-5` (2026-10-11)
+The task instruction named `claude-sonnet-5-5` as the runner's default
+model — not a real model id. Defaulted to `claude-sonnet-5` in code
+(`anthropic.ts`), fully overridable via the `CS_SYNC_MODEL` env var either
+way, so this is a one-line fix regardless of which was actually intended.
+
+## D-119 — New Action Items tab on Account 360 (2026-10-11)
+`action_item`'s Refresh button (required by the task) had nowhere to live
+— Account 360 had no action-item surface at all (standups' own action-items
+UI is a different, per-standup-entry thing, not account-scoped). Per the
+session owner's explicit choice, added a minimal read-only Action Items
+tab (mirrors the Tickets tab's table+Refresh pattern) rather than deferring
+the button. No manual add — these are synced facts; a human edits via
+Approvals, same as every other CS-sync record type.
+
+## D-120 — Kill switch set to ON immediately after the Session 5 migrations shipped to cloud (2026-10-11)
+The new `pg_cron` tick (every 5 minutes) calls `enqueue_daily_sync()`
+unconditionally once deployed — harmless on its own (no HTTP call fires
+without the Vault secret, which isn't set up yet), but once the clock
+first crosses the admin-configured daily run time, it WOULD insert real
+`sync_queue` rows for every active account × record type into production,
+autonomously, with no explicit trigger. The task's explicit instruction
+was "do NOT trigger a real sync — I'll run the first one myself." Rather
+than read that as covering only *LLM/Refold* calls, `sync_settings.
+kill_switch` was set to `true` against cloud immediately after the
+migrations pushed (one `db query --linked` statement, confirmed), so
+nothing fires autonomously — not even a harmless queue insert — until the
+session owner flips it off themselves (Sync Status screen, or by asking).
+
+## D-121 — Real schema discovery: default privileges grant table/function access directly to `anon`/`authenticated`, not just `public` (2026-10-11)
+Found while writing this session's `rls_test.sql` block: a `revoke all on
+function ... from public` did NOT block a direct `authenticated` call —
+`information_schema.routine_privileges` confirmed `anon`/`authenticated`
+hold a *separate* direct EXECUTE grant (from this project's default-
+privilege rules), untouched by revoking from the `public` pseudo-role.
+Every REVOKE in `20261011000007_sync_runner_functions.sql` now names
+`public, anon, authenticated` explicitly. Separately, confirmed `UPDATE`
+on a table with no RLS policy for `authenticated` does NOT raise an
+exception the way a missing INSERT policy does (INSERT's WITH CHECK
+barrier raises `insufficient_privilege`; UPDATE's USING-clause row
+filtering just silently matches zero rows) — `rls_test.sql`'s assertion
+style was corrected to check the value is unchanged, not that an exception
+was thrown. **This likely affects how to read every earlier "no insert/
+update policy for authenticated" comment in this codebase for UPDATE
+specifically** — worth keeping in mind, though not re-auditing retroactively
+this session (flagged, not fixed elsewhere).
+
 # Parked
 
 Out-of-scope ideas land here instead of derailing the current prompt block.

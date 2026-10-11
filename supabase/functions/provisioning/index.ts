@@ -377,6 +377,43 @@ async function revokeIngestToken(caller: Caller, body: Record<string, unknown>) 
   return json({ ok: true })
 }
 
+// ── update_sync_settings (7.5-pre2 Session 5) — the Sync Status screen's
+// kill switch / cron time / caps form. sync_settings is a singleton row
+// with no direct authenticated write policy at all (same shape as
+// ingest_tokens) — this action is the only way to change it.
+const SYNC_SETTINGS_FIELDS = ['kill_switch', 'daily_run_at_utc', 'max_units_per_run', 'max_units_per_day', 'max_tokens_per_unit'] as const
+
+async function updateSyncSettings(caller: Caller, body: Record<string, unknown>) {
+  const patch: Record<string, unknown> = {}
+  for (const field of SYNC_SETTINGS_FIELDS) {
+    if (body[field] !== undefined) patch[field] = body[field]
+  }
+  if (Object.keys(patch).length === 0) return json({ error: 'no recognized settings fields were provided' }, 400)
+
+  const svc = caller.service
+  patch.updated_by = caller.id
+  patch.updated_at = new Date().toISOString()
+  const { error } = await svc.from('sync_settings').update(patch).eq('singleton', true)
+  if (error) return json({ error: error.message }, 400)
+
+  await writeAudit(svc, caller.id, 'update_sync_settings', 'sync_settings', null, null, patch)
+  return json({ ok: true })
+}
+
+// ── enqueue_backfill (7.5-pre2 Session 5) — the Sync Status screen's "Run
+// backfill" button. Thin wrapper over the SQL function of the same name
+// (service_role-only EXECUTE) so the privileged write still goes through
+// the same super_admin + AAL2 gate every other provisioning action does.
+async function enqueueBackfill(caller: Caller, body: Record<string, unknown>) {
+  const orgIds = (body.orgIds as string[] | undefined) ?? null
+  const svc = caller.service
+  const { data, error } = await svc.rpc('enqueue_backfill', { p_org_ids: orgIds })
+  if (error) return json({ error: error.message }, 400)
+
+  await writeAudit(svc, caller.id, 'enqueue_backfill', 'sync_queue', null, null, { org_ids: orgIds, enqueued: data })
+  return json({ enqueued: data })
+}
+
 // ── resolve_account_proposal (7.5-pre2 Session 2) ──────────────────────────────
 // A human decides what an unresolved account/tenant identifier actually is.
 // Four decisions: map_existing (an existing account), map_tenant (a tenant
@@ -725,7 +762,7 @@ async function ownerSetUserStatus(caller: Caller, body: Record<string, unknown>)
   return json({ ok: true })
 }
 
-const SUPER_ACTIONS = new Set(['provision_org', 'invite_super_admin', 'assign_sub_role', 'set_user_status', 'set_reports_to', 'create_ingest_token', 'revoke_ingest_token', 'resolve_account_proposal'])
+const SUPER_ACTIONS = new Set(['provision_org', 'invite_super_admin', 'assign_sub_role', 'set_user_status', 'set_reports_to', 'create_ingest_token', 'revoke_ingest_token', 'resolve_account_proposal', 'update_sync_settings', 'enqueue_backfill'])
 const OWNER_ACTIONS = new Set(['owner_invite_user', 'owner_assign_sub_role', 'owner_set_user_status'])
 
 Deno.serve(async (req: Request) => {
@@ -769,6 +806,10 @@ Deno.serve(async (req: Request) => {
         return revokeIngestToken(caller, body)
       case 'resolve_account_proposal':
         return resolveAccountProposal(caller, body)
+      case 'update_sync_settings':
+        return updateSyncSettings(caller, body)
+      case 'enqueue_backfill':
+        return enqueueBackfill(caller, body)
     }
   }
 

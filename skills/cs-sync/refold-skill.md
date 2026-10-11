@@ -86,6 +86,12 @@ against every connected app.
      read-only `httprequest` → Fireflies GraphQL `query`, ≤50 per call,
      paging with `skip` and splitting long ranges. Read each transcript's
      **summary and action-items list** — never the raw transcript text.
+     Attribute a transcript via **either** a participant email domain
+     **or** a known account/tenant name/alias mentioned in the title,
+     summary, or action items — an internally-attended meeting that names
+     a customer is not out of scope. Skip outright (reason: "no
+     identifiable customer account") only when neither check finds
+     anything; an unclear mention still goes to `account_resolution`.
    - **Metrics:** no source exists today — skip, with a `skipped` entry
      noting "no Refold workflow available."
 3. **Extract** candidate facts per record type — field mapping, required

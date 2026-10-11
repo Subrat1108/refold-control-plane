@@ -96,6 +96,27 @@ export function resolveAccountProposal(input: ResolveAccountInput) {
   return invoke<{ ok: true; decision: string; orgId?: string; tenantId?: string | null; releasedCount: number }>({ action: 'resolve_account_proposal', ...input })
 }
 
+// 7.5-pre2 Session 5 — the Sync Status screen's settings form + backfill
+// trigger. sync_settings grants no direct authenticated write at all (same
+// shape as ingest_tokens); enqueue_backfill is a thin wrapper over the SQL
+// function of the same name, still gated through this super_admin + AAL2
+// lane like every other privileged write.
+export interface SyncSettingsPatch {
+  kill_switch?: boolean
+  daily_run_at_utc?: string
+  max_units_per_run?: number
+  max_units_per_day?: number
+  max_tokens_per_unit?: number
+}
+
+export function updateSyncSettings(patch: SyncSettingsPatch) {
+  return invoke<{ ok: true }>({ action: 'update_sync_settings', ...patch })
+}
+
+export function enqueueBackfill(orgIds: string[] | null) {
+  return invoke<{ enqueued: number }>({ action: 'enqueue_backfill', orgIds })
+}
+
 export function acceptInvite() {
   return invoke<{ ok: true; alreadyActive?: boolean }>({ action: 'accept_invite' })
 }

@@ -788,3 +788,88 @@ begin
 
   raise notice 'ALL CS-SYNC ACTION_ITEMS/ENGAGEMENTS RLS TESTS PASSED';
 end $$;
+
+-- ── Sync runner: sync_settings/sync_queue + lock/watermark functions
+-- (7.5-pre2 Session 5) ──────────────────────────────────────────────────
+-- Same shape as ingest_tokens (D-09x): a super admin can SELECT, but there
+-- is deliberately NO insert/update/delete policy for `authenticated` at
+-- all — both tables are written only via the SECURITY DEFINER functions
+-- below or the provisioning Edge Function's service-role client. Those
+-- functions are themselves machine-only (EXECUTE revoked from public,
+-- granted to service_role only) — a direct authenticated call must be
+-- rejected even by a super admin, since nothing in the UI should ever
+-- call them directly.
+do $$
+declare
+  n int;
+  v_locked boolean;
+  v_advanced boolean;
+  v_claimed_status text;
+begin
+  set local role authenticated;
+  set local request.jwt.claims = '{"sub":"00000000-0000-0000-0000-000000001001","aal":"aal2"}';
+
+  select count(*) into n from public.sync_settings; assert n = 1, 'a super admin must see the one sync_settings row';
+  select count(*) into n from public.sync_queue; assert n = 0, 'sync_queue starts empty';
+
+  begin
+    insert into public.sync_queue (org_id, record_type, mode) values ('00000000-0000-0000-0000-000000000002', 'rls-test-insert', 'daily');
+    assert false, 'a direct client INSERT into sync_queue must be rejected (no policy grants it) — unlike UPDATE, INSERT''s WITH CHECK barrier does raise';
+  exception when insufficient_privilege then
+    null; -- expected
+  end;
+
+  -- This project's default privileges already grant table-level UPDATE to
+  -- `authenticated` on every new table (confirmed directly — not something
+  -- this migration controls), so a missing RLS UPDATE policy does NOT
+  -- raise insufficient_privilege the way a missing INSERT policy does
+  -- (INSERT's WITH CHECK barrier raises; UPDATE's USING-clause row
+  -- filtering just silently matches zero rows). The real assertion is that
+  -- the value is unchanged, not that an exception was thrown.
+  update public.sync_settings set kill_switch = true where singleton = true;
+  select kill_switch into v_locked from public.sync_settings where singleton = true;
+  assert not v_locked, 'a direct client UPDATE on sync_settings must affect zero rows (no policy grants it)';
+
+  begin
+    perform public.try_lock_sync_unit('00000000-0000-0000-0000-000000000002', 'rls-test-type', 15);
+    assert false, 'a direct authenticated call to try_lock_sync_unit must be rejected — service_role only';
+  exception when insufficient_privilege then
+    null; -- expected
+  end;
+  reset role;
+
+  -- Customer roles see 0 rows on both tables.
+  set local role authenticated;
+  set local request.jwt.claims = '{"sub":"00000000-0000-0000-0000-000000001002","aal":"aal2"}'; -- Prism owner
+  select count(*) into n from public.sync_settings; assert n = 0, format('Prism owner must see 0 sync_settings, saw %s', n);
+  select count(*) into n from public.sync_queue; assert n = 0, format('Prism owner must see 0 sync_queue, saw %s', n);
+  reset role;
+
+  -- The lock/watermark functions themselves, exercised as service_role
+  -- (the only role that can call them — matches how the Edge Function
+  -- itself calls them).
+  set local role service_role;
+  select public.try_lock_sync_unit('00000000-0000-0000-0000-000000000002', 'rls-test-type', 15) into v_locked;
+  assert v_locked, 'the first lock acquire on a free unit must succeed';
+  select public.try_lock_sync_unit('00000000-0000-0000-0000-000000000002', 'rls-test-type', 15) into v_locked;
+  assert not v_locked, 'a second lock acquire while the first still holds it must fail';
+  perform public.finish_sync_unit('00000000-0000-0000-0000-000000000002', 'rls-test-type', 'success', null);
+  select locked_until is null, last_synced_at is not null into v_locked, v_advanced
+    from public.sync_state where org_id = '00000000-0000-0000-0000-000000000002' and record_type = 'rls-test-type';
+  assert v_locked, 'finish_sync_unit must release the lock';
+  assert v_advanced, 'finish_sync_unit must advance last_synced_at on a successful outcome';
+
+  perform public.try_lock_sync_unit('00000000-0000-0000-0000-000000000002', 'rls-test-type-2', 15);
+  perform public.finish_sync_unit('00000000-0000-0000-0000-000000000002', 'rls-test-type-2', 'failed', 'rls test failure');
+  select last_synced_at is null into v_locked from public.sync_state where org_id = '00000000-0000-0000-0000-000000000002' and record_type = 'rls-test-type-2';
+  assert v_locked, 'finish_sync_unit must NOT advance last_synced_at on a failed outcome';
+
+  insert into public.sync_queue (org_id, record_type, mode) values ('00000000-0000-0000-0000-000000000002', 'rls-test-type-3', 'daily');
+  select (public.claim_sync_queue_item()).status into v_claimed_status;
+  assert v_claimed_status = 'processing', 'claim_sync_queue_item must atomically claim the one queued row';
+  select (public.claim_sync_queue_item()).id is null into v_locked;
+  assert v_locked, 'a second claim with nothing left queued must return nothing';
+  reset role;
+
+  raise notice 'ALL SYNC RUNNER RLS TESTS PASSED';
+end $$;

@@ -153,14 +153,22 @@ Only produce record types listed in each unit's `record_types`.
      paging with `skip` and splitting a long range into multiple ≤50-item
      windows rather than one huge pull. Then read each transcript's
      **summary and action-items list** — never the raw transcript text.
-     **A real-data check found most meetings in any given window are
-     internal (hiring, vendor, team syncs), not customer calls** — if a
-     transcript's attendees carry no account-mapped or otherwise
-     recognizable external business domain at all, that's grounds to
-     `skip` it outright (reason: "no identifiable customer account"), not
-     to file an `account_resolution` for it. `account_resolution` is for
-     "this is clearly a customer/prospect but not one we've mapped yet,"
-     not "this might not be a customer meeting at all."
+     **Attribute a meeting two ways, not just by domain** (revised
+     2026-10-11 — the domain-only rule was too blunt: most customer
+     decisions actually surface in internally-attended meetings, e.g. an
+     internal deal-review call that mentions a named account):
+     (a) a participant's email domain matches an account/tenant source, or
+     (b) the title, summary, or action items **name** a known account or
+     tenant (its listed name or one of its aliases) — an internal-only
+     attendee list is not itself a reason to skip. Skip a transcript
+     outright (reason: "no identifiable customer account") **only** when
+     neither check finds anything — no domain match and no name/alias
+     mention anywhere in the title/summary/action items. A mention that's
+     unclear which account/tenant it is (an ambiguous short name, a
+     program name not yet in the roster) still goes through
+     `account_resolution` as usual — that path is for "clearly about a
+     customer, just not one we've mapped," not for "we found nothing at
+     all to go on."
    - **Drive: out of scope.** No Drive tool is ever called by this skill.
 3. **Extract** candidate facts per record type, following
    `reference/record-types.md` — what counts, field mapping, confidence.

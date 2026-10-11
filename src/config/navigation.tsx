@@ -1,4 +1,4 @@
-import { LayoutDashboard, Users, Server, Flag, Settings, Layers, ShieldCheck, UsersRound, UserCog, Briefcase, CheckSquare, ScrollText, Home, ClipboardList, KeyRound } from 'lucide-react'
+import { LayoutDashboard, Users, Server, Flag, Settings, Layers, ShieldCheck, UsersRound, UserCog, Briefcase, CheckSquare, ScrollText, Home, ClipboardList, KeyRound, RefreshCw } from 'lucide-react'
 import type { UserRole } from '@/types'
 
 export interface NavItem {
@@ -24,6 +24,7 @@ export const NAV_BY_ROLE: Record<UserRole, NavItem[]> = {
     { to: '/audit-log', label: 'Audit Log', icon: <ScrollText size={16} />, group: 'admin' },
     { to: '/admin-users', label: 'Users & Roles', icon: <ShieldCheck size={16} />, group: 'admin' },
     { to: '/ingest-tokens', label: 'Ingest Tokens', icon: <KeyRound size={16} />, group: 'admin' },
+    { to: '/sync-status', label: 'Sync Status', icon: <RefreshCw size={16} />, group: 'admin' },
     { to: '/feature-flags', label: 'Feature Flags', icon: <Flag size={16} />, group: 'admin' },
     { to: '/overview', label: 'Overview', icon: <LayoutDashboard size={16} />, group: 'admin' },
     { to: '/cloud-customers', label: 'Cloud Customers', icon: <Users size={16} />, group: 'admin' },

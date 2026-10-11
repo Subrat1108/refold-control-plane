@@ -18,6 +18,7 @@ import { NamespaceOrgDetailPage } from '@/pages/NamespaceOrgDetailPage'
 import { FeatureFlagsPage } from '@/pages/FeatureFlagsPage'
 import { SuperAdminsPage } from '@/pages/SuperAdminsPage'
 import { IngestTokensPage } from '@/pages/IngestTokensPage'
+import { SyncStatusPage } from '@/pages/SyncStatusPage'
 import { PeoplePage } from '@/pages/PeoplePage'
 import { StandupsPage } from '@/pages/StandupsPage'
 import { StandupDetailPage } from '@/pages/StandupDetailPage'
@@ -125,6 +126,11 @@ export const router = createBrowserRouter([
         // 7.4 — mint/revoke bearer tokens for the Ingest API (7.5's CS Sync Skill).
         path: 'ingest-tokens',
         element: <RouteGuard allowedRoles={['super_admin']}><IngestTokensPage /></RouteGuard>,
+      },
+      {
+        // 7.5-pre2 Session 5 — the sync runner's admin screen.
+        path: 'sync-status',
+        element: <RouteGuard allowedRoles={['super_admin']}><SyncStatusPage /></RouteGuard>,
       },
       {
         // Equal-admins model — directory of admins, reports_to, account roles.

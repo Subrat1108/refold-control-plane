@@ -42,7 +42,7 @@
 - [x] Equal admins — people simplification (Part 1): `account_roles` (per-account role tag, record-keeping, history) replaces titles/teams/account_assignments/owner_profile_id; `reports_to` (optional, UX-only, cycle-checked); rewritten scope helpers; People directory screen; Portfolio/Account 360 "Add to my accounts"/"Leave account"; nav reorder + collapsed Admin group (D-081–D-086)
 - [x] Home + Standups + People activity (Parts 2–4): Home (personal "my day" — my accounts, needs attention, my reports, recent activity, all scoped); Standups (anyone hosts, standups/standup_entries/action_items, host-can-edit-any RLS, remembered participant set via saved_views, deterministic "since last standup" draft, live mode, blocker→ask/action-item); People activity (role history, recent activity, open action items, recent standup entries on the existing People directory) (D-087–D-090). Performance indexes/KPIs stay deferred — the data they need (account_roles history, project_members, audit actor, approvals, standups) is confirmed fully captured.
 - [x] 7.4 — Ingest API: `ingest_tokens` table (select super-admin-only, no client insert/update), `create_ingest_token`/`revoke_ingest_token` provisioning actions, new `ingest` Edge Function (bearer-token auth, verify_jwt disabled, upsert/dedupe decision tree, race-safe via partial unique index), Ingest Tokens admin screen
-- [ ] 7.5 — CS Sync Skill + runner + Refresh (was 6.5). **7.5-pre done** (D-097–D-099): Refold MCP connection confirmed and the `cs-sync` skill finalized against the real server (`skills/cs-sync/`, `docs/refold-mcp.md`) — connected live, confirmed the agent-mode `RESOLVE_ACTIONS`/`EXECUTE_ACTION` contract, real action IDs/schema enums filled in, health-dedupe tested against local ingest. Four real connection/app-admin gaps found (not code issues): Zendesk/Gmail not connected for the `cs-hub` linked account, Slack's bot is not in any channel, `search_messages` is structurally unavailable (bot vs. user token), and zero Refold workflows exist (blocks `metric` entirely). **7.5-pre2 Sessions 1–2 of 6 done.** Session 1 (D-100–D-103): accounts/tenants are the only truth — `tenants` + `account_sources` tables (supersede `aliases` for matching), `dormant` lifecycle value, `tenant_id` on 9 record tables, `apply_proposal()`/`ingest` updated, Account 360 sources panel. Session 2 (D-104–D-107): "account match needed" — `held` proposal status + `account_resolution` meta-proposals, the `ingest` dedupe tree extracted to `supabase/functions/_shared/dedupe.ts` (shared with the new release path), a pinned Approvals-inbox section with all 4 resolution decisions (map to existing / map as tenant / create new account / ignore), `sync_learnings` pulled forward minimally for the ignore-list + alias-map audit trail. **Order changed (D-108):** Session 4 (skill realignment + new record types) → Session 5 (runner) → first real sync → Session 3 (learning loop proper) → Session 6 (context-store bootstrap) — the learning loop needs real approval decisions to learn from, which don't exist until 4/5 ship and a real sync runs. **Session 4 of 6 done** (D-109–D-113): `action_item`/`engagement` record types wired end to end (`ingest`, `apply_proposal()`, `_shared/dedupe.ts`, schema/docs); `skills/cs-sync/` fully revised against the real daily-CS-workflow rules + live Slack-connector discovery (user-token + custom-app support confirmed, `search:read` scope gap found); `refold-skill.md` regenerated for Refold → MCP → CS Hub → Skills. Early real-data check against Fireflies (local-only, reset after) validated the resolution path against real transcripts and surfaced one skill rule (skip meetings with no identifiable customer domain). Remaining sessions (5, first real sync, 3, 6) built only as approved.
+- [ ] 7.5 — CS Sync Skill + runner + Refresh (was 6.5). **7.5-pre done** (D-097–D-099): Refold MCP connection confirmed and the `cs-sync` skill finalized against the real server (`skills/cs-sync/`, `docs/refold-mcp.md`) — connected live, confirmed the agent-mode `RESOLVE_ACTIONS`/`EXECUTE_ACTION` contract, real action IDs/schema enums filled in, health-dedupe tested against local ingest. Four real connection/app-admin gaps found (not code issues): Zendesk/Gmail not connected for the `cs-hub` linked account, Slack's bot is not in any channel, `search_messages` is structurally unavailable (bot vs. user token), and zero Refold workflows exist (blocks `metric` entirely). **7.5-pre2 Sessions 1–2 of 6 done.** Session 1 (D-100–D-103): accounts/tenants are the only truth — `tenants` + `account_sources` tables (supersede `aliases` for matching), `dormant` lifecycle value, `tenant_id` on 9 record tables, `apply_proposal()`/`ingest` updated, Account 360 sources panel. Session 2 (D-104–D-107): "account match needed" — `held` proposal status + `account_resolution` meta-proposals, the `ingest` dedupe tree extracted to `supabase/functions/_shared/dedupe.ts` (shared with the new release path), a pinned Approvals-inbox section with all 4 resolution decisions (map to existing / map as tenant / create new account / ignore), `sync_learnings` pulled forward minimally for the ignore-list + alias-map audit trail. **Order changed (D-108):** Session 4 (skill realignment + new record types) → Session 5 (runner) → first real sync → Session 3 (learning loop proper) → Session 6 (context-store bootstrap) — the learning loop needs real approval decisions to learn from, which don't exist until 4/5 ship and a real sync runs. **Session 4 of 6 done** (D-109–D-113): `action_item`/`engagement` record types wired end to end (`ingest`, `apply_proposal()`, `_shared/dedupe.ts`, schema/docs); `skills/cs-sync/` fully revised against the real daily-CS-workflow rules + live Slack-connector discovery (user-token + custom-app support confirmed, `search:read` scope gap found); `refold-skill.md` regenerated for Refold → MCP → CS Hub → Skills. Early real-data check against Fireflies (local-only, reset after) validated the resolution path against real transcripts and surfaced one skill rule (skip meetings with no identifiable customer domain). **Session 5 of 6 done** (D-114–D-121): the sync runner. New `cs-sync-runner` Edge Function — reuses 7.1's previously-unwired `sync_runs`/`sync_state`; new `sync_settings`/`sync_queue` + 6 SQL functions; `pg_cron`/`pg_net` (5-minute tick, Vault-authenticated dispatch). Builds the sync context, runs `skill.md` as an Anthropic tool-use agent (session-token/MCP for `RESOLVE_ACTIONS`, deterministic REST for `EXECUTE_ACTION`), proxying every tool call so a non-read-only call is rejected server-side before reaching Refold. Validates output, posts to `ingest`. Scoped (Refresh) runs synchronously; daily/backfill fan out one unit per invocation via the queue. New Action Items tab on Account 360 (nowhere else for its Refresh button to live), a shared `RefreshButton` wired into every CS-sync section, and a new `/sync-status` admin screen. Kill switch set ON on cloud immediately after shipping, so the new cron tick can't autonomously enqueue anything — the user flips it off and runs the first real sync themselves, per their explicit instruction. Five Edge Function secrets + one Vault secret remain unset on cloud (confirmed via `supabase secrets list`). Remaining sessions (first real sync, 3, 6) built/run only as approved.
 - [ ] 7.6 — Ask the Hub (chat agent)
 - [ ] 7.7 — Reports (monthly status, EBR, QBR — was 6.6)
 - [ ] 7.8 — Air-gapped import
@@ -75,6 +75,79 @@ Points, streaks, badges, team leaderboards — computed from the audit log + pro
 
 ## Last session
 (See docs/devlog.md for full session history — this is just the pointer.)
+
+Date: 2026-10-11 (still later same day)
+Completed: Pre-session fix: SKILL.md's domain-only Fireflies skip rule was
+too blunt (most customer decisions surface in internally-attended
+meetings) — revised to attribute via a participant email domain OR a
+named account/tenant mention, skipping only when neither finds anything
+(D-114). 7.5-pre2 Session 5 of 6 — the sync runner. New `cs-sync-runner`
+Edge Function, the first real caller of the `cs-sync` skill. Found and
+reused 7.1's `sync_runs`/`sync_state` tables — defined back then but never
+actually driven by any code until now (D-115); new `sync_settings`
+(singleton kill switch/cron-time/caps row) and `sync_queue` (daily/
+backfill fan-out); 6 new SECURITY DEFINER functions (lock/watermark/
+queue-claim/enqueue-daily/enqueue-backfill/dispatch) plus `get_enum_values`
+so the sync context's `allowed_values` reads live from Postgres instead of
+a hand-copied list. `pg_cron`/`pg_net` enabled — one job ticks every 5
+minutes (not at the scheduled time directly, so the admin screen can
+change it with a plain UPDATE); dispatch authenticates to the Edge
+Function via a Postgres Vault secret holding the service-role key (set
+once by hand against cloud, per the session owner's explicit go-ahead on
+that approach).
+The runner builds the sync context per SKILL.md's contract, runs the
+skill as an Anthropic tool-use agent — a cached session token for
+`RESOLVE_ACTIONS` (the one agent-mode-only MCP tool with no deterministic
+equivalent), the deterministic REST execute path for `EXECUTE_ACTION`
+itself once a call is resolved (D-116) — proxying every tool call through
+a server-side allowlist (`allowlist.ts`) that rejects a non-read-only
+`httprequest` call (a Fireflies mutation, a non-GET Zendesk call) BEFORE
+it ever reaches Refold; this is why the runner doesn't hand the model
+Anthropic's built-in MCP connector directly. Output is validated
+(`validate.ts`, reusing `_shared/dedupe.ts`'s existing `REQUIRED_FIELDS`
+instead of a new JSON-Schema dependency — D-117) with one repair attempt,
+then posted to local `ingest`. Scoped (Refresh button) runs synchronously
+and return the result directly; daily/backfill runs fan out through
+`sync_queue`, one unit per Edge Function invocation. Two new `provisioning`
+actions (`update_sync_settings`, `enqueue_backfill`). Model id corrected to
+`claude-sonnet-5` (the instruction's `claude-sonnet-5-5` isn't real — D-118).
+Frontend: a new read-only Action Items tab on Account 360 (its Refresh
+button had nowhere else to live — D-119), a shared `RefreshButton`
+component wired into Escalations/Tickets/Projects/Engagements/Action
+items/Metrics/health plus a header "refresh everything" button, and a new
+`/sync-status` admin screen (recent runs, settings form, backfill trigger).
+Two real bugs found and fixed while verifying: a default-privilege rule on
+this project grants table/function access directly to `anon`/
+`authenticated`, not just `public` — every `revoke ... from public` in the
+new migration now also names `anon, authenticated` explicitly (D-121); and
+the stub-mode e2e fixture's nonsense `account` value was inflating the
+"Account match needed" count a later part of the same e2e test depends on
+being exactly 4 — fixed by pointing it at a real seeded account, and
+separately seeded a fixed local-only ingest token (same fixture category
+as the seeded TOTP factor) so stub-mode testing stops needing a fresh
+token minted by hand after every `db reset`.
+Verified: fresh db reset; rls_test.sql new block ("SYNC RUNNER") + all 10
+prior blocks green; smoke-login all 3 roles; a throwaway stub-mode script
+(17 checks: happy path, repair path, final-failure path, lock contention,
+connector-skip audit row, allowlist rejections) all green against the
+real local Edge Function; `npm run e2e` extended (Action Items tab,
+Refresh button flow in stub mode, Sync Status page) green; typecheck/
+lint/build green.
+Cloud: db push --dry-run matched exactly the 3 new migrations; migration
+list 38/38 local=remote; `cs-sync-runner` deployed new, `provisioning`
+redeployed. Kill switch set to `true` on cloud immediately after, so the
+new cron tick can't autonomously enqueue anything before the user is
+ready. `supabase secrets list` confirmed none of the 5 required Edge
+Function secrets exist yet, and the one Vault secret for cron dispatch
+auth isn't set up either.
+Decisions made: D-114–D-121
+Known issues: per the user's explicit instruction, no real sync was
+triggered this session — the user runs the first one themselves once
+secrets are in place and the kill switch is flipped off. Sessions
+remaining: the first real sync, Session 3 (learning loop proper), Session
+6 (context-store bootstrap).
+
+---
 
 Date: 2026-10-11 (yet later same day)
 Completed: Order change logged (D-108): 7.5-pre2 runs Session 4 → 5 →

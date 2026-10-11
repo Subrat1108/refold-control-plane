@@ -55,6 +55,7 @@ import {
   useAccountSources,
   createAccountSource,
   deleteAccountSource,
+  useAccountActionItems,
 } from '@/hooks'
 import { DataTable, type Column } from '@/components/DataTable'
 import { StatusBadge } from '@/components/StatusBadge'
@@ -63,6 +64,8 @@ import { Modal } from '@/components/Modal'
 import { SlideOver } from '@/components/SlideOver'
 import { Tabs, type TabItem } from '@/components/Tabs'
 import { Tooltip } from '@/components/Tooltip'
+import { RefreshButton } from '@/components/RefreshButton'
+import { refreshAccountRecordType } from '@/lib/syncRunner'
 import { CardSkeleton } from '@/components/SkeletonLoader'
 import { ErrorState } from '@/components/ErrorState'
 import { EmptyState } from '@/components/EmptyState'
@@ -83,6 +86,7 @@ const TABS: TabItem[] = [
   { id: 'escalations', label: 'Escalations' },
   { id: 'tickets', label: 'Tickets' },
   { id: 'engagements', label: 'Engagements' },
+  { id: 'action_items', label: 'Action items' },
   { id: 'metrics', label: 'Metrics' },
 ]
 
@@ -100,6 +104,8 @@ export function AccountDetailPage() {
   const { profile } = useSupabaseAuth()
   const { data: myRoles } = usePersonRoles(profile?.id ?? null)
   const qc = useQueryClient()
+  const [refreshingAll, setRefreshingAll] = useState(false)
+  const [refreshAllSummary, setRefreshAllSummary] = useState<string | null>(null)
 
   if (!orgId) return null
   if (isLoading) return <div className="p-6"><CardSkeleton /></div>
@@ -126,6 +132,28 @@ export function AccountDetailPage() {
     if (!myActiveRole) return
     await endRole(myActiveRole.id)
     refreshMyRoles()
+  }
+
+  // Header-level "Refresh" — one scoped call per CS record type, run
+  // sequentially (the Edge Function itself is synchronous per unit; this
+  // just loops the button so a person doesn't have to visit every tab).
+  async function handleRefreshAll() {
+    setRefreshingAll(true)
+    setRefreshAllSummary(null)
+    const types = ['milestone', 'accomplishment', 'risk', 'escalation', 'ticket', 'engagement', 'action_item', 'health']
+    let ok = 0, failed = 0, locked = 0
+    for (const t of types) {
+      const res = await refreshAccountRecordType(account!.id, t)
+      if (res.status === 'success' || res.status === 'partial') ok++
+      else if (res.status === 'locked') locked++
+      else failed++
+    }
+    setRefreshAllSummary(`${ok} synced${locked ? `, ${locked} already running` : ''}${failed ? `, ${failed} failed` : ''}`)
+    setRefreshingAll(false)
+    qc.invalidateQueries({ queryKey: ['account-action-items', account!.id] })
+    qc.invalidateQueries({ queryKey: ['tickets', account!.id] })
+    qc.invalidateQueries({ queryKey: ['engagements', account!.id] })
+    qc.invalidateQueries({ queryKey: ['escalations', account!.id] })
   }
 
   return (
@@ -159,7 +187,12 @@ export function AccountDetailPage() {
           ) : (
             <button onClick={() => setRoleModalOpen(true)} className="text-xs font-medium text-primary hover:underline">Add to my accounts</button>
           )}
-          <Tooltip content="Coming in 7.5"><button disabled className="rounded-md border border-border px-3 py-1.5 text-xs font-medium text-muted-foreground opacity-50 cursor-not-allowed">Refresh</button></Tooltip>
+          {refreshAllSummary && <span className="text-xs text-muted-foreground">{refreshAllSummary}</span>}
+          <Tooltip content="Sync every CS record type for this account now">
+            <button onClick={handleRefreshAll} disabled={refreshingAll} className="rounded-md border border-border px-3 py-1.5 text-xs font-medium text-foreground hover:bg-muted disabled:opacity-50">
+              {refreshingAll ? 'Syncing…' : 'Refresh'}
+            </button>
+          </Tooltip>
           <Tooltip content="Coming in 7.6"><button disabled className="rounded-md border border-border px-3 py-1.5 text-xs font-medium text-muted-foreground opacity-50 cursor-not-allowed">Ask about this account</button></Tooltip>
         </div>
       </div>
@@ -173,6 +206,7 @@ export function AccountDetailPage() {
       {tab === 'escalations' && <EscalationsTab orgId={account.id} />}
       {tab === 'tickets' && <TicketsTab orgId={account.id} />}
       {tab === 'engagements' && <EngagementsTab orgId={account.id} />}
+      {tab === 'action_items' && <ActionItemsTab orgId={account.id} people={people ?? []} />}
       {tab === 'metrics' && <MetricsTab orgId={account.id} />}
 
       <ChangeHealthModal account={account} open={healthModalOpen} onClose={() => setHealthModalOpen(false)} />
@@ -286,6 +320,7 @@ function OverviewTab({ account, onChangeHealth, onMarkVerified }: { account: Acc
           </div>
         </div>
         <StatusBadge status={account.health} />
+        <RefreshButton orgId={account.id} recordType="health" label="health" />
         <p className="text-sm text-muted-foreground">{account.healthReason ?? 'No reason recorded.'}</p>
         <p className="text-xs text-muted-foreground">{account.verifiedAt ? `Verified ${formatDate(account.verifiedAt)}` : 'Never verified'}</p>
       </section>
@@ -556,8 +591,23 @@ function ProjectsTab({ orgId, people }: { orgId: string; people: { id: string; f
   const [addOpen, setAddOpen] = useState(false)
   const [deleteTarget, setDeleteTarget] = useState<Project | null>(null)
   const [assignTarget, setAssignTarget] = useState<Project | null>(null)
+  const [syncing, setSyncing] = useState(false)
+  const [syncSummary, setSyncSummary] = useState<string | null>(null)
 
   const refresh = () => qc.invalidateQueries({ queryKey: ['projects', orgId] })
+
+  // Milestones/accomplishments/risks are three separate record types to the
+  // runner, but one section here — one button fires all three scoped calls
+  // sequentially rather than exposing that plumbing to the user.
+  async function handleSyncAll() {
+    setSyncing(true)
+    setSyncSummary(null)
+    const results = await Promise.all(['milestone', 'accomplishment', 'risk'].map((t) => refreshAccountRecordType(orgId, t)))
+    const ok = results.filter((r) => r.status === 'success' || r.status === 'partial').length
+    setSyncSummary(`${ok}/3 synced`)
+    setSyncing(false)
+    refresh()
+  }
 
   const accountLevelRisks = (accountRisks ?? []).filter((r) => r.projectId === null)
   const accountLevelAsks = (accountAsks ?? []).filter((a) => a.projectId === null)
@@ -567,7 +617,13 @@ function ProjectsTab({ orgId, people }: { orgId: string; people: { id: string; f
 
   return (
     <div className="space-y-6">
-      <div className="flex justify-end">
+      <div className="flex items-center justify-end gap-2">
+        {syncSummary && <span className="text-xs text-muted-foreground">{syncSummary}</span>}
+        <Tooltip content="Sync milestones, accomplishments, and risks from connected sources now">
+          <button onClick={handleSyncAll} disabled={syncing} className="rounded-md border border-border px-3 py-1.5 text-xs font-medium text-foreground hover:bg-muted disabled:opacity-50">
+            {syncing ? 'Syncing…' : 'Refresh'}
+          </button>
+        </Tooltip>
         <button onClick={() => setAddOpen(true)} className="inline-flex items-center gap-2 rounded-md bg-primary px-3 py-2 text-sm font-medium text-white hover:bg-primary/90">
           <Plus size={16} /> Add project
         </button>
@@ -918,6 +974,7 @@ function EscalationsTab({ orgId }: { orgId: string }) {
 
   return (
     <div className="space-y-4">
+      <div className="flex items-center justify-end"><RefreshButton orgId={orgId} recordType="escalation" label="escalations" /></div>
       <div className="bg-white rounded-xl shadow-card p-6">
         <DataTable columns={columns} data={escalations ?? []} rowKey={(e) => e.id} emptyTitle="No escalations" />
       </div>
@@ -967,7 +1024,7 @@ function TicketsTab({ orgId }: { orgId: string }) {
 
   return (
     <div className="space-y-4">
-      <div className="flex items-center justify-between"><Tooltip content="Coming in 7.5"><button disabled className="text-xs text-muted-foreground opacity-50 cursor-not-allowed">Refresh</button></Tooltip></div>
+      <div className="flex items-center justify-end"><RefreshButton orgId={orgId} recordType="ticket" label="tickets" /></div>
       <div className="bg-white rounded-xl shadow-card p-6">
         <DataTable columns={columns} data={tickets ?? []} rowKey={(t) => t.id} emptyTitle="No tickets" />
       </div>
@@ -1008,6 +1065,7 @@ function EngagementsTab({ orgId }: { orgId: string }) {
 
   return (
     <div className="space-y-4">
+      <div className="flex items-center justify-end"><RefreshButton orgId={orgId} recordType="engagement" label="engagements" /></div>
       <div className="bg-white rounded-xl shadow-card p-6 space-y-3">
         {(engagements ?? []).length === 0 ? <EmptyState title="No engagements logged" /> : (
           <ul className="space-y-3">
@@ -1043,6 +1101,35 @@ function EngagementsTab({ orgId }: { orgId: string }) {
   )
 }
 
+// ── Action items (7.5-pre2 Session 5) ─────────────────────────────────────
+// Read-only: these are synced facts, same as tickets/engagements — a human
+// edits via Approvals, not a form on this tab.
+
+function ActionItemsTab({ orgId, people }: { orgId: string; people: { id: string; fullName: string | null }[] }) {
+  const { data: items, isLoading, isError, refetch } = useAccountActionItems(orgId)
+
+  const columns: Column<NonNullable<typeof items>[number]>[] = [
+    { key: 'description', header: 'Task', render: (i) => <span className="font-medium text-foreground">{i.description}</span> },
+    { key: 'owner', header: 'Owner', render: (i) => i.ownerProfileId ? (people.find((p) => p.id === i.ownerProfileId)?.fullName ?? '—') : (i.ownerText ?? '—') },
+    { key: 'priority', header: 'Priority', render: (i) => i.priority ? <StatusBadge status={i.priority} /> : '—' },
+    { key: 'status', header: 'Status', render: (i) => <StatusBadge status={i.status} /> },
+    { key: 'due', header: 'Due', render: (i) => <span className="text-muted-foreground">{i.dueDate ? formatDate(i.dueDate) : '—'}</span> },
+    { key: 'source', header: 'Source', render: (i) => i.source ? <SourceBadge source={i.source} verifiedAt={i.verifiedAt ?? null} /> : '—' },
+  ]
+
+  if (isLoading) return <CardSkeleton />
+  if (isError) return <ErrorState onRetry={() => refetch()} />
+
+  return (
+    <div className="space-y-4">
+      <div className="flex items-center justify-end"><RefreshButton orgId={orgId} recordType="action_item" label="action items" /></div>
+      <div className="bg-white rounded-xl shadow-card p-6">
+        <DataTable columns={columns} data={items ?? []} rowKey={(i) => i.id} emptyTitle="No action items" emptyDescription="Synced from Slack, email, and Fireflies once 7.5 runs — or logged in a standup." />
+      </div>
+    </div>
+  )
+}
+
 // ── Metrics ──────────────────────────────────────────────────────────────
 
 function MetricsTab({ orgId }: { orgId: string }) {
@@ -1066,7 +1153,7 @@ function MetricsTab({ orgId }: { orgId: string }) {
 
   return (
     <div className="space-y-4">
-      <div className="flex justify-end"><Tooltip content="Coming in 7.5"><button disabled className="text-xs text-muted-foreground opacity-50 cursor-not-allowed">Refresh</button></Tooltip></div>
+      <div className="flex justify-end"><RefreshButton orgId={orgId} recordType="metric" label="metrics" /></div>
       {Array.from(byCategory.entries()).map(([category, defs]) => (
         <section key={category} className="bg-white rounded-xl shadow-card p-6 space-y-2">
           <h2 className="text-sm font-semibold text-foreground">{category}</h2>

@@ -71,10 +71,25 @@ test('super admin smoke: Home, Portfolio, Account 360, Approvals, Audit log, Sta
   if (accountName) await expect(page.getByRole('heading', { name: accountName })).toBeVisible()
   await expectNoErrors(page, errors)
 
-  for (const tabName of ['Overview', 'Projects', 'Escalations', 'Tickets', 'Engagements', 'Metrics']) {
+  for (const tabName of ['Overview', 'Projects', 'Escalations', 'Tickets', 'Engagements', 'Action items', 'Metrics']) {
     await page.getByRole('tab', { name: tabName }).click()
     await expectNoErrors(page, errors)
   }
+
+  // ── Sync runner (7.5-pre2 Session 5): click Refresh on Tickets, confirm
+  // the runner actually ran end to end (stub mode — supabase/.env sets
+  // CS_SYNC_STUB_MODE=true locally, so this never calls real Refold/
+  // Anthropic) by checking "Last synced: never" becomes a real timestamp,
+  // not by guessing the exact outcome wording. ──
+  await page.getByRole('tab', { name: 'Tickets' }).click()
+  await expect(page.getByText('Last synced: never')).toBeVisible()
+  // Two "Refresh" buttons are visible on this tab (the header's refresh-
+  // everything button plus this tab's own) — scope to the row carrying
+  // "Last synced" so this clicks the Tickets-specific one, not the header's.
+  const ticketsRefreshRow = page.locator('div').filter({ has: page.getByText('Last synced: never') }).last()
+  await ticketsRefreshRow.getByRole('button', { name: 'Refresh' }).click()
+  await expect(page.getByText('Last synced: never')).not.toBeVisible({ timeout: 20_000 })
+  await expectNoErrors(page, errors)
 
   // ── Tenants & sources (7.5-pre2 Session 1): add a tenant, confirm it shows ──
   await page.getByRole('tab', { name: 'Overview' }).click()
@@ -207,5 +222,20 @@ test('super admin smoke: Home, Portfolio, Account 360, Approvals, Audit log, Sta
 
   await page.getByRole('button', { name: 'Manage roles' }).first().click()
   await expect(page.getByText('Recent activity')).toBeVisible()
+  await expectNoErrors(page, errors)
+  // The slide-over (a Radix Sheet) marks the rest of the page aria-hidden
+  // while open — leaving it open made the sidebar's nav links unreachable
+  // for the next step. Close it before navigating anywhere else.
+  await page.keyboard.press('Escape')
+  await expect(page.getByText('Recent activity')).not.toBeVisible()
+
+  // ── Sync Status (7.5-pre2 Session 5): the scoped Refresh above already
+  // produced at least one sync_runs row. The "Admin" disclosure is a
+  // toggle, not idempotent — it's already open from the Audit Log step
+  // earlier and stays open (Sidebar persists across navigation), so it
+  // must NOT be clicked again here or it would close.
+  await page.getByRole('link', { name: 'Sync Status' }).click()
+  await expect(page.getByRole('heading', { name: 'Sync status' })).toBeVisible()
+  await expect(page.getByText('No sync runs yet')).not.toBeVisible()
   await expectNoErrors(page, errors)
 })
