@@ -16,6 +16,49 @@ Template:
 
 ---
 
+## Session 40 — 2026-10-12 — 7.5-pre2 Session 6: the discovery sweep
+**Built:** the missing half of the runner. Session 5 only ever synced
+accounts that already exist, so a conversation with a company nobody added
+was invisible — the session owner caught it. New `record_type='discovery'`:
+a sweep tied to no account, carried on the internal org's unused
+`sync_state` slot (so it inherits lock/watermark/run-recording with no
+schema change), fed a roster-wide context, skipping anything already
+attributable and emitting the rest with a best-guess identifier — which
+lands on `ingest`'s existing held/`account_resolution` path. **No change to
+ingest, apply_proposal(), _shared/dedupe.ts or the resolution UI.**
+Selection rules configurable (`internal_email_domains`,
+`discovery_channel_patterns`). "Scan for unknown accounts" button on
+/sync-status (synchronous — no queue, no Vault secret) plus a daily
+enqueue. Also persisted the agent's `skipped` list to
+`sync_runs.skipped_items` and surfaced it in the UI.
+**Deviations:** the delete/reset tooling in the original ask was dropped —
+the owner deferred it ("lets not delete anything"). Four fixes the live
+runs forced (D-125): per-tool-call logging (a Session 5 requirement never
+implemented — without it a sweep that reported nothing was undiagnosable);
+`skipped` persisted rather than discarded; `RESOLVE_ACTIONS` **removed** as
+actively harmful (it under-reported, omitting `httprequest`, so the agent
+concluded Fireflies couldn't be listed and gave up); and Slack treated as
+read-blocked despite `connected: true`. Then three more for the ~150s Edge
+Function wall (D-126): a self-watching deadline that finalises with tools
+withdrawn, an explicit examine-budget, and a separate faster model for
+sweeps (`CS_SYNC_DISCOVERY_MODEL`, default haiku-5.5) — on Sonnet a sweep
+could not finish at all. Plus forced JSON mode on finalising turns after a
+completed sweep answered in 8KB of prose, and fence-tolerant JSON parsing.
+**Decisions:** D-124–D-127
+**Next:** the owner runs the first real sweep on prod (still not triggered
+here) — then Session 3, the learning loop.
+**Issues:** two self-inflicted test-procedure traps worth remembering, both
+hit this session: `rls_test.sql` leaves fixtures behind (including a
+deliberately-invalid `profiles` proposal) that break a later `npm run e2e`
+on the same database — always `db reset` between them, as CLAUDE.md's
+protocol already says; and a run killed mid-flight leaves its unit locked
+for the full 15-minute TTL, so retries only say "already running" with no
+hint why. `candidates` on a resolution came back empty on every item in
+the live run — expected with only two fictional accounts present, but that
+field is effectively untested.
+
+---
+
 ## Session 39 — 2026-10-12 — switch the runner's LLM provider to OpenRouter
 **Built:** Session owner supplied an OpenRouter key instead of an Anthropic
 one. Verified it first against OpenRouter's own `/auth/key` endpoint (valid,

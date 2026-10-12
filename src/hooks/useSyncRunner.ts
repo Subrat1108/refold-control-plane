@@ -26,14 +26,14 @@ export function useSyncState(orgId: string | null, recordType: string) {
 async function fetchSyncRuns(limit: number): Promise<SyncRun[]> {
   const { data, error } = await supabase
     .from('sync_runs')
-    .select('id, mode, triggered_by, scope, started_at, finished_at, status, counts, cost, tokens_used, skipped_connectors')
+    .select('id, mode, triggered_by, scope, started_at, finished_at, status, counts, cost, tokens_used, skipped_connectors, skipped_items')
     .order('started_at', { ascending: false })
     .limit(limit)
   if (error) throw new Error(error.message)
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   return (data ?? []).map((r: any) => ({
     id: r.id, mode: r.mode, triggeredBy: r.triggered_by, scope: r.scope, startedAt: r.started_at, finishedAt: r.finished_at,
-    status: r.status, counts: r.counts, cost: r.cost, tokensUsed: r.tokens_used, skippedConnectors: r.skipped_connectors,
+    status: r.status, counts: r.counts, cost: r.cost, tokensUsed: r.tokens_used, skippedConnectors: r.skipped_connectors, skippedItems: r.skipped_items,
   }))
 }
 
@@ -42,9 +42,14 @@ export function useSyncRuns(limit = 50) {
 }
 
 async function fetchSyncSettings(): Promise<SyncSettings> {
-  const { data, error } = await supabase.from('sync_settings').select('kill_switch, daily_run_at_utc, max_units_per_run, max_units_per_day, max_tokens_per_unit, updated_by, updated_at').eq('singleton', true).single()
+  const { data, error } = await supabase.from('sync_settings').select('kill_switch, daily_run_at_utc, max_units_per_run, max_units_per_day, max_tokens_per_unit, internal_email_domains, discovery_channel_patterns, updated_by, updated_at').eq('singleton', true).single()
   if (error) throw new Error(error.message)
-  return { killSwitch: data.kill_switch, dailyRunAtUtc: data.daily_run_at_utc, maxUnitsPerRun: data.max_units_per_run, maxUnitsPerDay: data.max_units_per_day, maxTokensPerUnit: data.max_tokens_per_unit, updatedBy: data.updated_by, updatedAt: data.updated_at }
+  return {
+    killSwitch: data.kill_switch, dailyRunAtUtc: data.daily_run_at_utc, maxUnitsPerRun: data.max_units_per_run,
+    maxUnitsPerDay: data.max_units_per_day, maxTokensPerUnit: data.max_tokens_per_unit,
+    internalEmailDomains: data.internal_email_domains ?? [], discoveryChannelPatterns: data.discovery_channel_patterns ?? [],
+    updatedBy: data.updated_by, updatedAt: data.updated_at,
+  }
 }
 
 export function useSyncSettings() {

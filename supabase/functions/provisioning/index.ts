@@ -381,7 +381,7 @@ async function revokeIngestToken(caller: Caller, body: Record<string, unknown>) 
 // kill switch / cron time / caps form. sync_settings is a singleton row
 // with no direct authenticated write policy at all (same shape as
 // ingest_tokens) — this action is the only way to change it.
-const SYNC_SETTINGS_FIELDS = ['kill_switch', 'daily_run_at_utc', 'max_units_per_run', 'max_units_per_day', 'max_tokens_per_unit'] as const
+const SYNC_SETTINGS_FIELDS = ['kill_switch', 'daily_run_at_utc', 'max_units_per_run', 'max_units_per_day', 'max_tokens_per_unit', 'internal_email_domains', 'discovery_channel_patterns'] as const
 
 async function updateSyncSettings(caller: Caller, body: Record<string, unknown>) {
   const patch: Record<string, unknown> = {}

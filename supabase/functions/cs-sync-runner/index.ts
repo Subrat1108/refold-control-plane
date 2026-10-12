@@ -18,11 +18,11 @@
 
 import { createClient, type SupabaseClient } from 'jsr:@supabase/supabase-js@2'
 import { TARGET_TABLE } from '../_shared/dedupe.ts'
-import { buildSyncContext } from './context.ts'
+import { buildSyncContext, buildDiscoveryContext } from './context.ts'
 import { runSkillAgent, repairOutput } from './llm.ts'
 import { validateOutput } from './validate.ts'
-import { getConnectedApps, RECORD_TYPE_CONNECTORS } from './refold.ts'
-import { STUB_MODEL_OUTPUT_INVALID, STUB_MODEL_OUTPUT_VALID } from './fixtures.ts'
+import { getConnectedApps, RECORD_TYPE_CONNECTORS, READ_BLOCKED_CONNECTORS } from './refold.ts'
+import { STUB_MODEL_OUTPUT_DISCOVERY, STUB_MODEL_OUTPUT_INVALID, STUB_MODEL_OUTPUT_VALID } from './fixtures.ts'
 
 const SUPABASE_URL = Deno.env.get('SUPABASE_URL')!
 const ANON_KEY = Deno.env.get('SUPABASE_ANON_KEY')!
@@ -30,6 +30,12 @@ const SERVICE_ROLE_KEY = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!
 const CS_HUB_INGEST_TOKEN = Deno.env.get('CS_HUB_INGEST_TOKEN') ?? ''
 const STUB_MODE = Deno.env.get('CS_SYNC_STUB_MODE') === 'true'
 const INGEST_BATCH_SIZE = 200
+// The discovery sweep (Session 6) is a sync MODE, not a record type — it
+// has no target table of its own, and its watermark/lock live on the
+// internal Refold org's otherwise-unused slot in sync_state.
+const DISCOVERY = 'discovery'
+const INTERNAL_ORG_ID = '00000000-0000-0000-0000-000000000001'
+const DISCOVERY_DEFAULT_WINDOW_DAYS = 7
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
@@ -66,7 +72,42 @@ function resolveStubOutput(req: Request): { initial?: string; repair?: string } 
   const invalid = JSON.stringify(STUB_MODEL_OUTPUT_INVALID)
   if (key === 'invalid-then-repaired') return { initial: invalid, repair: valid }
   if (key === 'invalid-twice') return { initial: invalid, repair: invalid }
+  if (key === 'discovery') {
+    const discovery = JSON.stringify(STUB_MODEL_OUTPUT_DISCOVERY)
+    return { initial: discovery, repair: discovery }
+  }
   return { initial: valid, repair: valid }
+}
+
+// Models routinely wrap JSON in ```json fences or add a sentence before it,
+// and a truncated reply leaves a half-object. A bare JSON.parse turns all
+// three into the same opaque "schema-invalid output" — which is exactly how
+// the first live sweep failed. Strip fences, then fall back to the outermost
+// {...}, then give up honestly.
+function extractJson(text: string | null): unknown | null {
+  if (!text) return null
+  let t = text.trim()
+  const fenced = t.match(/^```(?:json)?\s*([\s\S]*?)\s*```$/)
+  if (fenced) t = fenced[1].trim()
+  try {
+    return JSON.parse(t)
+  } catch { /* try the brace-slice below */ }
+  const first = t.indexOf('{')
+  const last = t.lastIndexOf('}')
+  if (first >= 0 && last > first) {
+    try {
+      return JSON.parse(t.slice(first, last + 1))
+    } catch { /* genuinely unparseable — most often truncated output */ }
+  }
+  return null
+}
+
+// Diagnostics with no content: length and shape only, never the text
+// itself (it carries customer data).
+function describeOutput(text: string | null): string {
+  if (!text) return 'empty'
+  const t = text.trim()
+  return `len=${t.length} starts=${JSON.stringify(t.slice(0, 1))} ends=${JSON.stringify(t.slice(-1))}`
 }
 
 export interface ProcessResult {
@@ -75,6 +116,7 @@ export interface ProcessResult {
   skippedConnectors?: string[]
   error?: string
   runId?: string
+  skippedCount?: number
 }
 
 async function postToIngest(records: unknown[], runId: string, mode: string, triggeredBy: string): Promise<Record<string, number>> {
@@ -93,7 +135,7 @@ async function postToIngest(records: unknown[], runId: string, mode: string, tri
   return counts
 }
 
-export async function processUnit(svc: SupabaseClient, orgId: string, recordType: string, mode: 'scoped' | 'daily' | 'backfill', triggeredBy: string, stub?: { initial?: string; repair?: string }): Promise<ProcessResult> {
+export async function processUnit(svc: SupabaseClient, orgId: string, recordType: string, mode: 'scoped' | 'daily' | 'backfill', triggeredBy: string, stub?: { initial?: string; repair?: string }, windowDays?: number): Promise<ProcessResult> {
   const { data: settings } = await svc.from('sync_settings').select('*').limit(1).single()
   if (settings?.kill_switch) return { status: 'failed', error: 'kill switch is on' }
 
@@ -103,7 +145,7 @@ export async function processUnit(svc: SupabaseClient, orgId: string, recordType
   const runId = crypto.randomUUID()
   await svc.from('sync_runs').insert({ id: runId, mode, triggered_by: triggeredBy, scope: { account: orgId, record_type: recordType }, status: 'running' })
 
-  const finish = async (status: 'success' | 'partial' | 'failed', extra: { counts?: Record<string, number>; error?: string; skippedConnectors?: string[]; tokensUsed?: number }) => {
+  const finish = async (status: 'success' | 'partial' | 'failed', extra: { counts?: Record<string, number>; error?: string; skippedConnectors?: string[]; tokensUsed?: number; skippedItems?: unknown[] }) => {
     await svc.rpc('finish_sync_unit', { p_org_id: orgId, p_record_type: recordType, p_status: status, p_error: extra.error ?? null })
     await svc.from('sync_runs').update({
       status,
@@ -111,6 +153,10 @@ export async function processUnit(svc: SupabaseClient, orgId: string, recordType
       counts: extra.counts ?? null,
       tokens_used: extra.tokensUsed ?? null,
       skipped_connectors: extra.skippedConnectors ?? null,
+      // What the agent looked at and chose not to report. For a sweep this
+      // is most of the answer — without it, "nothing to report" and "the
+      // agent never managed to look" are indistinguishable.
+      skipped_items: extra.skippedItems ?? null,
     }).eq('id', runId)
     if (extra.skippedConnectors?.length) {
       await svc.from('audit_log').insert({
@@ -126,29 +172,45 @@ export async function processUnit(svc: SupabaseClient, orgId: string, recordType
 
   try {
     const { data: stateRow } = await svc.from('sync_state').select('last_synced_at').eq('org_id', orgId).eq('record_type', recordType).maybeSingle()
-    const since = stateRow?.last_synced_at ?? new Date(Date.now() - (mode === 'backfill' ? 90 : 36500) * 86_400_000).toISOString()
+    // An explicit window (the "Scan for unknown accounts" button) wins over
+    // the watermark — asking for "the last 7 days" should mean that even on
+    // a unit that has already run. Otherwise: watermark, else the mode's
+    // default lookback (a sweep defaults to 7 days rather than all-time,
+    // since listing every meeting ever would blow the turn budget).
+    const defaultDays = windowDays ?? (mode === 'backfill' ? 90 : recordType === DISCOVERY ? DISCOVERY_DEFAULT_WINDOW_DAYS : 36500)
+    const since = windowDays
+      ? new Date(Date.now() - windowDays * 86_400_000).toISOString()
+      : stateRow?.last_synced_at ?? new Date(Date.now() - defaultDays * 86_400_000).toISOString()
 
     const neededConnectors = RECORD_TYPE_CONNECTORS[recordType] ?? []
     const connectedApps = await getConnectedApps()
-    const skippedConnectors = neededConnectors.filter((slug) => !connectedApps.some((a) => a.slug === slug && a.connected))
+    const skippedConnectors = neededConnectors.filter(
+      (slug) => slug in READ_BLOCKED_CONNECTORS || !connectedApps.some((a) => a.slug === slug && a.connected),
+    )
 
-    const context = await buildSyncContext({ svc, orgId, recordType, mode, runId, triggeredBy, since })
-    const contextWithSkips = { ...context, unavailable_connectors_this_run: skippedConnectors }
+    // A discovery sweep is not tied to one account, so it gets the
+    // roster-wide context instead of the single-unit one. Everything else
+    // in this function — lock, watermark, validation, ingest POST, run
+    // recording — is identical for both.
+    const contextWithSkips = recordType === DISCOVERY
+      ? await buildDiscoveryContext({ svc, mode, runId, triggeredBy, since, unavailableConnectors: skippedConnectors })
+      : { ...(await buildSyncContext({ svc, orgId, recordType, mode, runId, triggeredBy, since })), unavailable_connectors_this_run: skippedConnectors }
 
-    let agent = await runSkillAgent(JSON.stringify(contextWithSkips), stub?.initial)
+    let agent = await runSkillAgent(JSON.stringify(contextWithSkips), stub?.initial, recordType === DISCOVERY)
+    if (agent.stopped === 'deadline') console.log(`run ${runId}: finished under the time budget — results may be partial`)
     if (agent.stopped === 'max_turns' || !agent.rawText) {
       await finish('failed', { error: 'agent exceeded turn budget without a final answer', skippedConnectors, tokensUsed: agent.tokensUsed })
       return { status: 'failed', error: 'agent exceeded turn budget', skippedConnectors, runId }
     }
 
-    let parsed: unknown
-    try { parsed = JSON.parse(agent.rawText) } catch { parsed = null }
-    let validation = parsed ? validateOutput(parsed) : { valid: false, errors: ['final output was not valid JSON'] }
+    let parsed = extractJson(agent.rawText)
+    let validation = parsed ? validateOutput(parsed) : { valid: false, errors: [`final output was not valid JSON (${describeOutput(agent.rawText)})`] }
 
     if (!validation.valid) {
-      agent = await repairOutput(agent.messages, agent.tokensUsed, validation.errors, stub?.repair)
-      try { parsed = agent.rawText ? JSON.parse(agent.rawText) : null } catch { parsed = null }
-      validation = parsed ? validateOutput(parsed) : { valid: false, errors: ['final output was not valid JSON after repair'] }
+      console.log(`run ${runId}: first output rejected (${validation.errors.slice(0, 3).join('; ')}) — attempting one repair`)
+      agent = await repairOutput(agent.messages, agent.tokensUsed, validation.errors, stub?.repair, recordType === DISCOVERY)
+      parsed = extractJson(agent.rawText)
+      validation = parsed ? validateOutput(parsed) : { valid: false, errors: [`final output was not valid JSON after repair (${describeOutput(agent.rawText)})`] }
     }
 
     if (!validation.valid) {
@@ -157,17 +219,20 @@ export async function processUnit(svc: SupabaseClient, orgId: string, recordType
     }
 
     const records = (parsed as { records: unknown[] }).records
+    const skippedItems = ((parsed as { skipped?: unknown[] }).skipped ?? []).slice(0, 200)
+    console.log(`run ${runId} ${recordType}: ${agent.turns} turns, ${agent.tokensUsed} tokens, ${records.length} records, ${skippedItems.length} skipped`)
+
     const counts = records.length ? await postToIngest(records, runId, mode, triggeredBy) : {}
     const status = counts.rejected_invalid ? 'partial' : 'success'
-    await finish(status, { counts, skippedConnectors, tokensUsed: agent.tokensUsed })
-    return { status, counts, skippedConnectors, runId }
+    await finish(status, { counts, skippedConnectors, tokensUsed: agent.tokensUsed, skippedItems })
+    return { status, counts, skippedConnectors, runId, skippedCount: skippedItems.length }
   } catch (err) {
     await finish('failed', { error: String(err) })
     return { status: 'failed', error: String(err), runId }
   }
 }
 
-async function handleScoped(req: Request, body: { orgId?: string; recordType?: string }): Promise<Response> {
+async function handleScoped(req: Request, body: { orgId?: string; recordType?: string; windowDays?: number }): Promise<Response> {
   const authHeader = req.headers.get('Authorization') ?? ''
   const token = authHeader.replace(/^Bearer\s+/i, '')
   if (!token) return json({ error: 'Missing Authorization bearer token' }, 401)
@@ -181,12 +246,24 @@ async function handleScoped(req: Request, body: { orgId?: string; recordType?: s
   const payload = jwtPayload(token)
   if ((payload.aal as string) !== 'aal2') return json({ error: 'Forbidden: AAL2 (MFA) required' }, 403)
 
-  if (!body.orgId || !body.recordType || !TARGET_TABLE[body.recordType]) {
+  // `discovery` is a mode, not a record type, so it has no TARGET_TABLE
+  // entry and carries no orgId — it runs against the internal org's slot.
+  const isDiscovery = body.recordType === DISCOVERY
+  if (!isDiscovery && (!body.orgId || !body.recordType || !TARGET_TABLE[body.recordType])) {
     return json({ error: 'orgId and a valid recordType are required' }, 400)
   }
 
+  const windowDays = typeof body.windowDays === 'number' && body.windowDays > 0 ? Math.min(body.windowDays, 365) : undefined
   const service = createClient(SUPABASE_URL, SERVICE_ROLE_KEY, { auth: { autoRefreshToken: false, persistSession: false } })
-  const result = await processUnit(service, body.orgId, body.recordType, 'scoped', userData.user.id, resolveStubOutput(req))
+  const result = await processUnit(
+    service,
+    isDiscovery ? INTERNAL_ORG_ID : body.orgId!,
+    isDiscovery ? DISCOVERY : body.recordType!,
+    'scoped',
+    userData.user.id,
+    resolveStubOutput(req),
+    isDiscovery ? (windowDays ?? DISCOVERY_DEFAULT_WINDOW_DAYS) : windowDays,
+  )
   return json(result, result.status === 'failed' ? 500 : 200)
 }
 
@@ -225,5 +302,5 @@ Deno.serve(async (req: Request) => {
   }
 
   if (typeof body.queue_id === 'string') return handleQueued(req, body as { queue_id: string })
-  return handleScoped(req, body as { orgId?: string; recordType?: string })
+  return handleScoped(req, body as { orgId?: string; recordType?: string; windowDays?: number })
 })

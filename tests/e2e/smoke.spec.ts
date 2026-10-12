@@ -238,4 +238,11 @@ test('super admin smoke: Home, Portfolio, Account 360, Approvals, Audit log, Sta
   await expect(page.getByRole('heading', { name: 'Sync status' })).toBeVisible()
   await expect(page.getByText('No sync runs yet')).not.toBeVisible()
   await expectNoErrors(page, errors)
+
+  // Discovery sweep (7.5-pre2 Session 6): the one run that needs no
+  // account at all. Stub mode, so it never reaches Refold or OpenRouter.
+  await page.getByRole('button', { name: 'Scan for unknown accounts' }).click()
+  await expect(page.getByRole('button', { name: 'Scanning…' })).toBeVisible()
+  await expect(page.getByRole('button', { name: 'Scan for unknown accounts' })).toBeVisible({ timeout: 30_000 })
+  await expectNoErrors(page, errors)
 })

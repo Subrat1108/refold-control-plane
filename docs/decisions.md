@@ -1624,6 +1624,92 @@ Fixed to an ASCII hyphen. Worth remembering generally — this repo's prose
 style uses em-dashes everywhere, and they are fine in JSON bodies, SQL
 comments and UI copy, but never in a header value.
 
+## D-124 — The discovery sweep: a sync unit with no account (2026-10-12)
+The session owner caught a real gap in Session 5: the runner only ever
+syncs accounts that already exist, so *"we started having conversation with
+an account but that was not added to the cs hub... That's a miss."* It was
+— and it missed the highest-value cases (new prospects, early
+conversations). Session 2's "Account match needed" queue was built for
+exactly this but could only fire *while syncing a known account*.
+Added `record_type = 'discovery'`: a sweep tied to no account, carried on
+`sync_state` using the internal Refold org's otherwise-unused slot
+(deliberate, not a hack — `sync_state`'s PK includes `org_id` so it cannot
+be null, the internal org already exists, and it is already excluded from
+every per-account sync, so the sweep inherits the existing lock, watermark
+and run recording with no schema change). It gets a roster-wide context
+(`known_accounts` with every alias and tenant) instead of one unit, skips
+anything already attributable, and emits the rest with a best-guess
+identifier — which lands on `ingest`'s existing unresolvable-account path.
+**No change to `ingest`, `apply_proposal()`, `_shared/dedupe.ts` or the
+resolution UI.** Selection rules are configurable
+(`sync_settings.internal_email_domains`, `discovery_channel_patterns`):
+Slack = externally-shared **or** name matches a pattern (the owner's call —
+`internal-<customer>` is your own team's channel *about* a customer and is
+in scope); Fireflies = any non-internal attendee **or** the token owner;
+Gmail = any non-internal participant; Zendesk = every ticket. Triggered by
+a "Scan for unknown accounts" button (synchronous, no queue, no Vault
+secret) and once a day by `enqueue_daily_sync()`.
+
+## D-125 — Four fixes the first live sweeps forced, each found by running it (2026-10-12)
+The sweep was built, stub-tested green, and then failed four times in a row
+against real data — each failure exposing something only a live run could:
+1. **The runner logged nothing**, so "no unknown customers this week" and
+   "the agent never managed to look" were indistinguishable. Session 5's
+   own spec asked for per-tool-call logging and it was never implemented.
+   Added: action, outcome, latency and response size per call (never
+   content), plus turn/token/record counts per run.
+2. **The agent's `skipped` list was thrown away.** For a sweep it is most
+   of the answer — the evidence of what was examined and judged. Now
+   persisted to `sync_runs.skipped_items` and shown on Sync Status. It was
+   this list that diagnosed fix 3, in the agent's own words.
+3. **`RESOLVE_ACTIONS` was actively harmful and is now removed.** It cost
+   8–16s per call and *under-reports*: it returned only
+   `get_transcript`/`get_user` for Fireflies, omitting `httprequest`, so
+   the agent concluded Fireflies could not be listed by date and gave up
+   having fetched nothing. The action catalog is fixed and already known
+   (it *is* `allowlist.ts`), so it now ships in the context instead.
+4. **Slack is `connected: true` but unreadable** (bot token). The connector
+   check believed the flag and let the agent burn its whole budget listing
+   25KB of channels it can never read. Added `READ_BLOCKED_CONNECTORS` —
+   remove the Slack entry when it is re-authorized as a user.
+Together these took a sweep from 137k tokens and zero output to a working
+run.
+
+## D-126 — A sweep must survive the ~150s Edge Function wall (2026-10-12)
+Once the agent actually started fetching, it hit the gateway timeout — and
+a timeout is the worst possible failure: every record gathered is lost AND
+the unit stays locked for the full 15-minute TTL, so retries just say
+"already running" with no explanation. Three changes: the loop watches its
+own clock and, when the budget is nearly spent, asks for the answer NOW
+with tools withdrawn (a partial result beats nothing); the sweep is given
+an explicit `budget.max_items_to_examine` and told to put the remainder in
+`skipped` (the watermark only advances on success, so the next run
+continues); and **discovery runs on a separate, faster model**
+(`CS_SYNC_DISCOVERY_MODEL`, default `anthropic/claude-haiku-5.5`) because a
+sweep is bulk filtering, not the careful judgment a per-account sync makes
+— on Sonnet each turn took 30–40s and a sweep could not finish at all.
+Also: a finalising turn now sets `response_format: {type:'json_object'}`
+and drops the tools, after a fast model answered a completed sweep with
+8KB of prose; and JSON parsing tolerates markdown fences and leading prose
+rather than reporting every one of these as the same opaque
+"schema-invalid output".
+
+## D-127 — First live discovery sweep: it works (2026-10-12)
+Against real Fireflies data, last 7 days, posting to **local** ingest only
+(reset immediately after; nothing real committed anywhere). The sweep
+examined ~56 items and reported 14 records — 9 engagements and 5 action
+items — across **8 companies that are not in the Hub at all**, each raising
+exactly one "Account match needed" item with its held records attached
+(18/18 linked). Its 42 skips were sound: 34 internal/not-a-customer (the
+same pattern Session 4 found), 2 with no usable content, 1 already a known
+account, 1 run-budget. Best-guess identifiers split roughly evenly between
+email domains and company names, both valid per the skill. `candidates` was
+empty on every resolution — expected while the Hub holds only two fictional
+accounts, but it means that field is untested in practice. This is the
+behaviour the session owner asked for: the first real sync will show the
+team the customers nobody remembered to add, instead of only what someone
+typed in first.
+
 # Parked
 
 Out-of-scope ideas land here instead of derailing the current prompt block.

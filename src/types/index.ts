@@ -666,6 +666,7 @@ export interface SyncRun {
   // 7.5-pre2 Session 5
   tokensUsed: number | null
   skippedConnectors: string[] | null
+  skippedItems: Array<{ pointer?: string; reason?: string }> | null
 }
 
 // 7.5-pre2 Session 5 — the runner's own admin-editable config (singleton
@@ -678,6 +679,9 @@ export interface SyncSettings {
   maxTokensPerUnit: number
   updatedBy: string | null
   updatedAt: string
+  // 7.5-pre2 Session 6 — the discovery sweep's selection rules.
+  internalEmailDomains: string[]
+  discoveryChannelPatterns: string[]
 }
 
 export type SyncQueueStatus = 'queued' | 'processing' | 'done' | 'error'

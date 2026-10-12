@@ -64,6 +64,40 @@ export const STUB_MODEL_OUTPUT_VALID = {
   skipped: [],
 }
 
+// Discovery sweep (Session 6): two records for the SAME unknown company.
+// Neither identifier exists in account_sources, so ingest must hold both
+// and raise exactly ONE account_resolution covering them — that merging is
+// the behaviour worth testing, since a sweep naturally finds several items
+// per unknown company.
+export const STUB_MODEL_OUTPUT_DISCOVERY = {
+  run: { mode: 'scoped', source: 'agent', triggered_by: 'system' },
+  records: [
+    {
+      record_type: 'engagement',
+      operation: 'create',
+      account: 'unknown-co.example',
+      type: 'call',
+      source_ref: 'fireflies:stub-discovery-1',
+      data: { engagement_date: '2026-10-08', summary: 'Stub discovery call with a company not in the Hub.' },
+      evidence: { url: 'https://app.fireflies.ai/view/stub-discovery-1', excerpt: 'Intro call, fixture content only.' },
+      confidence: 0.9,
+    },
+    {
+      record_type: 'action_item',
+      operation: 'create',
+      account: 'unknown-co.example',
+      source_ref: 'fireflies:stub-discovery-1#1',
+      data: { description: 'Send pricing to the stub discovery company', priority: 'medium', status: 'open' },
+      evidence: { excerpt: 'Action item from a fixture transcript.' },
+      confidence: 0.9,
+    },
+  ],
+  skipped: [
+    { pointer: 'fireflies:stub-known-1', reason: 'Prism Analytics — already a known account, its own sync covers it' },
+    { pointer: 'fireflies:stub-internal-1', reason: 'no identifiable customer account' },
+  ],
+}
+
 export const STUB_MODEL_OUTPUT_INVALID = {
   run: { mode: 'scoped', source: 'agent', triggered_by: 'system' },
   records: [

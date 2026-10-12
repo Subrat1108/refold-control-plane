@@ -873,3 +873,52 @@ begin
 
   raise notice 'ALL SYNC RUNNER RLS TESTS PASSED';
 end $$;
+
+-- ── Discovery sweep (7.5-pre2 Session 6) ──────────────────────────────────
+-- The sweep is just another sync unit, carried on the internal Refold org's
+-- otherwise-unused sync_state slot — so it inherits the same lock and
+-- watermark behaviour already asserted above. What's new and worth
+-- asserting: the two selection-rule settings columns exist with sane
+-- defaults and are readable by a super admin (the admin screen reads them),
+-- and enqueue_discovery() refuses to pile sweeps on top of each other.
+do $$
+declare
+  n int;
+  v_domains text[];
+  v_patterns text[];
+begin
+  set local role authenticated;
+  set local request.jwt.claims = '{"sub":"00000000-0000-0000-0000-000000001001","aal":"aal2"}';
+  select internal_email_domains, discovery_channel_patterns into v_domains, v_patterns from public.sync_settings;
+  assert v_domains = array['refold.ai'], format('internal_email_domains default should be {refold.ai}, got %s', v_domains);
+  assert v_patterns = array['internal'], format('discovery_channel_patterns default should be {internal}, got %s', v_patterns);
+  reset role;
+
+  -- Customer roles still see nothing (the row is super-admin-only).
+  set local role authenticated;
+  set local request.jwt.claims = '{"sub":"00000000-0000-0000-0000-000000001002","aal":"aal2"}'; -- Prism owner
+  select count(*) into n from public.sync_settings; assert n = 0, 'Prism owner must not see sync_settings';
+  reset role;
+
+  set local role service_role;
+  -- First call queues one sweep; a second must NOT queue another while the
+  -- first is still waiting, or a slow sweep would stack up every tick.
+  select public.enqueue_discovery('daily') into n;
+  assert n = 1, format('first enqueue_discovery should queue 1 sweep, got %s', n);
+  select public.enqueue_discovery('daily') into n;
+  assert n = 0, format('a second enqueue_discovery must queue nothing while one is pending, got %s', n);
+  select count(*) into n from public.sync_queue where record_type = 'discovery';
+  assert n = 1, format('exactly one discovery sweep should be queued, got %s', n);
+  select count(*) into n from public.sync_queue where record_type = 'discovery' and org_id = '00000000-0000-0000-0000-000000000001';
+  assert n = 1, 'the sweep must be carried on the internal Refold org slot, not a customer account';
+
+  -- The kill switch stops it like everything else.
+  update public.sync_settings set kill_switch = true where singleton = true;
+  delete from public.sync_queue where record_type = 'discovery';
+  select public.enqueue_discovery('daily') into n;
+  assert n = 0, 'enqueue_discovery must respect the kill switch';
+  update public.sync_settings set kill_switch = false where singleton = true;
+  reset role;
+
+  raise notice 'ALL DISCOVERY SWEEP RLS TESTS PASSED';
+end $$;

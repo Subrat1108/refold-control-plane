@@ -11,6 +11,7 @@ import { CardSkeleton } from '@/components/SkeletonLoader'
 import { ErrorState } from '@/components/ErrorState'
 import { formatDate } from '@/utils/formatDate'
 import { updateSyncSettings, enqueueBackfill } from '@/lib/provisioning'
+import { runDiscoverySweep, type SyncRunResult } from '@/lib/syncRunner'
 import type { SyncRun } from '@/types'
 
 export function SyncStatusPage() {
@@ -30,6 +31,11 @@ export function SyncStatusPage() {
   const [backfillBusy, setBackfillBusy] = useState(false)
   const [backfillResult, setBackfillResult] = useState<string | null>(null)
   const [hydrated, setHydrated] = useState(false)
+  const [internalDomains, setInternalDomains] = useState('refold.ai')
+  const [channelPatterns, setChannelPatterns] = useState('internal')
+  const [scanDays, setScanDays] = useState(7)
+  const [scanning, setScanning] = useState(false)
+  const [scanResult, setScanResult] = useState<SyncRunResult | null>(null)
 
   if (settings && !hydrated) {
     setKillSwitch(settings.killSwitch)
@@ -37,11 +43,23 @@ export function SyncStatusPage() {
     setMaxPerRun(settings.maxUnitsPerRun)
     setMaxPerDay(settings.maxUnitsPerDay)
     setMaxTokens(settings.maxTokensPerUnit)
+    setInternalDomains((settings.internalEmailDomains ?? []).join(', '))
+    setChannelPatterns((settings.discoveryChannelPatterns ?? []).join(', '))
     setHydrated(true)
   }
 
+  const splitList = (s: string) => s.split(',').map((v) => v.trim()).filter(Boolean)
+
   async function saveSettings() {
-    await updateSyncSettings({ kill_switch: killSwitch, daily_run_at_utc: dailyTime, max_units_per_run: maxPerRun, max_units_per_day: maxPerDay, max_tokens_per_unit: maxTokens })
+    await updateSyncSettings({
+      kill_switch: killSwitch,
+      daily_run_at_utc: dailyTime,
+      max_units_per_run: maxPerRun,
+      max_units_per_day: maxPerDay,
+      max_tokens_per_unit: maxTokens,
+      internal_email_domains: splitList(internalDomains),
+      discovery_channel_patterns: splitList(channelPatterns),
+    })
     setSavedAt(formatDate(new Date().toISOString()))
     qc.invalidateQueries({ queryKey: ['sync-settings'] })
   }
@@ -60,6 +78,21 @@ export function SyncStatusPage() {
     }
   }
 
+  // Runs synchronously through the same entry point the Refresh button
+  // uses — no queue, no Vault secret, result straight back in the response.
+  async function runScan() {
+    setScanning(true)
+    setScanResult(null)
+    try {
+      setScanResult(await runDiscoverySweep(scanDays))
+      qc.invalidateQueries({ queryKey: ['sync-runs'] })
+      qc.invalidateQueries({ queryKey: ['account-resolutions'] })
+      qc.invalidateQueries({ queryKey: ['pending-proposal-count'] })
+    } finally {
+      setScanning(false)
+    }
+  }
+
   const columns: Column<SyncRun>[] = [
     { key: 'started', header: 'Started', render: (r) => <span className="text-muted-foreground">{formatDate(r.startedAt)}</span> },
     { key: 'mode', header: 'Mode', render: (r) => <StatusBadge status={r.mode} /> },
@@ -68,11 +101,56 @@ export function SyncStatusPage() {
     { key: 'counts', header: 'Counts', render: (r) => <span className="text-xs text-muted-foreground">{r.counts ? Object.entries(r.counts).map(([k, v]) => `${k}: ${v}`).join(', ') : '—'}</span> },
     { key: 'tokens', header: 'Tokens', render: (r) => <span className="text-muted-foreground">{r.tokensUsed ?? '—'}</span> },
     { key: 'skipped', header: 'Skipped connectors', render: (r) => <span className="text-xs text-amber-700">{r.skippedConnectors?.length ? r.skippedConnectors.join(', ') : '—'}</span> },
+    {
+      key: 'looked-at',
+      header: 'Looked at but not reported',
+      render: (r) => !r.skippedItems?.length ? <span className="text-xs text-muted-foreground">—</span> : (
+        <details className="text-xs">
+          <summary className="cursor-pointer text-muted-foreground">{r.skippedItems.length} item(s)</summary>
+          <ul className="mt-1 space-y-0.5 max-w-md">
+            {r.skippedItems.slice(0, 20).map((s, i) => <li key={i} className="text-muted-foreground">{s.reason ?? '—'}</li>)}
+          </ul>
+        </details>
+      ),
+    },
   ]
 
   return (
     <div className="p-6 space-y-6">
       <h1 className="text-xl font-semibold text-foreground">Sync status</h1>
+
+      <section className="bg-white rounded-xl shadow-card p-6 space-y-3">
+        <div>
+          <h2 className="text-sm font-semibold text-foreground">Scan for unknown accounts</h2>
+          <p className="text-xs text-muted-foreground mt-1">
+            Looks across the connected tools for customers that aren't in the Hub yet — meetings,
+            channels and tickets involving anyone outside your own email domains. Anything it can't
+            match to an existing account becomes an <strong>Account match needed</strong> item in
+            Approvals, where you create the account.
+          </p>
+        </div>
+        <div className="flex items-end gap-2">
+          <div>
+            <label className="block text-xs font-medium text-muted-foreground mb-1">Look back (days)</label>
+            <input type="number" min={1} max={365} value={scanDays} onChange={(e) => setScanDays(Number(e.target.value))} className="w-28 rounded-md border border-border px-2 py-1.5 text-sm" />
+          </div>
+          <button onClick={runScan} disabled={scanning} className="rounded-md bg-primary px-3 py-2 text-sm font-medium text-white hover:bg-primary/90 disabled:opacity-50">
+            {scanning ? 'Scanning…' : 'Scan for unknown accounts'}
+          </button>
+        </div>
+        {scanResult && (
+          <p className={`text-xs ${scanResult.status === 'failed' ? 'text-red-600' : 'text-muted-foreground'}`}>
+            {scanResult.status === 'failed' && `Failed: ${scanResult.error}`}
+            {scanResult.status === 'locked' && 'A scan is already running.'}
+            {(scanResult.status === 'success' || scanResult.status === 'partial') && (
+              <>
+                {Object.entries(scanResult.counts ?? {}).map(([k, v]) => `${k.replace(/_/g, ' ')}: ${v}`).join(' · ') || 'Nothing new found.'}
+                {scanResult.skippedConnectors?.length ? ` — couldn't check: ${scanResult.skippedConnectors.join(', ')}` : ''}
+              </>
+            )}
+          </p>
+        )}
+      </section>
 
       <section className="bg-white rounded-xl shadow-card p-6 space-y-4">
         <h2 className="text-sm font-semibold text-foreground">Settings</h2>
@@ -96,6 +174,18 @@ export function SyncStatusPage() {
           <div>
             <label className="block text-xs font-medium text-muted-foreground mb-1">Max tokens / unit</label>
             <input type="number" min={1000} step={1000} value={maxTokens} onChange={(e) => setMaxTokens(Number(e.target.value))} className="w-full rounded-md border border-border px-2 py-1.5 text-sm" />
+          </div>
+        </div>
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+          <div>
+            <label className="block text-xs font-medium text-muted-foreground mb-1">Our own email domains (comma-separated)</label>
+            <input value={internalDomains} onChange={(e) => setInternalDomains(e.target.value)} placeholder="refold.ai" className="w-full rounded-md border border-border px-2 py-1.5 text-sm" />
+            <p className="text-xs text-muted-foreground mt-1">Anyone outside these counts as a customer or prospect.</p>
+          </div>
+          <div>
+            <label className="block text-xs font-medium text-muted-foreground mb-1">Slack channel name patterns (comma-separated)</label>
+            <input value={channelPatterns} onChange={(e) => setChannelPatterns(e.target.value)} placeholder="internal" className="w-full rounded-md border border-border px-2 py-1.5 text-sm" />
+            <p className="text-xs text-muted-foreground mt-1">Channels named like this are scanned even with no outsider in them (e.g. <code>internal-acme</code>).</p>
           </div>
         </div>
         <div className="flex items-center gap-3">

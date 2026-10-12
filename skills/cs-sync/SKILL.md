@@ -120,8 +120,54 @@ Never widen a search beyond what's listed here on your own judgment.
 | `scoped` | One account × one record type (a Refresh button). | From the unit's `since` to now. |
 | `daily` | Every unit in the context. | Each unit's own `since`. |
 | `backfill` | All record types for the listed accounts. | `since` if given, else the last 90 days. Work one account at a time. |
+| `discovery` | **No account** — a sweep that finds customers nobody has added yet. See below. | The context's `since` (default: the last 7 days). |
 
 Only produce record types listed in each unit's `record_types`.
+
+## Discovery sweep (`mode: "discovery"`)
+
+Every other mode points you at an account that already exists. This one
+exists because of the opposite problem: **a conversation with a company
+nobody ever added to the Hub is invisible** — no unit names it, so nothing
+goes looking, and it is never seen. New prospects and early conversations
+are exactly what gets missed this way.
+
+The context looks different: instead of `units`, you get
+`known_accounts` (the **whole roster** — every account, its `aliases` and
+its tenants), `internal_email_domains` (who counts as "us"),
+`discovery_channel_patterns`, and `since`.
+
+**1. Collect candidates — per connector:**
+
+| Source | Look at an item when |
+|---|---|
+| **Slack** | the channel is externally shared (`is_ext_shared` or `is_shared` — an outside company is in it) **or** its name contains any `discovery_channel_patterns` entry (e.g. `internal-acme`, your own team's channel *about* a customer). Then read its history since `since`. |
+| **Fireflies** | any attendee's email domain is **not** in `internal_email_domains`, **or** the token owner attended (`query { user { email } }` identifies them). Then read the summary and action items. |
+| **Gmail** | any thread participant's domain is not internal. Exclude sent, promotions and social. |
+| **Zendesk** | **every** ticket updated since `since` (via the read-only incremental export) — a ticket always has a customer behind it. |
+
+**2. For each candidate, decide one of three things:**
+
+- **It belongs to a known account or tenant** (an `aliases` match, or the
+  account/tenant name appears in the title, summary or action items) →
+  **skip it.** Put it in `skipped` with the account name as the reason.
+  That account's own sync already covers it; reporting it here too would
+  file the same fact twice.
+- **It is clearly a customer or prospect, but matches nothing in
+  `known_accounts`** → **this is what the sweep is for.** Emit its records
+  with your best-guess identifier as `account` — the external email domain
+  (`acme.com`), the channel-name suffix (`internal-acme` → `acme`), the
+  Zendesk organization, or the company name as written. The Hub will hold
+  the record and raise an "Account match needed" item so a human can create
+  the account. **Never invent the account yourself.**
+- **There is no customer in it at all** (an internal team sync, a vendor
+  call, a recruiting conversation) → **skip it**, reason: "no identifiable
+  customer account".
+
+**3. Keep it cheap.** A sweep looks at a lot and reports a little. Don't
+pull full histories where a title, summary or action-item list answers the
+question. Respect `unavailable_connectors_this_run` — those connectors are
+down for this run, so don't spend turns on them; note them in `skipped`.
 
 ## Workflow
 

@@ -100,6 +100,20 @@ export async function executeActionDeterministic(applicationSlug: string, action
   return await res.json()
 }
 
+// Connected is not the same as usable. Slack reports `connected: true`
+// because the app IS linked — but the connection is bot-token based, so
+// every channel read comes back `not_in_channel` and search comes back
+// `not_allowed_token_type` (re-verified 2026-10-12 against real channel
+// ids). Without this, a sweep spends its whole turn budget listing Slack
+// channels it can never read and never reaches the connectors that work.
+//
+// REMOVE THE SLACK ENTRY once Slack is re-authorized as a user — see
+// docs/refold-mcp.md's Slack connector addendum for what that needs
+// (and note `search_messages` additionally wants a `search:read` scope).
+export const READ_BLOCKED_CONNECTORS: Record<string, string> = {
+  slack: 'connected as a bot — channel reads return not_in_channel until Slack is re-authorized as a user',
+}
+
 export interface ConnectedApp {
   slug: string
   connected: boolean
@@ -130,4 +144,8 @@ export const RECORD_TYPE_CONNECTORS: Record<string, string[]> = {
   action_item: ['slack', 'gmail', 'fireflies'],
   engagement: ['fireflies'],
   metric: [],
+  // The discovery sweep (Session 6) reaches for everything it can — the
+  // run's connector-skip audit row then names whichever are down, which is
+  // how a sweep honestly reports "I could only see part of the picture."
+  discovery: ['fireflies', 'slack', 'gmail', 'zendesk'],
 }

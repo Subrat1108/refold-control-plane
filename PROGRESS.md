@@ -76,6 +76,59 @@ Points, streaks, badges, team leaderboards — computed from the audit log + pro
 ## Last session
 (See docs/devlog.md for full session history — this is just the pointer.)
 
+Date: 2026-10-12 (later same day)
+Completed: 7.5-pre2 Session 6 — the discovery sweep, closing a real gap the
+session owner spotted: the runner only ever synced accounts that already
+existed, so a conversation with a company nobody added to the Hub was
+invisible. New `record_type='discovery'` sweep, tied to no account, carried
+on the internal org's unused sync_state slot (so it inherits the existing
+lock/watermark/run-recording with no schema change). It gets the whole
+account roster instead of one unit, skips anything already attributable,
+and emits the rest with a best-guess identifier — landing on ingest's
+existing held/account_resolution path, so "Account match needed" (including
+*Create new account*) handles it with NO change to ingest,
+apply_proposal(), _shared/dedupe.ts or the resolution UI. Selection rules
+are configurable settings (internal_email_domains,
+discovery_channel_patterns); Slack counts a channel if it's externally
+shared OR named like `internal-<customer>`, per the owner's call. Triggered
+by a "Scan for unknown accounts" button on /sync-status (synchronous — no
+queue, no Vault secret needed) and once a day by enqueue_daily_sync().
+The delete/reset tooling originally asked for was dropped — the owner
+deferred it.
+Getting it working took seven fixes that only live runs could surface
+(D-125/D-126): the runner logged nothing (a Session 5 requirement never
+implemented) so a sweep reporting nothing was undiagnosable; the agent's
+`skipped` list was discarded rather than kept; RESOLVE_ACTIONS was removed
+as actively harmful (it under-reported, omitting `httprequest`, so the
+agent concluded Fireflies couldn't be listed by date and gave up having
+fetched nothing — its own skipped-reason said so); Slack was treated as
+usable because it reports connected:true despite being unreadable; and
+three changes for the ~150s Edge Function wall — a self-watching deadline
+that finalises with tools withdrawn, an explicit examine-budget, and a
+separate faster model for sweeps (CS_SYNC_DISCOVERY_MODEL, default
+haiku-5.5) since Sonnet couldn't finish one at all. Plus forced JSON mode
+on finalising turns after a completed sweep replied with 8KB of prose.
+Verified: 11-check stub suite (unknown company held, two records → exactly
+one resolution, re-run idempotent, kill switch); rls_test.sql 12/12 blocks;
+smoke-login; npm run e2e (extended for the scan button); typecheck/lint/
+build. **Live-verified** against real Fireflies data into LOCAL ingest only
+(db reset immediately after, nothing real committed): ~56 items examined,
+14 records — 9 engagements, 5 action items — across 8 companies not in the
+Hub, 18/18 held records linked to their resolution, and 42 sound skips (34
+internal/not-a-customer).
+Cloud: 2 migrations pushed, 40/40 local=remote; cs-sync-runner and
+provisioning redeployed. Kill switch still ON; no production sync run.
+Decisions made: D-124–D-127
+Known issues: two test-procedure traps hit this session — rls_test.sql
+leaves fixtures (incl. a deliberately-invalid `profiles` proposal) that
+break a later e2e on the same DB, so always reset between them; and a run
+killed mid-flight holds its unit lock for the full 15-minute TTL, with
+retries only saying "already running". The `candidates` field on
+resolutions came back empty throughout the live run — expected with only
+two fictional accounts present, but effectively untested.
+
+---
+
 Date: 2026-10-12
 Completed: Switched the sync runner's LLM provider from the Anthropic API
 to OpenRouter (D-122), at the session owner's request. Verified the key

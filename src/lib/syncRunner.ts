@@ -12,10 +12,23 @@ export interface SyncRunResult {
   skippedConnectors?: string[]
   error?: string
   runId?: string
+  skippedCount?: number
 }
 
-export async function refreshAccountRecordType(orgId: string, recordType: string): Promise<SyncRunResult> {
-  const { data, error } = await supabase.functions.invoke('cs-sync-runner', { body: { orgId, recordType } })
+// 7.5-pre2 Session 6 — the discovery sweep. Same entry point, but no
+// account: it runs against the whole roster looking for customers nobody
+// has added yet, and anything it can't place becomes an "Account match
+// needed" item in Approvals.
+export function runDiscoverySweep(windowDays = 7): Promise<SyncRunResult> {
+  return invokeRunner({ recordType: 'discovery', windowDays })
+}
+
+export function refreshAccountRecordType(orgId: string, recordType: string): Promise<SyncRunResult> {
+  return invokeRunner({ orgId, recordType })
+}
+
+async function invokeRunner(body: Record<string, unknown>): Promise<SyncRunResult> {
+  const { data, error } = await supabase.functions.invoke('cs-sync-runner', { body })
   if (error) {
     let message = error.message
     try {

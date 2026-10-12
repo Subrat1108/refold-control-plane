@@ -1,0 +1,15 @@
+-- 7.5-pre2 Session 6 — keep what the agent decided NOT to report.
+--
+-- The skill returns `{records, skipped}`; the runner posted `records` and
+-- threw `skipped` away. That made a run that reports nothing completely
+-- opaque — "no unknown customers this week" and "the agent couldn't use
+-- its tools" looked identical from the outside, which is exactly what
+-- happened on the first live discovery sweep. For a sweep in particular
+-- the skipped list IS most of the answer: it's the evidence that the
+-- agent looked at things and made decisions about them.
+--
+-- Stored per run, surfaced on the Sync Status screen. Holds source
+-- pointers (opaque ids like `fireflies:<id>`) and the agent's short
+-- reason, which may name an account the Hub already knows — never message,
+-- email or transcript content.
+alter table public.sync_runs add column skipped_items jsonb;

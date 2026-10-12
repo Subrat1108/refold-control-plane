@@ -20,12 +20,18 @@ against every connected app.
   missing it (hand-run mode), ask for the account, the record types
   wanted, and the time window before doing anything else.
 - Only produce record types listed in each unit's `record_types`.
-- Call `RESOLVE_ACTIONS` directly with your query list for whatever this
-  run needs — this server does not expose a skill-index tool, so there is
-  no prior "load skill" step to wait for.
-- Every `EXECUTE_ACTION` / tool call against this server needs the CS Hub's
-  `linked_account_id` — if a call fails with "Missing auth context," that's
-  why.
+- **Your context's `action_catalog` is the complete list of calls you can
+  make, with the exact payload shape for each. Use it and call
+  `execute_action` directly — there is no action-discovery step.** In
+  particular, Fireflies IS listable by date range, via
+  `fireflies/httprequest` running a GraphQL `transcripts(fromDate, toDate)`
+  query; do not conclude otherwise. (A runtime action-resolution tool used
+  to exist here and was removed: it under-reported what was available —
+  omitting `httprequest` entirely — and a sweep gave up without fetching
+  anything as a result.)
+- Never decide a source is unusable because you couldn't find an action for
+  it. If it is in `action_catalog` and not in
+  `unavailable_connectors_this_run`, the call is available — make it.
 - **`httprequest` is read-only, no exceptions:** Fireflies — only
   `POST /graphql` bodies containing a GraphQL `query`, never a `mutation`;
   Zendesk — only `GET` (search, `tickets/{id}`, incremental export), never
@@ -58,6 +64,46 @@ against every connected app.
   don't guess, retry, or substitute.
 - **Apply active `learnings`** (empty until the CS team's decisions have
   produced some) over your own judgment, and report which ones you used.
+
+## Discovery sweep (`mode: "discovery"`)
+
+If the context says `mode: "discovery"` it has **no `units`** — follow this
+section instead of Steps below, then deliver output the same way.
+
+This mode exists because every other mode only looks at accounts that
+already exist, so a conversation with a company nobody added to the Hub is
+invisible. The context gives you `known_accounts` (the whole roster, with
+`aliases` and tenants), `internal_email_domains`, `discovery_channel_patterns`
+and `since`.
+
+**Collect candidates:**
+- **Slack** — channels that are externally shared (`is_ext_shared` /
+  `is_shared`) **or** whose name contains a `discovery_channel_patterns`
+  entry (e.g. `internal-acme`, your team's own channel about a customer);
+  read history since `since`.
+- **Fireflies** — transcripts where any attendee's email domain is not in
+  `internal_email_domains`, **or** the token owner attended (`query { user
+  { email } }`); read the summary and action items only.
+- **Gmail** — threads with any non-internal participant; exclude sent,
+  promotions, social.
+- **Zendesk** — every ticket updated since `since` (read-only incremental
+  export); a ticket always has a customer behind it.
+
+**Then, per candidate, exactly one of:**
+1. **Belongs to a known account/tenant** (alias match, or its name appears
+   in the title/summary/action items) → **skip**, reason = that account's
+   name. Its own sync already covers it; reporting it here duplicates it.
+2. **Clearly a customer/prospect but matches nothing known** → emit its
+   records using your best-guess identifier as `account` (external email
+   domain, channel-name suffix, Zendesk org, or the company name as
+   written). The Hub holds it and raises "Account match needed" for a
+   human. **Never create the account yourself.**
+3. **No customer in it at all** (internal sync, vendor, recruiting) →
+   **skip**, reason "no identifiable customer account".
+
+Sweeps look at a lot and report a little: prefer titles, summaries and
+action-item lists over full histories, and skip any connector listed in
+`unavailable_connectors_this_run`.
 
 ## Steps
 
