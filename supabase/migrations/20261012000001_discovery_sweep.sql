@@ -24,9 +24,9 @@ alter table public.sync_settings
   add column internal_email_domains text[] not null default '{refold.ai}',
   -- Slack channels whose NAME marks them as being about a customer even
   -- when no outside company is in the channel (this workspace uses
-  -- `internal-<customer>`, e.g. `internal-rillet`). Matched case-insensitively
-  -- as a substring.
-  add column discovery_channel_patterns text[] not null default '{internal}';
+  -- `internal-<customer>`, e.g. `internal-cloudinventory`). Matched
+  -- case-insensitively as a substring.
+  add column discovery_channel_patterns text[] not null default '{internal-}';
 
 -- Queue a sweep for the background path. The UI's "Scan for unknown
 -- accounts" button does NOT use this — it runs synchronously through the

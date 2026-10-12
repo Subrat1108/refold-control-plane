@@ -36,6 +36,11 @@ const INGEST_BATCH_SIZE = 200
 const DISCOVERY = 'discovery'
 const INTERNAL_ORG_ID = '00000000-0000-0000-0000-000000000001'
 const DISCOVERY_DEFAULT_WINDOW_DAYS = 7
+// A unit with no watermark yet used to look back 36500 days — the agent
+// read that as "search since 1926" and spent its whole budget paging
+// backwards through years of history, on every first run. 30 days is a
+// sane cold start; the watermark takes over from the second run on.
+const FIRST_RUN_LOOKBACK_DAYS = 30
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
@@ -186,7 +191,7 @@ export async function processUnit(svc: SupabaseClient, orgId: string, recordType
     // a unit that has already run. Otherwise: watermark, else the mode's
     // default lookback (a sweep defaults to 7 days rather than all-time,
     // since listing every meeting ever would blow the turn budget).
-    const defaultDays = windowDays ?? (mode === 'backfill' ? 90 : recordType === DISCOVERY ? DISCOVERY_DEFAULT_WINDOW_DAYS : 36500)
+    const defaultDays = windowDays ?? (mode === 'backfill' ? 90 : recordType === DISCOVERY ? DISCOVERY_DEFAULT_WINDOW_DAYS : FIRST_RUN_LOOKBACK_DAYS)
     const since = windowDays
       ? new Date(Date.now() - windowDays * 86_400_000).toISOString()
       : stateRow?.last_synced_at ?? new Date(Date.now() - defaultDays * 86_400_000).toISOString()
@@ -205,7 +210,11 @@ export async function processUnit(svc: SupabaseClient, orgId: string, recordType
       ? await buildDiscoveryContext({ svc, mode, runId, triggeredBy, since, unavailableConnectors: skippedConnectors })
       : { ...(await buildSyncContext({ svc, orgId, recordType, mode, runId, triggeredBy, since })), unavailable_connectors_this_run: skippedConnectors }
 
-    let agent = await runSkillAgent(JSON.stringify(contextWithSkips), stub?.initial, recordType === DISCOVERY)
+    // The cost ceiling is a real limit now, not a decorative setting. One
+    // live run burned 653,835 tokens on a single unit against a 150,000
+    // setting that nothing read.
+    const tokenCap = Number(settings?.max_tokens_per_unit ?? 150000)
+    let agent = await runSkillAgent(JSON.stringify(contextWithSkips), stub?.initial, recordType === DISCOVERY, tokenCap)
     if (agent.stopped === 'deadline') console.log(`run ${runId}: finished under the time budget — results may be partial`)
     if (agent.stopped === 'max_turns' || !agent.rawText) {
       await finish('failed', { error: 'agent exceeded turn budget without a final answer', skippedConnectors, tokensUsed: agent.tokensUsed })
@@ -238,13 +247,13 @@ export async function processUnit(svc: SupabaseClient, orgId: string, recordType
     // it never reached. Truncation shows up two ways — the loop ran out of
     // time, or the agent itself said it hit the item budget.
     const hitBudget = skippedItems.some((s) => /budget/i.test(JSON.stringify((s as Record<string, unknown>)?.reason ?? '')))
-    const truncated = agent.stopped === 'deadline' || hitBudget
+    const truncated = agent.stopped === 'deadline' || agent.stopped === 'token_cap' || hitBudget
     const coveredThrough = typeof (parsed as { covered_through?: unknown }).covered_through === 'string'
       ? (parsed as { covered_through: string }).covered_through
       : null
     const status = truncated ? 'partial' : counts.rejected_invalid ? 'partial' : 'success'
     if (truncated) {
-      console.log(`run ${runId}: PARTIAL (${agent.stopped === 'deadline' ? 'out of time' : 'item budget'}) covered_through=${coveredThrough ?? 'unreported — watermark held'}`)
+      console.log(`run ${runId}: PARTIAL (${agent.stopped === 'deadline' ? 'out of time' : agent.stopped === 'token_cap' ? 'token cap' : 'item budget'}) covered_through=${coveredThrough ?? 'unreported — watermark held'}`)
     }
 
     await finish(status, { counts, skippedConnectors, tokensUsed: agent.tokensUsed, skippedItems, coveredThrough })

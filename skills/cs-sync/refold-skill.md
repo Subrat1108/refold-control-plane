@@ -49,19 +49,15 @@ against every connected app.
   `account`/`tenant` string anyway — the ingest API holds the record and
   raises an "account match needed" item for a human (`held_pending_
   resolution` is a normal, expected outcome, not an error).
-- **Known live gaps — don't waste turns rediscovering these:** Zendesk and
-  Gmail are not connected for this account (every call fails "Application
-  Authentication not found"); Slack is connected as a **bot**, not a user
-  — `get_conversation_history`/`list_thread_messages` → `not_in_channel`,
-  `search_messages` → `not_allowed_token_type` (both need Slack to be
-  re-authorized as a user — not yet done, and `search_messages`
-  additionally needs a `search:read` scope the default app doesn't have);
-  neither Zendesk nor Fireflies has a native list/search action — use the
-  read-only `httprequest` workaround (confirmed working for Fireflies,
-  expected for Zendesk once connected) to discover tickets/transcripts by
-  date/search instead of only get-by-id. Where a capability you need is
-  blocked, skip that record type for this run and say why in `skipped` —
-  don't guess, retry, or substitute.
+- **Which connectors are usable is told to you at RUN TIME, never assumed.**
+  `unavailable_connectors_this_run` in your context is the live, verified
+  list — trust it and nothing else. If a connector is NOT in that list,
+  it is working: use it. Do not skip a source because of anything you
+  believe about past availability. (This paragraph replaces a hardcoded
+  list of "known gaps" that went stale and caused a real run to skip three
+  working connectors and return nothing.)
+- Where a connector IS listed as unavailable, skip that source for the run
+  and say so in `skipped` — don't guess, retry or substitute.
 - **Apply active `learnings`** (empty until the CS team's decisions have
   produced some) over your own judgment, and report which ones you used.
 
@@ -77,10 +73,13 @@ invisible. The context gives you `known_accounts` (the whole roster, with
 and `since`.
 
 **Collect candidates:**
-- **Slack** — channels that are externally shared (`is_ext_shared` /
-  `is_shared`) **or** whose name contains a `discovery_channel_patterns`
-  entry (e.g. `internal-acme`, your team's own channel about a customer);
-  read history since `since`.
+- **Slack** — a channel is in scope when EITHER: it has a member who is
+  not on one of `internal_email_domains` (externally shared channels show
+  this as `is_ext_shared`/`is_shared` in the channel list; for others you
+  can confirm with the members + user-info actions), **or** its name
+  contains a `discovery_channel_patterns` entry (e.g. `internal-` as in
+  `internal-cloudinventory` — your own team's channel about a customer).
+  Then read history since `since`.
 - **Fireflies** — transcripts where any attendee's email domain is not in
   `internal_email_domains`, **or** the token owner attended (`query { user
   { email } }`); read the summary and action items only.

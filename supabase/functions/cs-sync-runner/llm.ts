@@ -127,7 +127,7 @@ export interface AgentResult {
   rawText: string | null
   tokensUsed: number
   turns: number
-  stopped: 'end_turn' | 'max_turns' | 'deadline'
+  stopped: 'end_turn' | 'max_turns' | 'deadline' | 'token_cap'
   messages: Array<Record<string, unknown>>
 }
 
@@ -136,16 +136,21 @@ interface ToolCall {
   function: { name: string; arguments: string }
 }
 
-async function runConversation(messages: Array<Record<string, unknown>>, maxTurns: number, tokensUsedSoFar: number, model: string = MODEL, deadlineAt = Date.now() + DEADLINE_MS, forceFinal = false): Promise<AgentResult> {
+async function runConversation(messages: Array<Record<string, unknown>>, maxTurns: number, tokensUsedSoFar: number, model: string = MODEL, deadlineAt = Date.now() + DEADLINE_MS, forceFinal = false, tokenCap = Infinity): Promise<AgentResult> {
   let tokensUsed = tokensUsedSoFar
   let wrappingUp = forceFinal
+  let stoppedOnTokens = false
 
   for (let turn = 1; turn <= maxTurns; turn++) {
     // Out of time: ask for whatever it has, with no tools offered so the
     // only possible reply is the final JSON.
-    if (!wrappingUp && Date.now() > deadlineAt - WRAP_UP_RESERVE_MS) {
+    // Either ceiling — time or spend — ends gathering the same way: ask
+    // for what it has rather than losing the run entirely.
+    const overTokens = tokensUsed >= tokenCap
+    if (!wrappingUp && (overTokens || Date.now() > deadlineAt - WRAP_UP_RESERVE_MS)) {
       wrappingUp = true
-      console.log(`run deadline approaching after ${turn - 1} turns — asking the agent to finalise now`)
+      stoppedOnTokens = overTokens
+      console.log(`run ${overTokens ? `hit its ${tokenCap}-token cap` : 'deadline approaching'} after ${turn - 1} turns — asking the agent to finalise now`)
       messages.push({ role: 'user', content: 'You are out of time for this run. Stop gathering and reply NOW with ONLY the final JSON object for what you have gathered so far. Put anything you did not get to in `skipped` with the reason "run budget reached".' })
     }
 
@@ -188,7 +193,7 @@ async function runConversation(messages: Array<Record<string, unknown>>, maxTurn
     messages.push(message)
 
     if (choice.finish_reason !== 'tool_calls' || toolCalls.length === 0) {
-      return { rawText: (message.content as string) ?? null, tokensUsed, turns: turn, stopped: wrappingUp ? 'deadline' : 'end_turn', messages }
+      return { rawText: (message.content as string) ?? null, tokensUsed, turns: turn, stopped: wrappingUp ? (stoppedOnTokens ? 'token_cap' : 'deadline') : 'end_turn', messages }
     }
 
     for (const call of toolCalls) {
@@ -210,7 +215,7 @@ async function runConversation(messages: Array<Record<string, unknown>>, maxTurn
   return { rawText: null, tokensUsed, turns: maxTurns, stopped: 'max_turns', messages }
 }
 
-export async function runSkillAgent(syncContextJson: string, stubOutputText?: string, isDiscovery = false): Promise<AgentResult> {
+export async function runSkillAgent(syncContextJson: string, stubOutputText?: string, isDiscovery = false, tokenCap = Infinity): Promise<AgentResult> {
   const messages: Array<Record<string, unknown>> = [
     { role: 'system', content: SKILL_PROMPT },
     { role: 'user', content: syncContextJson },
@@ -224,7 +229,7 @@ export async function runSkillAgent(syncContextJson: string, stubOutputText?: st
     return { rawText: stubOutputText ?? null, tokensUsed: 0, turns: 1, stopped: 'end_turn', messages }
   }
 
-  return await runConversation(messages, MAX_TURNS, 0, isDiscovery ? DISCOVERY_MODEL : MODEL)
+  return await runConversation(messages, MAX_TURNS, 0, isDiscovery ? DISCOVERY_MODEL : MODEL, Date.now() + DEADLINE_MS, false, tokenCap)
 }
 
 // A repair attempt continues the SAME conversation (the model still has the

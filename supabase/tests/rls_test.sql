@@ -891,7 +891,10 @@ begin
   set local request.jwt.claims = '{"sub":"00000000-0000-0000-0000-000000001001","aal":"aal2"}';
   select internal_email_domains, discovery_channel_patterns into v_domains, v_patterns from public.sync_settings;
   assert v_domains = array['refold.ai'], format('internal_email_domains default should be {refold.ai}, got %s', v_domains);
-  assert v_patterns = array['internal'], format('discovery_channel_patterns default should be {internal}, got %s', v_patterns);
+  -- `internal-` with the hyphen: this workspace names its own channels
+  -- about a customer `internal-<customer>` (e.g. internal-cloudinventory),
+  -- and the bare word would also match unrelated channels.
+  assert v_patterns = array['internal-'], format('discovery_channel_patterns default should be {internal-}, got %s', v_patterns);
   reset role;
 
   -- Customer roles still see nothing (the row is super-admin-only).
