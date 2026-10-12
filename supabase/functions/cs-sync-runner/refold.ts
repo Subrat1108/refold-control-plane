@@ -110,9 +110,11 @@ export async function executeActionDeterministic(applicationSlug: string, action
 // REMOVE THE SLACK ENTRY once Slack is re-authorized as a user — see
 // docs/refold-mcp.md's Slack connector addendum for what that needs
 // (and note `search_messages` additionally wants a `search:read` scope).
-export const READ_BLOCKED_CONNECTORS: Record<string, string> = {
-  slack: 'connected as a bot — channel reads return not_in_channel until Slack is re-authorized as a user',
-}
+// Emptied 2026-10-12: Slack's user-token custom actions landed and channel
+// reading was verified working, so nothing is read-blocked any more. Kept
+// as the mechanism for the next time a connector is "connected" but not
+// actually usable.
+export const READ_BLOCKED_CONNECTORS: Record<string, string> = {}
 
 export interface ConnectedApp {
   slug: string

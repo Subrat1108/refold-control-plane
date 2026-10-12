@@ -7,9 +7,10 @@ returns `not_allowed_token_type` because Slack only accepts a **user** token
 for search. Re-verified against real channel ids on 2026-10-12 — this is a
 token-type limitation, not a permissions or membership problem.
 
-Result: the CS Hub's sync can see Slack channel *names* and nothing inside
-them, which is most of the value. These custom actions fix that by calling
-the same Slack Web API endpoints with a **user token**.
+Result (before this): the sync could see Slack channel *names* and nothing
+inside them, which is most of the value. These custom actions fixed that by
+calling the same Slack Web API endpoints with a **user token**. They are
+now live — see Status below.
 
 Everything below is **read-only**. No action writes to Slack, and the CS
 Hub's runner rejects any non-read call before it reaches Refold.
@@ -58,30 +59,35 @@ Hub's runner rejects any non-read call before it reaches Refold.
 
 ---
 
-## Required follow-up in this repo (do not skip)
+## Status: done and verified (2026-10-12)
 
-The CS Hub runner enforces a **hardcoded allowlist** of permitted action
-ids — anything not on it is rejected before it reaches Refold. The Slack
-entry currently reads:
+All seven actions exist, are exposed, and were tested live against the real
+workspace. Channel reading, private-channel listing and `search.messages` —
+all impossible on the bot token — now work.
 
-```
-slack: ['get_conversation_history', 'list_thread_messages', 'search_messages', 'list_channels']
-```
+The identifiers are opaque hashes (the `_custom` suffix is on the display
+name, not the id):
+`6accecbf9b5b1cb653df996d` history · `6accecbf9b5b1cb653df991b` replies ·
+`6accecbf8698d709960292cd` search · `6accecbf9b5b1cb653df996b` list ·
+`6accecbf8698d709960292f8` members · `6accecbf8698d709960292cf` users.info ·
+`6accecbf9b5b1cb653df991d` users.list
 
-So the moment these custom actions exist, two edits are needed in
-`supabase/functions/cs-sync-runner/allowlist.ts` and
-`supabase/functions/cs-sync-runner/context.ts`:
+**One quirk worth knowing:** an omitted optional parameter is passed to
+Slack as an empty value, which Slack rejects with `invalid_arguments`.
+`conversations.members` fails without `limit` and succeeds with it; same
+for `conversations.replies` and `search.messages`. Always send every
+parameter. The runner's action catalog now instructs exactly that.
 
-1. Add the new ids (`user_conversation_history`, `user_conversation_replies`,
-   `user_search_messages`, `user_list_channels`, `user_conversation_members`,
-   `user_users_info`, `user_users_list`) to the Slack allowlist.
-2. Update `ACTION_CATALOG`'s `slack` block so the agent is told the new
-   call shapes — it only ever uses what the catalog lists.
+## Wiring in this repo (done 2026-10-12)
 
-And in `supabase/functions/cs-sync-runner/refold.ts`, remove the `slack`
-entry from `READ_BLOCKED_CONNECTORS`, which currently tells every run to
-skip Slack entirely. Until that entry is removed, Slack stays skipped even
-if the custom actions work perfectly.
+The runner enforces a hardcoded allowlist, so new action ids do nothing
+until they are added. All three edits are made:
 
-A sweep should then be re-run and its `skipped_items` checked to confirm
-Slack is no longer being reported as unavailable.
+1. `supabase/functions/cs-sync-runner/allowlist.ts` — the seven hashed ids
+   added to the Slack allowlist.
+2. `supabase/functions/cs-sync-runner/context.ts` — `ACTION_CATALOG`'s
+   Slack block rewritten to the user-token actions, with every optional
+   parameter spelled out (see the quirk above).
+3. `supabase/functions/cs-sync-runner/refold.ts` — `READ_BLOCKED_CONNECTORS`
+   emptied, so runs no longer skip Slack. The mechanism is kept for the
+   next connector that is "connected" but not actually usable.

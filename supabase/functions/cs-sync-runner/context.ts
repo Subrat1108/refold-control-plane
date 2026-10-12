@@ -32,10 +32,21 @@ const ACTION_CATALOG = {
     get_transcript: 'execute_action fireflies/get_transcript {transcript_id} — only if you already have an id',
   },
   slack: {
-    list_channels: 'execute_action slack/list_channels {limit: 200} — returns name, id, is_shared, is_ext_shared',
-    read_channel: 'execute_action slack/get_conversation_history {channel:"<channel ID, not name>", oldest:"<slack ts>"}',
-    read_thread: 'execute_action slack/list_thread_messages {channel, ts}',
-    search: 'execute_action slack/search_messages {query} — one keyword per call, never a boolean OR',
+    // USER-token custom actions (added 2026-10-12) — the stock bot-token
+    // actions cannot read a channel. Ids are opaque hashes.
+    //
+    // CRITICAL: pass EVERY parameter listed, including the optional ones.
+    // An omitted optional is sent to Slack as an empty value and rejected
+    // with `invalid_arguments` — verified live: conversations.members
+    // fails without `limit` and succeeds with it. All seven actions work
+    // when fully parameterised, search included.
+    list_channels: "execute_action slack/6accecbf9b5b1cb653df996b {types:'public_channel,private_channel', exclude_archived:'true', limit:'200', cursor:''} — includes PRIVATE channels the user is in",
+    read_channel: "execute_action slack/6accecbf9b5b1cb653df996d {channel:'<channel ID, not name>', oldest:'<slack ts>', latest:'<slack ts or now>', limit:'100', cursor:''}",
+    read_thread: "execute_action slack/6accecbf9b5b1cb653df991b {channel:'<id>', ts:'<root ts>', limit:'50', cursor:''}",
+    search: "execute_action slack/6accecbf8698d709960292cd {query:'<one keyword, never a boolean OR>', count:'20', page:'1', sort:'timestamp'}",
+    channel_members: "execute_action slack/6accecbf8698d709960292f8 {channel:'<id>', limit:'100', cursor:''} — to spot external participants",
+    user_info: "execute_action slack/6accecbf8698d709960292cf {user:'<user id>'} — resolves a name and email domain",
+    list_users: "execute_action slack/6accecbf9b5b1cb653df991d {limit:'200', cursor:''}",
   },
   gmail: {
     list: 'execute_action gmail/list_messages {userId:"me", q:"<gmail query>", maxResults}',

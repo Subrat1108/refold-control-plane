@@ -13,7 +13,24 @@
 // boundary; a model-controlled RESOLVE_ACTIONS result must never be able to
 // silently widen it.
 const ACTION_ALLOWLIST: Record<string, Set<string>> = {
-  slack: new Set(['get_conversation_history', 'list_thread_messages', 'search_messages', 'list_channels']),
+  // The plain ids are the stock BOT-token actions (listing works, reading
+  // does not). The hashed ids are the custom USER-token actions added
+  // 2026-10-12 — those are the ones that can actually read a channel.
+  // Verified live 2026-10-12: all seven work, search included — reading a
+  // channel, private channels and search.messages were all impossible on
+  // the bot token. One quirk to know: an OMITTED optional parameter is
+  // sent to Slack as an empty value and rejected with `invalid_arguments`,
+  // so the action catalog tells the agent to pass every parameter.
+  slack: new Set([
+    'get_conversation_history', 'list_thread_messages', 'search_messages', 'list_channels',
+    '6accecbf9b5b1cb653df996d', // conversations.history  (user token)
+    '6accecbf9b5b1cb653df991b', // conversations.replies  (user token)
+    '6accecbf8698d709960292cd', // search.messages        (user token)
+    '6accecbf9b5b1cb653df996b', // conversations.list     (user token)
+    '6accecbf8698d709960292f8', // conversations.members  (user token)
+    '6accecbf8698d709960292cf', // users.info             (user token)
+    '6accecbf9b5b1cb653df991d', // users.list             (user token)
+  ]),
   gmail: new Set(['list_messages', 'get_message']),
   fireflies: new Set(['get_transcript', 'httprequest']),
   zendesk: new Set(['get_ticket_by_id', 'httprequest']),
