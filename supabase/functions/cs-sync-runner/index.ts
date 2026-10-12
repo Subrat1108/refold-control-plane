@@ -117,6 +117,7 @@ export interface ProcessResult {
   error?: string
   runId?: string
   skippedCount?: number
+  truncated?: boolean
 }
 
 async function postToIngest(records: unknown[], runId: string, mode: string, triggeredBy: string): Promise<Record<string, number>> {
@@ -145,8 +146,16 @@ export async function processUnit(svc: SupabaseClient, orgId: string, recordType
   const runId = crypto.randomUUID()
   await svc.from('sync_runs').insert({ id: runId, mode, triggered_by: triggeredBy, scope: { account: orgId, record_type: recordType }, status: 'running' })
 
-  const finish = async (status: 'success' | 'partial' | 'failed', extra: { counts?: Record<string, number>; error?: string; skippedConnectors?: string[]; tokensUsed?: number; skippedItems?: unknown[] }) => {
-    await svc.rpc('finish_sync_unit', { p_org_id: orgId, p_record_type: recordType, p_status: status, p_error: extra.error ?? null })
+  const finish = async (status: 'success' | 'partial' | 'failed', extra: { counts?: Record<string, number>; error?: string; skippedConnectors?: string[]; tokensUsed?: number; skippedItems?: unknown[]; coveredThrough?: string | null }) => {
+    await svc.rpc('finish_sync_unit', {
+      p_org_id: orgId,
+      p_record_type: recordType,
+      p_status: status,
+      p_error: extra.error ?? null,
+      // How far this run actually got. On a truncated run this is what
+      // makes the next one resume instead of re-reading or skipping.
+      p_covered_through: extra.coveredThrough ?? null,
+    })
     await svc.from('sync_runs').update({
       status,
       finished_at: new Date().toISOString(),
@@ -223,9 +232,23 @@ export async function processUnit(svc: SupabaseClient, orgId: string, recordType
     console.log(`run ${runId} ${recordType}: ${agent.turns} turns, ${agent.tokensUsed} tokens, ${records.length} records, ${skippedItems.length} skipped`)
 
     const counts = records.length ? await postToIngest(records, runId, mode, triggeredBy) : {}
-    const status = counts.rejected_invalid ? 'partial' : 'success'
-    await finish(status, { counts, skippedConnectors, tokensUsed: agent.tokensUsed, skippedItems })
-    return { status, counts, skippedConnectors, runId, skippedCount: skippedItems.length }
+
+    // A run that stopped early must NOT look complete: `success` is what
+    // advances the watermark to now(), which would silently drop whatever
+    // it never reached. Truncation shows up two ways — the loop ran out of
+    // time, or the agent itself said it hit the item budget.
+    const hitBudget = skippedItems.some((s) => /budget/i.test(JSON.stringify((s as Record<string, unknown>)?.reason ?? '')))
+    const truncated = agent.stopped === 'deadline' || hitBudget
+    const coveredThrough = typeof (parsed as { covered_through?: unknown }).covered_through === 'string'
+      ? (parsed as { covered_through: string }).covered_through
+      : null
+    const status = truncated ? 'partial' : counts.rejected_invalid ? 'partial' : 'success'
+    if (truncated) {
+      console.log(`run ${runId}: PARTIAL (${agent.stopped === 'deadline' ? 'out of time' : 'item budget'}) covered_through=${coveredThrough ?? 'unreported — watermark held'}`)
+    }
+
+    await finish(status, { counts, skippedConnectors, tokensUsed: agent.tokensUsed, skippedItems, coveredThrough })
+    return { status, counts, skippedConnectors, runId, skippedCount: skippedItems.length, truncated }
   } catch (err) {
     await finish('failed', { error: String(err) })
     return { status: 'failed', error: String(err), runId }
@@ -271,14 +294,29 @@ async function handleQueued(req: Request, body: { queue_id?: string }): Promise<
   const authHeader = req.headers.get('Authorization') ?? ''
   const token = authHeader.replace(/^Bearer\s+/i, '')
   const payload = jwtPayload(token)
-  if (payload.role !== 'service_role') return json({ error: 'Forbidden: this entry point is for the daily/backfill dispatcher only' }, 403)
+
+  // Two callers are allowed here. The scheduled dispatcher presents the
+  // service-role key; a human driving "Run sync now" from the browser
+  // presents their own session, and the page works through the queue one
+  // unit at a time. Allowing the second is what lets a full manual sync
+  // work with NO Vault secret set up at all.
+  let triggeredBy = 'system'
+  if (payload.role !== 'service_role') {
+    const caller = createClient(SUPABASE_URL, ANON_KEY, { global: { headers: { Authorization: authHeader } } })
+    const { data: userData, error: userErr } = await caller.auth.getUser()
+    if (userErr || !userData.user) return json({ error: 'Invalid or expired session' }, 401)
+    const { data: prof } = await caller.from('profiles').select('account_type').eq('id', userData.user.id).single()
+    if (!prof || prof.account_type !== 'super_admin') return json({ error: 'Forbidden: super_admin required' }, 403)
+    if ((payload.aal as string) !== 'aal2') return json({ error: 'Forbidden: AAL2 (MFA) required' }, 403)
+    triggeredBy = userData.user.id
+  }
   if (!body.queue_id) return json({ error: 'queue_id is required' }, 400)
 
   const service = createClient(SUPABASE_URL, SERVICE_ROLE_KEY, { auth: { autoRefreshToken: false, persistSession: false } })
   const { data: item } = await service.from('sync_queue').select('*').eq('id', body.queue_id).maybeSingle()
   if (!item) return json({ error: 'queue item not found' }, 404)
 
-  const result = await processUnit(service, item.org_id, item.record_type, item.mode, 'system', resolveStubOutput(req))
+  const result = await processUnit(service, item.org_id, item.record_type, item.mode, triggeredBy, resolveStubOutput(req))
 
   await service.from('sync_queue').update({
     status: result.status === 'success' || result.status === 'partial' ? 'done' : 'error',

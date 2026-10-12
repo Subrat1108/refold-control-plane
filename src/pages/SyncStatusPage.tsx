@@ -10,8 +10,9 @@ import { StatusBadge } from '@/components/StatusBadge'
 import { CardSkeleton } from '@/components/SkeletonLoader'
 import { ErrorState } from '@/components/ErrorState'
 import { formatDate } from '@/utils/formatDate'
-import { updateSyncSettings, enqueueBackfill } from '@/lib/provisioning'
-import { runDiscoverySweep, type SyncRunResult } from '@/lib/syncRunner'
+import { updateSyncSettings, enqueueBackfill, enqueueFullSync } from '@/lib/provisioning'
+import { runDiscoverySweep, processQueuedUnit, type SyncRunResult } from '@/lib/syncRunner'
+import { supabase } from '@/lib/supabase'
 import type { SyncRun } from '@/types'
 
 export function SyncStatusPage() {
@@ -36,6 +37,8 @@ export function SyncStatusPage() {
   const [scanDays, setScanDays] = useState(7)
   const [scanning, setScanning] = useState(false)
   const [scanResult, setScanResult] = useState<SyncRunResult | null>(null)
+  const [fullSyncing, setFullSyncing] = useState(false)
+  const [fullProgress, setFullProgress] = useState<{ done: number; total: number; note: string } | null>(null)
 
   if (settings && !hydrated) {
     setKillSwitch(settings.killSwitch)
@@ -93,6 +96,50 @@ export function SyncStatusPage() {
     }
   }
 
+  // "Run sync now" — queue exactly what the nightly job queues, then work
+  // through it here, one unit per request. Each request is short, so nothing
+  // approaches the 150s per-request ceiling, and no background dispatcher or
+  // Vault secret is needed for a human-triggered run.
+  async function runFullSync() {
+    setFullSyncing(true)
+    setFullProgress({ done: 0, total: 0, note: 'queueing…' })
+    try {
+      const { enqueued } = await enqueueFullSync()
+      if (!enqueued) {
+        setFullProgress({ done: 0, total: 0, note: 'Nothing to queue — either everything is already running, or the kill switch is on.' })
+        return
+      }
+      let done = 0
+      let truncated = 0
+      // Drain whatever is queued, including anything the nightly job left.
+      for (;;) {
+        const { data: next } = await supabase
+          .from('sync_queue').select('id').eq('status', 'queued')
+          .order('enqueued_at', { ascending: true }).limit(1).maybeSingle()
+        if (!next) break
+        setFullProgress({ done, total: enqueued, note: 'syncing…' })
+        const res = await processQueuedUnit(next.id as string)
+        if (res.truncated) truncated++
+        done++
+        qc.invalidateQueries({ queryKey: ['sync-runs'] })
+      }
+      setFullProgress({
+        done,
+        total: enqueued,
+        note: truncated
+          ? `done — ${truncated} unit(s) ran out of time and will continue on the next run`
+          : 'done',
+      })
+      qc.invalidateQueries({ queryKey: ['account-resolutions'] })
+      qc.invalidateQueries({ queryKey: ['pending-proposal-count'] })
+      qc.invalidateQueries({ queryKey: ['sync-queue'] })
+    } catch (err) {
+      setFullProgress({ done: 0, total: 0, note: err instanceof Error ? err.message : 'failed' })
+    } finally {
+      setFullSyncing(false)
+    }
+  }
+
   const columns: Column<SyncRun>[] = [
     { key: 'started', header: 'Started', render: (r) => <span className="text-muted-foreground">{formatDate(r.startedAt)}</span> },
     { key: 'mode', header: 'Mode', render: (r) => <StatusBadge status={r.mode} /> },
@@ -121,7 +168,28 @@ export function SyncStatusPage() {
 
       <section className="bg-white rounded-xl shadow-card p-6 space-y-3">
         <div>
-          <h2 className="text-sm font-semibold text-foreground">Scan for unknown accounts</h2>
+          <h2 className="text-sm font-semibold text-foreground">Run sync now</h2>
+          <p className="text-xs text-muted-foreground mt-1">
+            The same work the nightly job does: refresh every record type for every account,
+            <strong> plus</strong> a sweep for customers that aren't in the Hub yet. Runs here in your
+            browser, one piece at a time — keep this page open until it finishes.
+          </p>
+        </div>
+        <div className="flex items-center gap-3">
+          <button onClick={runFullSync} disabled={fullSyncing} className="rounded-md bg-primary px-3 py-2 text-sm font-medium text-white hover:bg-primary/90 disabled:opacity-50">
+            {fullSyncing ? 'Syncing…' : 'Run sync now'}
+          </button>
+          {fullProgress && (
+            <span className="text-xs text-muted-foreground">
+              {fullProgress.total ? `${fullProgress.done}/${fullProgress.total} — ` : ''}{fullProgress.note}
+            </span>
+          )}
+        </div>
+      </section>
+
+      <section className="bg-white rounded-xl shadow-card p-6 space-y-3">
+        <div>
+          <h2 className="text-sm font-semibold text-foreground">Scan for unknown accounts only</h2>
           <p className="text-xs text-muted-foreground mt-1">
             Looks across the connected tools for customers that aren't in the Hub yet — meetings,
             channels and tickets involving anyone outside your own email domains. Anything it can't

@@ -1710,6 +1710,52 @@ behaviour the session owner asked for: the first real sync will show the
 team the customers nobody remembered to add, instead of only what someone
 typed in first.
 
+## D-128 — A truncated run must not look complete (2026-10-12)
+Found while answering the session owner's question about the 150s limit,
+not by a test. A run that stopped early — out of time, or having hit its
+item budget — still reported `success`, and `success` is what advances the
+watermark to `now()`. So everything the run never reached was silently
+skipped, permanently. Quiet data loss, worst exactly where it is least
+visible: a cold first scan, a backfill, a busy week.
+Now: a truncated run reports `partial`, and the agent reports a top-level
+`covered_through` (the newest item it fully examined, working oldest-first).
+`finish_sync_unit` gained that argument, with explicit rules — success +
+covered_through advances to that point; success without it advances to now
+(a complete run); partial + covered_through advances only that far (so the
+next run resumes); partial WITHOUT it holds the watermark entirely, because
+re-reading a window is safe and losing it is not; failed always holds.
+This also makes the 150s ceiling a non-issue rather than a wall: a sweep
+too big for one invocation now drains across several runs instead of
+either dying or quietly losing the remainder.
+
+## D-129 — "Run sync now" means the whole nightly job, not half of it (2026-10-12)
+The only manual trigger ran the discovery sweep alone, while the nightly
+job ALSO refreshes every record type for every known account. With no real
+accounts the two looked equivalent — but the moment accounts exist the
+button would quietly do half the job and nobody would notice. The session
+owner caught it: *"the manual trigger should ideally be looking for all
+accounts for data and updated records similar to daily-automated scan."*
+`enqueue_all_units()` is now the single definition of "a full sync", used
+by both the nightly job and a new `enqueue_full_sync` provisioning action,
+so the two cannot drift. The button queues that work and then the BROWSER
+drains the queue one unit per request — which keeps every request far below
+the 150s ceiling, shows live progress, and needs no Vault secret and no
+background dispatcher. `cs-sync-runner`'s queue entry point now accepts a
+super_admin + AAL2 session as well as the service-role key, which is what
+makes that possible. The narrower sweep-only trigger is kept as "Scan for
+unknown accounts only" for testing.
+
+## D-130 — `create or replace` with a changed signature creates an OVERLOAD (2026-10-12)
+Adding `p_covered_through` to `finish_sync_unit` left TWO functions in the
+database — the original four-argument one and the new five-argument one —
+because `create or replace function` only replaces an identical signature.
+A four-argument call then binds ambiguously, and could silently keep using
+the stale version that ignores the new watermark rules. Caught by
+`rls_test.sql`, which still calls it with four arguments: the suite dropped
+from 12 passing blocks to 10. Fixed by dropping the old signature
+explicitly in the same migration. Worth remembering for every future
+function signature change in this repo.
+
 # Parked
 
 Out-of-scope ideas land here instead of derailing the current prompt block.

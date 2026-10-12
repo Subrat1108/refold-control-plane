@@ -13,6 +13,9 @@ export interface SyncRunResult {
   error?: string
   runId?: string
   skippedCount?: number
+  // true when the unit stopped early (time or item budget) — its watermark
+  // was held, so the next run continues from where it got to.
+  truncated?: boolean
 }
 
 // 7.5-pre2 Session 6 — the discovery sweep. Same entry point, but no
@@ -21,6 +24,15 @@ export interface SyncRunResult {
 // needed" item in Approvals.
 export function runDiscoverySweep(windowDays = 7): Promise<SyncRunResult> {
   return invokeRunner({ recordType: 'discovery', windowDays })
+}
+
+// Process ONE queued unit. The browser calls this repeatedly to drain the
+// queue after "Run sync now" — which is what makes a full manual sync work
+// with no Vault secret and no background dispatcher set up, while showing
+// progress as it goes. Each call is short, so nothing hits the 150s
+// per-request ceiling.
+export function processQueuedUnit(queueId: string): Promise<SyncRunResult> {
+  return invokeRunner({ queue_id: queueId })
 }
 
 export function refreshAccountRecordType(orgId: string, recordType: string): Promise<SyncRunResult> {

@@ -16,6 +16,34 @@ Template:
 
 ---
 
+## Session 41 — 2026-10-12 — resumable sync + a full manual run
+**Built:** three fixes from the session owner's questions about the sweep
+and the 150s limit. (1) A truncated run now reports `partial` and carries
+`covered_through`, so the watermark advances only as far as the run
+actually got — previously an early stop still reported `success`, moving
+the watermark to now() and silently dropping everything it never reached
+(D-128). (2) "Run sync now" queues what the NIGHTLY job queues — every
+record type for every account plus the sweep — via a shared
+`enqueue_all_units()`, then the browser drains the queue one unit per
+request. That keeps every request far under the 150s ceiling, shows live
+progress, and needs no Vault secret; the runner's queue entry point now
+accepts a super_admin+AAL2 session as well as the service-role key
+(D-129). The old sweep-only trigger stays as "Scan for unknown accounts
+only" for testing. (3) The agent is told to work oldest-first and report
+how far it got.
+**Deviations:** none from the ask.
+**Decisions:** D-128–D-130
+**Next:** unchanged — the owner runs the first real sync; then Session 3,
+the learning loop.
+**Issues:** `create or replace function` with a CHANGED signature creates
+an overload rather than replacing, leaving two versions where a shorter
+call binds ambiguously — caught by rls_test dropping from 12 blocks to 10,
+fixed with an explicit drop (D-130). Also hit the same test-order trap as
+yesterday twice more: rls_test leaves fixtures that break a re-run or a
+later e2e on the same database, so reset between every suite.
+
+---
+
 ## Session 40 — 2026-10-12 — 7.5-pre2 Session 6: the discovery sweep
 **Built:** the missing half of the runner. Session 5 only ever synced
 accounts that already exist, so a conversation with a company nobody added

@@ -404,6 +404,20 @@ async function updateSyncSettings(caller: Caller, body: Record<string, unknown>)
 // backfill" button. Thin wrapper over the SQL function of the same name
 // (service_role-only EXECUTE) so the privileged write still goes through
 // the same super_admin + AAL2 gate every other provisioning action does.
+// "Run sync now" — the SAME work the nightly job does (every account ×
+// every record type, plus one discovery sweep), just triggered by a human.
+// Before this, the only manual trigger ran the sweep alone, so it silently
+// did half the job the moment real accounts existed.
+async function enqueueFullSync(caller: Caller, body: Record<string, unknown>) {
+  const svc = caller.service
+  const maxUnits = typeof body.maxUnits === 'number' ? body.maxUnits : null
+  const { data, error } = await svc.rpc('enqueue_all_units', { p_mode: 'scoped', p_max_units: maxUnits })
+  if (error) return json({ error: error.message }, 400)
+
+  await writeAudit(svc, caller.id, 'enqueue_full_sync', 'sync_queue', null, null, { enqueued: data })
+  return json({ enqueued: data })
+}
+
 async function enqueueBackfill(caller: Caller, body: Record<string, unknown>) {
   const orgIds = (body.orgIds as string[] | undefined) ?? null
   const svc = caller.service
@@ -762,7 +776,7 @@ async function ownerSetUserStatus(caller: Caller, body: Record<string, unknown>)
   return json({ ok: true })
 }
 
-const SUPER_ACTIONS = new Set(['provision_org', 'invite_super_admin', 'assign_sub_role', 'set_user_status', 'set_reports_to', 'create_ingest_token', 'revoke_ingest_token', 'resolve_account_proposal', 'update_sync_settings', 'enqueue_backfill'])
+const SUPER_ACTIONS = new Set(['provision_org', 'invite_super_admin', 'assign_sub_role', 'set_user_status', 'set_reports_to', 'create_ingest_token', 'revoke_ingest_token', 'resolve_account_proposal', 'update_sync_settings', 'enqueue_backfill', 'enqueue_full_sync'])
 const OWNER_ACTIONS = new Set(['owner_invite_user', 'owner_assign_sub_role', 'owner_set_user_status'])
 
 Deno.serve(async (req: Request) => {
@@ -810,6 +824,8 @@ Deno.serve(async (req: Request) => {
         return updateSyncSettings(caller, body)
       case 'enqueue_backfill':
         return enqueueBackfill(caller, body)
+      case 'enqueue_full_sync':
+        return enqueueFullSync(caller, body)
     }
   }
 

@@ -36,6 +36,10 @@ export function validateOutput(output: unknown): ValidationResult {
     return { valid: false, errors }
   }
 
+  if (obj.covered_through !== undefined && typeof obj.covered_through !== 'string') {
+    errors.push('covered_through, when present, must be an ISO timestamp string')
+  }
+
   const records = obj.records as unknown[]
   if (records.length > MAX_RECORDS) errors.push(`records has ${records.length} entries, max ${MAX_RECORDS}`)
 

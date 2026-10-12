@@ -101,6 +101,14 @@ and `since`.
 3. **No customer in it at all** (internal sync, vendor, recruiting) →
    **skip**, reason "no identifiable customer account".
 
+**Work oldest-first, and say how far you got.** Include a top-level
+`covered_through` in your reply: the ISO timestamp of the newest item you
+fully examined. If you stop early — the run budget, or being told you are
+out of time — that timestamp is what lets the next run resume exactly
+where you stopped instead of re-reading everything or silently skipping
+what you never reached. If you genuinely covered the whole window, set it
+to now (or omit it).
+
 Sweeps look at a lot and report a little: prefer titles, summaries and
 action-item lists over full histories, and skip any connector listed in
 `unavailable_connectors_this_run`.
