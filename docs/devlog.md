@@ -16,6 +16,32 @@ Template:
 
 ---
 
+## Session 42 — 2026-10-12 — park token sustainability; Slack custom-action spec
+**Built:** docs only, no code. Token sustainability parked explicitly with
+the measurement behind it (one live 7-day sweep = 154k tokens for 14
+records, ~98% spent searching not reporting) plus the proposed fix (runner
+lists+filters, model sees only qualifying items — which would also make the
+watermark exact rather than model-reported). Recorded in decisions.md's
+Parked list and CLAUDE.md's known issues, along with the related weak
+controls: `max_tokens_per_unit` is a settings-UI field nothing reads, the
+sweep's 20-item budget is advisory not enforced, and `covered_through` is
+self-reported. New `docs/slack-custom-actions.md` — a ready-to-hand-over
+spec for creating user-token Slack actions on the Refold connector (the
+stock connector is bot-token only, so channel reads and search are
+impossible), including the exact Slack endpoints, action ids, OAuth scopes,
+and the follow-up edits this repo needs (allowlist, action catalog, and
+removing Slack from READ_BLOCKED_CONNECTORS) before they take effect.
+**Deviations:** none — the session owner chose to keep the current
+architecture and defer the token work.
+**Decisions:** none (parked items only)
+**Next:** the owner's first end-to-end prod run. Gmail is now connected and
+verified working, so the sweep has two live sources (Fireflies + Gmail).
+**Issues:** Gmail going live roughly doubles what a sweep examines, which
+raises per-run token cost — another reason the parked filtering work
+matters. Zendesk still not connected.
+
+---
+
 ## Session 41 — 2026-10-12 — resumable sync + a full manual run
 **Built:** three fixes from the session owner's questions about the sweep
 and the 150s limit. (1) A truncated run now reports `partial` and carries

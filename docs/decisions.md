@@ -1766,6 +1766,31 @@ Format: one line each, with the session it came from.
   demo-user passwords or keep the hosted preview URL unlisted (known demo creds
   are publicly reachable once deployed); review/disable demo logins before wider
   sharing.
+- **Token sustainability — move listing/filtering out of the agent and into
+  the runner (Session 41, 2026-10-12).** Deliberately parked; the current
+  architecture stands for now. The measurement that prompted it: one live
+  7-day discovery sweep cost **154,000 tokens to produce 14 records** — so
+  roughly **98% of the spend was searching, not reporting**. Two causes:
+  (a) every turn re-sends the whole conversation, so an 18KB meeting list
+  fetched on turn 2 is paid for again on every later turn; (b) the agent
+  does the cheap filtering ("is anyone here outside refold.ai?") that is a
+  deterministic string comparison. Proposed fix when picked up: the runner
+  lists and filters per connector, and hands the model only the few items
+  that qualify. Expected to cut a daily sweep to the low thousands of
+  tokens, make the filter exact rather than a judgment call, AND make the
+  watermark exact — because the runner would control ordering and counting
+  instead of trusting a model-reported `covered_through` (see D-128's
+  remaining weakness). Rough costs at today's volumes for scale: a daily
+  sweep is ~2 cents on Haiku; the real exposure is per-account units at
+  ~20 accounts × 8 record types nightly on Sonnet (order of $10/day vs
+  ~$0.50/day on a cheaper model) — which the fix above largely removes the
+  need to trade off, since it cuts volume rather than quality.
+- Other known token/accuracy gaps to pick up with the above:
+  `max_tokens_per_unit` is a setting in the UI that **nothing reads** (a
+  dead control); the sweep's `max_items_to_examine` is hardcoded at 20 and
+  is advisory to the model, not enforced; and `covered_through` is
+  self-reported, so a confidently-wrong value could advance the watermark
+  past unread items (the omission case is already safe).
 - Rotate the OpenRouter API key (Session 39, 2026-10-12): it was pasted in
   plaintext into a chat transcript when it was handed over, same category as
   the Refold API key below. It is live on cloud as `OPENROUTER_API_KEY` and
