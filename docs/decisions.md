@@ -1585,6 +1585,45 @@ update policy for authenticated" comment in this codebase for UPDATE
 specifically** — worth keeping in mind, though not re-auditing retroactively
 this session (flagged, not fixed elsewhere).
 
+## D-122 — The runner calls Claude through OpenRouter, not the Anthropic API directly (2026-10-12)
+Session owner's call right after Session 5 shipped: use an OpenRouter key
+instead of an Anthropic one. This is **not** a credential swap — OpenRouter
+speaks the OpenAI chat/completions shape, so `anthropic.ts` was rewritten
+as `llm.ts` (renamed deliberately: a file called `anthropic.ts` that calls
+OpenRouter is a trap for the next session) with four real contract
+differences handled: the system prompt is a `system`-role message rather
+than a top-level field; tools are `{type:'function', function:{...
+parameters}}` rather than `{name, input_schema}`; a tool call arrives as
+`choices[0].message.tool_calls[]` whose `arguments` is a JSON **string**
+needing its own parse (Anthropic handed back a parsed object) and the turn
+ends on `finish_reason === 'tool_calls'` rather than `stop_reason ===
+'tool_use'`; and a tool result is its own `{role:'tool', tool_call_id}`
+message rather than a block inside a user turn. Env var
+`ANTHROPIC_API_KEY` → `OPENROUTER_API_KEY`; `CS_SYNC_MODEL` default
+`claude-sonnet-5` → `anthropic/claude-sonnet-5` (OpenRouter ids are
+namespaced `provider/model`; confirmed against its live models catalog,
+$2/$10 per M in/out). Everything outside `llm.ts` — `processUnit`, the
+allowlist, validation, the queue — is provider-agnostic and was untouched.
+Trade-off accepted knowingly: billing and rate limits now sit with
+OpenRouter (at its markup over Anthropic's own pricing) rather than with
+Anthropic, in exchange for one key across providers and a one-string model
+swap. **Verified live** (11 checks, real key, ~1.3k tokens): the full
+two-turn tool-calling round trip — forced tool call → tool result fed back
+→ final text turn — plus the `arguments`-is-a-string and
+`prompt_tokens`/`completion_tokens` details the loop depends on. The
+Anthropic path had never been exercised live at all, so this is the first
+time the runner's agent loop has been proven against a real model.
+
+## D-123 — An HTTP header value is a ByteString: no em-dashes (2026-10-12)
+Found by the D-122 live test on its first run, not by review: the
+`X-Title` attribution header on the OpenRouter call carried this
+codebase's usual em-dash (`Refold CS Hub — cs-sync`) and `fetch` threw
+`TypeError: Cannot convert argument to a ByteString ... value of 8212`
+before any request left the machine. Header values are latin-1 only.
+Fixed to an ASCII hyphen. Worth remembering generally — this repo's prose
+style uses em-dashes everywhere, and they are fine in JSON bodies, SQL
+comments and UI copy, but never in a header value.
+
 # Parked
 
 Out-of-scope ideas land here instead of derailing the current prompt block.
@@ -1595,6 +1634,10 @@ Format: one line each, with the session it came from.
   demo-user passwords or keep the hosted preview URL unlisted (known demo creds
   are publicly reachable once deployed); review/disable demo logins before wider
   sharing.
+- Rotate the OpenRouter API key (Session 39, 2026-10-12): it was pasted in
+  plaintext into a chat transcript when it was handed over, same category as
+  the Refold API key below. It is live on cloud as `OPENROUTER_API_KEY` and
+  works; rotate it (and re-run `supabase secrets set`) before go-live.
 - Custom SMTP before inviting the real team (Session 28, 7.2a): Supabase's
   built-in email sender is capped at 2 emails/hour, too low for onboarding a
   real CS team via the invite flow.

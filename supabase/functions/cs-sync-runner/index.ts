@@ -19,7 +19,7 @@
 import { createClient, type SupabaseClient } from 'jsr:@supabase/supabase-js@2'
 import { TARGET_TABLE } from '../_shared/dedupe.ts'
 import { buildSyncContext } from './context.ts'
-import { runSkillAgent, repairOutput } from './anthropic.ts'
+import { runSkillAgent, repairOutput } from './llm.ts'
 import { validateOutput } from './validate.ts'
 import { getConnectedApps, RECORD_TYPE_CONNECTORS } from './refold.ts'
 import { STUB_MODEL_OUTPUT_INVALID, STUB_MODEL_OUTPUT_VALID } from './fixtures.ts'

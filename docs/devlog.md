@@ -16,6 +16,38 @@ Template:
 
 ---
 
+## Session 39 — 2026-10-12 — switch the runner's LLM provider to OpenRouter
+**Built:** Session owner supplied an OpenRouter key instead of an Anthropic
+one. Verified it first against OpenRouter's own `/auth/key` endpoint (valid,
+paid tier, $246.53 of $250 remaining, no expiry, not a provisioning key)
+before touching code. `anthropic.ts` → `llm.ts` (renamed on purpose — a file
+called `anthropic.ts` calling OpenRouter is a trap), rewritten for
+OpenRouter's OpenAI-compatible chat/completions shape: system prompt as a
+`system` message, OpenAI function-format tools, `tool_calls[]` with
+JSON-**string** `arguments`, `finish_reason === 'tool_calls'`, tool results
+as `{role:'tool', tool_call_id}` messages, `prompt_tokens`/
+`completion_tokens` usage names. `ANTHROPIC_API_KEY` → `OPENROUTER_API_KEY`;
+`CS_SYNC_MODEL` default → `anthropic/claude-sonnet-5` (OpenRouter ids are
+namespaced; confirmed against its live catalog). Nothing outside `llm.ts`
+changed — `processUnit`, the read-only allowlist, validation and the queue
+are all provider-agnostic.
+**Deviations:** none from the ask. One real bug caught by the live test on
+its first run: the `X-Title` attribution header carried an em-dash and
+`fetch` threw `Cannot convert argument to a ByteString` before the request
+left the machine — header values are latin-1 only (D-123).
+**Decisions:** D-122, D-123
+**Next:** unchanged — the user runs the first real sync themselves once the
+remaining Refold/ingest secrets are set and the kill switch is flipped off.
+**Issues:** the OpenRouter key was handed over in plaintext in a chat
+transcript, so it is parked for rotation before go-live (same category as
+the Refold key). Verified live with 11 checks (~1.3k tokens, a few cents):
+the full two-turn tool-calling round trip — forced tool call → tool result
+fed back → final text turn. This is the first time the runner's agent loop
+has been proven against a real model at all; the Anthropic path shipped
+yesterday was never exercised live.
+
+---
+
 ## Session 38 — 2026-10-11 — 7.5-pre2 Session 5: the sync runner
 **Built:** Pre-session fix: SKILL.md's domain-only Fireflies skip rule
 revised to attribute via domain OR a named account/tenant mention (D-114).

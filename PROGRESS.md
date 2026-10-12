@@ -76,6 +76,34 @@ Points, streaks, badges, team leaderboards — computed from the audit log + pro
 ## Last session
 (See docs/devlog.md for full session history — this is just the pointer.)
 
+Date: 2026-10-12
+Completed: Switched the sync runner's LLM provider from the Anthropic API
+to OpenRouter (D-122), at the session owner's request. Verified the key
+against OpenRouter's own `/auth/key` endpoint before touching code (valid,
+paid, $246.53 remaining). `anthropic.ts` → `llm.ts`, rewritten for the
+OpenAI-compatible chat/completions contract — this is not a credential
+swap: system prompt as a message, OpenAI function-format tools,
+`tool_calls[]` with JSON-string `arguments`, `finish_reason ===
+'tool_calls'`, `{role:'tool'}` result messages, `prompt_tokens`/
+`completion_tokens`. `OPENROUTER_API_KEY` replaces `ANTHROPIC_API_KEY` and
+is now set on cloud; `CS_SYNC_MODEL` defaults to `anthropic/claude-sonnet-5`.
+Nothing outside `llm.ts` changed. One real bug caught by the live test:
+an em-dash in the `X-Title` header threw at `fetch` (header values are
+latin-1 only — D-123).
+Verified: 11-check live round trip against the real OpenRouter API (forced
+tool call → tool result → final text turn, ~1.3k tokens) — the first time
+the runner's agent loop has been proven against a real model at all;
+fresh db reset; `npm run e2e` green (stub mode, never calls OpenRouter);
+typecheck/lint/build green. `cs-sync-runner` redeployed.
+Decisions made: D-122, D-123
+Known issues: the OpenRouter key was handed over in plaintext in a chat
+transcript — parked for rotation before go-live. Still unset on cloud:
+`REFOLD_API_KEY`, `REFOLD_LINKED_ACCOUNT_ID`, `REFOLD_MCP_SERVER_ID`,
+`CS_HUB_INGEST_TOKEN`, and the `cs_sync_runner_auth` Vault secret. Kill
+switch is still ON — no real sync has been run.
+
+---
+
 Date: 2026-10-11 (still later same day)
 Completed: Pre-session fix: SKILL.md's domain-only Fireflies skip rule was
 too blunt (most customer decisions surface in internally-attended
