@@ -16,6 +16,35 @@ Template:
 
 ---
 
+## Session 44 — 2026-10-14 — correct the planning room's status (no code)
+**Built:** docs only. The planning dashboard was four sessions stale and its
+headline claim was inverted — it said no real sync had run and the kill
+switch was on. Verified against cloud instead: **17 runs, 3,466,170 tokens,
+0 proposals, 0 discovery runs, kill switch OFF**, all five Edge Function
+secrets set on 12 Oct, all four connectors live since `0acfe02`. CLAUDE.md
+carried the contradiction internally (a Blockers line saying the switch was
+off directly above a D-120 Known-issues line saying it was on); fixed.
+PROGRESS.md's 7.5 bullet stopped at "Session 5 of 6 done" and now covers
+Session 6, the two 12 Oct fix sessions and Session 7.
+**Deviations:** found the actual reason 17 runs produced nothing, which is
+not any of the things fixed in Sessions 5-7: `account_sources` on cloud is
+**empty**, so the two fictional accounts are bare `organizations` rows with
+nothing mapping them to a Slack channel, email domain or Zendesk org. The
+agent had no identifier to match on and correctly reported finding nothing.
+This also means the suggested next step of "run one manual Refresh on an
+account you know" would still find nothing — logged as D-136 with the two
+things that actually would (map sources, or run the sweep, which needs none).
+Also corrected a number I reported earlier in the session: the 2.67M figure
+was the latest 12 runs, not the total; across all 17 it is 3.47M.
+**Decisions:** D-135, D-136
+**Next:** unchanged — a first real result, then Session 3 (learning loop),
+then the context-store bootstrap.
+**Issues:** the sweep's 20-item budget is still advisory to the model rather
+than enforced, and `covered_through` is still model-reported; the
+token-sustainability rework (runner lists+filters) remains parked.
+
+---
+
 ## Session 43 — 2026-10-14 — discovery first; a budget that stops dead accounts
 **Built:** Four production runs had cost 2.67M tokens for zero records, all
 spent hunting two fictional fixture accounts; deleting them was rejected

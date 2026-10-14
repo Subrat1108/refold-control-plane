@@ -1817,6 +1817,36 @@ row — it marks the original `superseded` and files a NEW proposal, exactly as
 a fresh sighting would. Asserted directly for the first time this session
 (12 checks), since Session 7's design depends on it.
 
+## D-135 — the planning room's status was four sessions stale, and inverted (2026-10-14)
+The planning dashboard still described the state as of 2026-10-12 morning:
+"no real sync has run on the live hub yet, the kill switch is still on",
+four unset secrets, Slack bot-only, Gmail/Zendesk unconnected. Every one of
+those was out of date, and the first was the opposite of the truth — 17 real
+syncs had run, the kill switch was off, and all five secrets had been set on
+12 Oct. CLAUDE.md itself carried the contradiction: a Blockers line saying
+the switch was off sat directly above a Known-issues line (from D-120)
+saying it was on. Corrected both, and recorded the number the planning room
+most needs: **17 runs, 3,466,170 tokens, 0 proposals.** The lesson for this
+repo is that a status block is only load-bearing if its stale clauses are
+deleted, not appended to — a reader who trusts the newest line and the
+oldest line equally gets a false picture. Status facts that can invert
+(kill switch, secrets set, connectors live) should be stated once, in one
+place.
+
+## D-136 — the accounts have no sources, which is why nothing was ever found (2026-10-14)
+`account_sources` on cloud is **empty**: the two accounts (`Prism Analytics`,
+`Meridian Laboratories`) are bare `organizations` rows. Nothing maps either
+name to a Slack channel, an email domain or a Zendesk org, so a per-account
+sync has no identifier to match on and correctly reports finding nothing —
+which is exactly what 17 runs did, at a cost of 3.5M tokens. Sessions 5-7
+all made the machinery cheaper and better ordered without changing this:
+Session 7's probe budget stops a sourceless account burning a full budget,
+but it cannot invent the mapping. Two things actually produce a first real
+result, and neither is "run a Refresh": map sources on a real account
+(Account 360 → Sources), or let the **discovery sweep** run — it works from
+the connector side inward and needs no sources at all, which is precisely
+why it is now claimed first.
+
 # Parked
 
 Out-of-scope ideas land here instead of derailing the current prompt block.
