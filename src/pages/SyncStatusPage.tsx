@@ -103,9 +103,20 @@ export function SyncStatusPage() {
       let truncated = 0
       // Drain whatever is queued, including anything the nightly job left.
       for (;;) {
+        // Order EXACTLY as claim_sync_queue_item() does. Ordering by
+        // enqueued_at alone looks right and is not: one enqueue_all_units
+        // call stamps every row with the same transaction timestamp, so the
+        // rows tie and the winner is heap order. That is why the discovery
+        // sweep still never ran after the SQL claim order was fixed in
+        // Session 7 — this button never calls that function, it picks the
+        // next unit itself, and this query was the other half of the same
+        // bug (D-131).
         const { data: next } = await supabase
           .from('sync_queue').select('id').eq('status', 'queued')
-          .order('enqueued_at', { ascending: true }).limit(1).maybeSingle()
+          .order('priority', { ascending: true })
+          .order('enqueued_at', { ascending: true })
+          .order('id', { ascending: true })
+          .limit(1).maybeSingle()
         if (!next) break
         setFullProgress({ done, total: enqueued, note: 'syncing…' })
         const res = await processQueuedUnit(next.id as string)
