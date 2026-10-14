@@ -11,7 +11,7 @@ import { CardSkeleton } from '@/components/SkeletonLoader'
 import { ErrorState } from '@/components/ErrorState'
 import { formatDate } from '@/utils/formatDate'
 import { updateSyncSettings, enqueueBackfill, enqueueFullSync } from '@/lib/provisioning'
-import { runDiscoverySweep, processQueuedUnit, type SyncRunResult } from '@/lib/syncRunner'
+import { processQueuedUnit } from '@/lib/syncRunner'
 import { supabase } from '@/lib/supabase'
 import type { SyncRun } from '@/types'
 
@@ -34,11 +34,9 @@ export function SyncStatusPage() {
   const [hydrated, setHydrated] = useState(false)
   const [internalDomains, setInternalDomains] = useState('refold.ai')
   const [channelPatterns, setChannelPatterns] = useState('internal')
-  const [scanDays, setScanDays] = useState(7)
-  const [scanning, setScanning] = useState(false)
-  const [scanResult, setScanResult] = useState<SyncRunResult | null>(null)
   const [fullSyncing, setFullSyncing] = useState(false)
   const [fullProgress, setFullProgress] = useState<{ done: number; total: number; note: string } | null>(null)
+  const [syncDays, setSyncDays] = useState(7)
 
   if (settings && !hydrated) {
     setKillSwitch(settings.killSwitch)
@@ -81,21 +79,6 @@ export function SyncStatusPage() {
     }
   }
 
-  // Runs synchronously through the same entry point the Refresh button
-  // uses — no queue, no Vault secret, result straight back in the response.
-  async function runScan() {
-    setScanning(true)
-    setScanResult(null)
-    try {
-      setScanResult(await runDiscoverySweep(scanDays))
-      qc.invalidateQueries({ queryKey: ['sync-runs'] })
-      qc.invalidateQueries({ queryKey: ['account-resolutions'] })
-      qc.invalidateQueries({ queryKey: ['pending-proposal-count'] })
-    } finally {
-      setScanning(false)
-    }
-  }
-
   // "Run sync now" — queue exactly what the nightly job queues, then work
   // through it here, one unit per request. Each request is short, so nothing
   // approaches the 150s per-request ceiling, and no background dispatcher or
@@ -104,7 +87,7 @@ export function SyncStatusPage() {
     setFullSyncing(true)
     setFullProgress({ done: 0, total: 0, note: 'queueing…' })
     try {
-      const { enqueued } = await enqueueFullSync()
+      const { enqueued } = await enqueueFullSync(syncDays)
       if (!enqueued) {
         setFullProgress({ done: 0, total: 0, note: 'Nothing to queue — either everything is already running, or the kill switch is on.' })
         return
@@ -171,53 +154,25 @@ export function SyncStatusPage() {
           <h2 className="text-sm font-semibold text-foreground">Run sync now</h2>
           <p className="text-xs text-muted-foreground mt-1">
             The same work the nightly job does: refresh every record type for every account,
-            <strong> plus</strong> a sweep for customers that aren't in the Hub yet. Runs here in your
-            browser, one piece at a time — keep this page open until it finishes.
-          </p>
-        </div>
-        <div className="flex items-center gap-3">
-          <button onClick={runFullSync} disabled={fullSyncing} className="rounded-md bg-primary px-3 py-2 text-sm font-medium text-white hover:bg-primary/90 disabled:opacity-50">
-            {fullSyncing ? 'Syncing…' : 'Run sync now'}
-          </button>
-          {fullProgress && (
-            <span className="text-xs text-muted-foreground">
-              {fullProgress.total ? `${fullProgress.done}/${fullProgress.total} — ` : ''}{fullProgress.note}
-            </span>
-          )}
-        </div>
-      </section>
-
-      <section className="bg-white rounded-xl shadow-card p-6 space-y-3">
-        <div>
-          <h2 className="text-sm font-semibold text-foreground">Scan for unknown accounts only</h2>
-          <p className="text-xs text-muted-foreground mt-1">
-            Looks across the connected tools for customers that aren't in the Hub yet — meetings,
-            channels and tickets involving anyone outside your own email domains. Anything it can't
-            match to an existing account becomes an <strong>Account match needed</strong> item in
-            Approvals, where you create the account.
+            <strong> plus</strong> a sweep for customers that aren't in the Hub yet — anything it finds that
+            doesn't match an existing account becomes an <strong>Account match needed</strong> item in
+            Approvals. Runs here in your browser, one piece at a time — keep this page open until it finishes.
           </p>
         </div>
         <div className="flex items-end gap-2">
           <div>
-            <label className="block text-xs font-medium text-muted-foreground mb-1">Look back (days)</label>
-            <input type="number" min={1} max={365} value={scanDays} onChange={(e) => setScanDays(Number(e.target.value))} className="w-28 rounded-md border border-border px-2 py-1.5 text-sm" />
+            <label htmlFor="sync-look-back-days" className="block text-xs font-medium text-muted-foreground mb-1">Look back (days)</label>
+            <input id="sync-look-back-days" type="number" min={1} max={365} value={syncDays} onChange={(e) => setSyncDays(Number(e.target.value))} className="w-28 rounded-md border border-border px-2 py-1.5 text-sm" />
           </div>
-          <button onClick={runScan} disabled={scanning} className="rounded-md bg-primary px-3 py-2 text-sm font-medium text-white hover:bg-primary/90 disabled:opacity-50">
-            {scanning ? 'Scanning…' : 'Scan for unknown accounts'}
+          <button onClick={runFullSync} disabled={fullSyncing} className="rounded-md bg-primary px-3 py-2 text-sm font-medium text-white hover:bg-primary/90 disabled:opacity-50">
+            {fullSyncing ? 'Syncing…' : 'Run sync now'}
           </button>
+          {fullProgress && (
+            <span className="text-xs text-muted-foreground pb-2">
+              {fullProgress.total ? `${fullProgress.done}/${fullProgress.total} — ` : ''}{fullProgress.note}
+            </span>
+          )}
         </div>
-        {scanResult && (
-          <p className={`text-xs ${scanResult.status === 'failed' ? 'text-red-600' : 'text-muted-foreground'}`}>
-            {scanResult.status === 'failed' && `Failed: ${scanResult.error}`}
-            {scanResult.status === 'locked' && 'A scan is already running.'}
-            {(scanResult.status === 'success' || scanResult.status === 'partial') && (
-              <>
-                {Object.entries(scanResult.counts ?? {}).map(([k, v]) => `${k.replace(/_/g, ' ')}: ${v}`).join(' · ') || 'Nothing new found.'}
-                {scanResult.skippedConnectors?.length ? ` — couldn't check: ${scanResult.skippedConnectors.join(', ')}` : ''}
-              </>
-            )}
-          </p>
-        )}
       </section>
 
       <section className="bg-white rounded-xl shadow-card p-6 space-y-4">

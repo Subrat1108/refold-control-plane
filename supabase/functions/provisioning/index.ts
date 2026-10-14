@@ -411,10 +411,12 @@ async function updateSyncSettings(caller: Caller, body: Record<string, unknown>)
 async function enqueueFullSync(caller: Caller, body: Record<string, unknown>) {
   const svc = caller.service
   const maxUnits = typeof body.maxUnits === 'number' ? body.maxUnits : null
-  const { data, error } = await svc.rpc('enqueue_all_units', { p_mode: 'scoped', p_max_units: maxUnits })
+  // The operator's chosen day range rides along on every queued unit.
+  const windowDays = typeof body.windowDays === 'number' && body.windowDays > 0 ? Math.min(body.windowDays, 365) : null
+  const { data, error } = await svc.rpc('enqueue_all_units', { p_mode: 'scoped', p_max_units: maxUnits, p_window_days: windowDays })
   if (error) return json({ error: error.message }, 400)
 
-  await writeAudit(svc, caller.id, 'enqueue_full_sync', 'sync_queue', null, null, { enqueued: data })
+  await writeAudit(svc, caller.id, 'enqueue_full_sync', 'sync_queue', null, null, { enqueued: data, window_days: windowDays })
   return json({ enqueued: data })
 }
 

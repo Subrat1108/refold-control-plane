@@ -38,9 +38,10 @@ const INTERNAL_ORG_ID = '00000000-0000-0000-0000-000000000001'
 const DISCOVERY_DEFAULT_WINDOW_DAYS = 7
 // A unit with no watermark yet used to look back 36500 days — the agent
 // read that as "search since 1926" and spent its whole budget paging
-// backwards through years of history, on every first run. 30 days is a
-// sane cold start; the watermark takes over from the second run on.
-const FIRST_RUN_LOOKBACK_DAYS = 30
+// backwards through years of history, on every first run. 7 days is the
+// cold-start default, matching the sweep; the watermark takes over from
+// the second run on, and the Sync Status page can override it per run.
+const FIRST_RUN_LOOKBACK_DAYS = 7
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
@@ -325,7 +326,17 @@ async function handleQueued(req: Request, body: { queue_id?: string }): Promise<
   const { data: item } = await service.from('sync_queue').select('*').eq('id', body.queue_id).maybeSingle()
   if (!item) return json({ error: 'queue item not found' }, 404)
 
-  const result = await processUnit(service, item.org_id, item.record_type, item.mode, triggeredBy, resolveStubOutput(req))
+  const result = await processUnit(
+    service,
+    item.org_id,
+    item.record_type,
+    item.mode,
+    triggeredBy,
+    resolveStubOutput(req),
+    // The day range chosen when the run was queued applies to every unit
+    // in it, not just the sweep.
+    typeof item.window_days === 'number' ? item.window_days : undefined,
+  )
 
   await service.from('sync_queue').update({
     status: result.status === 'success' || result.status === 'partial' ? 'done' : 'error',

@@ -116,8 +116,8 @@ export function updateSyncSettings(patch: SyncSettingsPatch) {
 }
 
 // "Run sync now" — queues exactly what the nightly job would.
-export function enqueueFullSync(maxUnits?: number) {
-  return invoke<{ enqueued: number }>({ action: 'enqueue_full_sync', maxUnits })
+export function enqueueFullSync(windowDays?: number, maxUnits?: number) {
+  return invoke<{ enqueued: number }>({ action: 'enqueue_full_sync', windowDays, maxUnits })
 }
 
 export function enqueueBackfill(orgIds: string[] | null) {

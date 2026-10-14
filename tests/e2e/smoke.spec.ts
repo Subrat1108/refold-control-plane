@@ -239,10 +239,13 @@ test('super admin smoke: Home, Portfolio, Account 360, Approvals, Audit log, Sta
   await expect(page.getByText('No sync runs yet')).not.toBeVisible()
   await expectNoErrors(page, errors)
 
-  // Discovery sweep (7.5-pre2 Session 6): the one run that needs no
-  // account at all. Stub mode, so it never reaches Refold or OpenRouter.
-  await page.getByRole('button', { name: 'Scan for unknown accounts' }).click()
-  await expect(page.getByRole('button', { name: 'Scanning…' })).toBeVisible()
-  await expect(page.getByRole('button', { name: 'Scan for unknown accounts' })).toBeVisible({ timeout: 30_000 })
+  // One sync button (the sweep-only trigger was removed — a full sync
+  // already includes the sweep). Stub mode, so it never reaches Refold or
+  // OpenRouter. Draining every queued unit takes a little while even with
+  // stubs, hence the generous timeout.
+  await expect(page.getByLabel('Look back (days)')).toHaveValue('7')
+  await page.getByRole('button', { name: 'Run sync now' }).click()
+  await expect(page.getByRole('button', { name: 'Syncing…' })).toBeVisible()
+  await expect(page.getByRole('button', { name: 'Run sync now' })).toBeVisible({ timeout: 120_000 })
   await expectNoErrors(page, errors)
 })
