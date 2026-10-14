@@ -9,11 +9,13 @@ import {
   useScope,
   useScopedAccountIds,
   useAccountResolutions,
+  useHeldRecords,
   useAccountsRaw,
   useSegments,
   useTenants,
 } from '@/hooks'
-import { resolveAccountProposal } from '@/lib/provisioning'
+import { resolveAccountProposal, reassignProposal } from '@/lib/provisioning'
+import { createAccount } from '@/hooks/usePortfolio'
 import { SourceBadge } from '@/components/SourceBadge'
 import { Modal } from '@/components/Modal'
 import { ScopeSwitcher } from '@/components/ScopeSwitcher'
@@ -23,6 +25,7 @@ import { ErrorState } from '@/components/ErrorState'
 import { EmptyState } from '@/components/EmptyState'
 import { formatDate } from '@/utils/formatDate'
 import type { AccountResolutionRow, ProposalRow, SavedView } from '@/types'
+import type { HeldRecordRow } from '@/hooks/useApprovals'
 
 const PAGE = 'approvals'
 const TARGET_TABLES = ['milestones', 'accomplishments', 'risks', 'escalations', 'tickets', 'metric_values', 'organizations']
@@ -38,6 +41,8 @@ export function ApprovalsPage() {
   const [editTarget, setEditTarget] = useState<ProposalRow | null>(null)
   const [rejectTarget, setRejectTarget] = useState<ProposalRow | null>(null)
   const [resolveTarget, setResolveTarget] = useState<AccountResolutionRow | null>(null)
+  const [moveTarget, setMoveTarget] = useState<HeldRecordRow | null>(null)
+  const [moveProposalTarget, setMoveProposalTarget] = useState<ProposalRow | null>(null)
 
   const { data: proposals, isLoading, isError, refetch } = useProposals({
     targetTable: targetTable || undefined,
@@ -45,11 +50,14 @@ export function ApprovalsPage() {
     orgIds: scope === 'everyone' ? null : scopedIds,
   })
   const { data: resolutions } = useAccountResolutions()
+  const { data: heldRecords } = useHeldRecords()
 
   const refresh = () => {
     qc.invalidateQueries({ queryKey: ['proposals'] })
     qc.invalidateQueries({ queryKey: ['pending-proposal-count'] })
     qc.invalidateQueries({ queryKey: ['account-resolutions'] })
+    qc.invalidateQueries({ queryKey: ['held-records'] })
+    qc.invalidateQueries({ queryKey: ['accounts'] })
   }
 
   function applyView(v: SavedView) {
@@ -82,12 +90,15 @@ export function ApprovalsPage() {
     <div className="p-6 space-y-6">
       <div>
         <h1 className="text-xl font-semibold text-foreground">Approvals</h1>
-        <p className="text-sm text-muted-foreground mt-0.5">Review and act on pending proposals from every source.</p>
+        <p className="text-sm text-muted-foreground mt-0.5">
+          <span className="font-medium">Accounts</span> decides what an unrecognised name is. <span className="font-medium">Details</span> is every record waiting —
+          each shows the account it will be filed under, and you can change it.
+        </p>
       </div>
 
       {(resolutions ?? []).length > 0 && (
         <div className="rounded-xl border border-amber-300 bg-amber-50 p-4 space-y-3">
-          <h2 className="text-sm font-semibold text-foreground">Account match needed ({resolutions!.length})</h2>
+          <h2 className="text-sm font-semibold text-foreground">Accounts · match needed ({resolutions!.length})</h2>
           <div className="space-y-2">
             {resolutions!.map((r) => (
               <div key={r.id} className="bg-white rounded-lg border border-amber-200 p-3 flex items-center justify-between gap-3 flex-wrap">
@@ -106,6 +117,8 @@ export function ApprovalsPage() {
           </div>
         </div>
       )}
+
+      <h2 className="text-sm font-semibold text-foreground pt-2">Details · records waiting</h2>
 
       <div className="flex items-center justify-between flex-wrap gap-3">
         <div className="flex items-center gap-2 flex-wrap">
@@ -138,11 +151,19 @@ export function ApprovalsPage() {
         </div>
       )}
 
+      {(heldRecords ?? []).length > 0 && (
+        <div className="space-y-3">
+          {heldRecords!.map((h) => (
+            <HeldRecordCard key={h.id} record={h} onMove={() => setMoveTarget(h)} />
+          ))}
+        </div>
+      )}
+
       {isLoading ? (
         <CardSkeleton />
       ) : isError ? (
         <ErrorState onRetry={() => refetch()} />
-      ) : (proposals ?? []).length === 0 ? (
+      ) : (proposals ?? []).length === 0 && (heldRecords ?? []).length === 0 ? (
         <EmptyState title="Nothing pending" description="All caught up — no proposals waiting for a decision in this scope." />
       ) : (
         <div className="space-y-3">
@@ -155,6 +176,7 @@ export function ApprovalsPage() {
               onApprove={() => handleApprove(p)}
               onEdit={() => setEditTarget(p)}
               onReject={() => setRejectTarget(p)}
+              onMoveAccount={() => setMoveProposalTarget(p)}
             />
           ))}
         </div>
@@ -163,12 +185,18 @@ export function ApprovalsPage() {
       <EditThenApproveModal proposal={editTarget} onClose={() => setEditTarget(null)} onDone={refresh} />
       <RejectModal proposal={rejectTarget} onClose={() => setRejectTarget(null)} onDone={refresh} />
       <ResolveAccountModal resolution={resolveTarget} onClose={() => setResolveTarget(null)} onDone={refresh} />
+      <MoveAccountModal
+        held={moveTarget}
+        proposal={moveProposalTarget}
+        onClose={() => { setMoveTarget(null); setMoveProposalTarget(null) }}
+        onDone={refresh}
+      />
     </div>
   )
 }
 
-function ProposalCard({ proposal, checked, onToggle, onApprove, onEdit, onReject }: {
-  proposal: ProposalRow; checked: boolean; onToggle: () => void; onApprove: () => void; onEdit: () => void; onReject: () => void
+function ProposalCard({ proposal, checked, onToggle, onApprove, onEdit, onReject, onMoveAccount }: {
+  proposal: ProposalRow; checked: boolean; onToggle: () => void; onApprove: () => void; onEdit: () => void; onReject: () => void; onMoveAccount: () => void
 }) {
   const { data: currentRow } = useCurrentRow(proposal.targetTable, proposal.operation === 'create' ? null : proposal.targetId)
   const payloadKeys = Object.keys(proposal.payload)
@@ -180,7 +208,12 @@ function ProposalCard({ proposal, checked, onToggle, onApprove, onEdit, onReject
           <input type="checkbox" checked={checked} onChange={onToggle} className="mt-1" />
           <div>
             <p className="text-sm font-semibold text-foreground capitalize">{proposal.operation} · {proposal.targetTable.replace(/_/g, ' ')}</p>
-            <p className="text-xs text-muted-foreground mt-0.5">{proposal.accountName ?? 'Unknown account'} · proposed by {proposal.proposedBy} · {formatDate(proposal.createdAt)}</p>
+            <p className="text-xs text-muted-foreground mt-0.5">
+              {proposal.accountName ?? 'Unknown account'}
+              {' '}
+              <button onClick={onMoveAccount} className="text-primary hover:underline font-medium">change</button>
+              {' '}· proposed by {proposal.proposedBy} · {formatDate(proposal.createdAt)}
+            </p>
           </div>
         </div>
         <SourceBadge source={proposal.source} verifiedAt={null} />
@@ -448,3 +481,146 @@ function RejectModal({ proposal, onClose, onDone }: { proposal: ProposalRow | nu
   )
 }
 
+
+// A held record, shown in full for the first time. Previously these were a
+// bare count on their resolution, so "ignore" could silently bin a record
+// that belonged to a real account. Now you read it, then decide.
+function HeldRecordCard({ record, onMove }: { record: HeldRecordRow; onMove: () => void }) {
+  return (
+    <div className="bg-white rounded-xl shadow-card p-6 space-y-3 border-l-4 border-amber-400">
+      <div className="flex items-start justify-between gap-4 flex-wrap">
+        <div>
+          <p className="text-sm font-semibold text-foreground capitalize">{record.recordType.replace(/_/g, ' ')}</p>
+          <p className="text-xs text-muted-foreground mt-0.5">
+            proposed by {record.proposedBy} · {formatDate(record.createdAt)}
+          </p>
+        </div>
+        <SourceBadge source={record.source as ProposalRow['source']} verifiedAt={null} />
+      </div>
+
+      <p className="text-sm text-foreground">{record.summary}</p>
+
+      <div className="flex items-center justify-between gap-3 flex-wrap pt-1 border-t border-border">
+        <p className="text-xs text-muted-foreground pt-2">
+          Account:{' '}
+          <span className="font-medium text-amber-700">
+            not set — seen as "{record.observedName ?? 'an unrecognised name'}"
+          </span>
+        </p>
+        <button onClick={onMove} className="rounded-md bg-primary px-3 py-1.5 text-xs font-medium text-white hover:bg-primary/90">
+          Set account
+        </button>
+      </div>
+    </div>
+  )
+}
+
+// One modal for both shapes: a held record being filed for the first time,
+// and a pending record whose account the agent got wrong.
+function MoveAccountModal({ held, proposal, onClose, onDone }: {
+  held: HeldRecordRow | null; proposal: ProposalRow | null; onClose: () => void; onDone: () => void
+}) {
+  const { data: accounts } = useAccountsRaw()
+  const open = !!held || !!proposal
+  const proposalId = held?.id ?? proposal?.id ?? ''
+  const observed = held?.observedName ?? null
+
+  const [orgId, setOrgId] = useState('')
+  const [newName, setNewName] = useState('')
+  const [tenantId, setTenantId] = useState('')
+  // Default ON for a held record (it carries an identifier worth learning),
+  // OFF when correcting a record that already had an account.
+  const [remember, setRemember] = useState(true)
+  const [busy, setBusy] = useState(false)
+  const [error, setError] = useState<string | null>(null)
+  const { data: tenants } = useTenants(orgId && orgId !== '__new__' ? orgId : null)
+
+  useEffect(() => {
+    if (!open) return
+    setOrgId(''); setNewName(''); setTenantId(''); setError(null)
+    setRemember(!!held)
+  }, [open, held])
+
+  if (!open) return null
+
+  async function submit() {
+    setBusy(true); setError(null)
+    try {
+      let targetOrgId = orgId
+      if (orgId === '__new__') {
+        const name = newName.trim()
+        if (!name) throw new Error('Give the new account a name')
+        targetOrgId = await createAccount({ name, segmentId: null, deploymentModel: null, deploymentType: 'cloud' })
+      }
+      if (!targetOrgId) throw new Error('Pick an account')
+      await reassignProposal({
+        proposalId,
+        orgId: targetOrgId,
+        tenantId: tenantId || null,
+        rememberIdentifier: remember && !!observed,
+      })
+      onDone(); onClose()
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Could not move the record')
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  return (
+    <Modal open={open} onClose={onClose} title={held ? 'Set this record\'s account' : 'Change this record\'s account'}>
+      <div className="space-y-4">
+        <p className="text-sm text-muted-foreground">
+          {held
+            ? <>Seen as <span className="font-medium text-foreground">"{observed}"</span>. If that name is not a company — an implementation, a project, a programme — pick the account it actually belongs to and leave the box below unticked.</>
+            : <>Currently filed under <span className="font-medium text-foreground">{proposal?.accountName ?? 'an unknown account'}</span>.</>}
+        </p>
+
+        <div>
+          <label htmlFor="move-account" className="block text-xs font-medium text-muted-foreground mb-1">Account</label>
+          <select id="move-account" value={orgId} onChange={(e) => { setOrgId(e.target.value); setTenantId('') }} className="w-full rounded-md border border-border px-3 py-2 text-sm bg-white">
+            <option value="">Select an account…</option>
+            {(accounts ?? []).map((a) => <option key={a.id} value={a.id}>{a.name}</option>)}
+            <option value="__new__">+ Create a new account…</option>
+          </select>
+        </div>
+
+        {orgId === '__new__' && (
+          <div>
+            <label htmlFor="move-new-name" className="block text-xs font-medium text-muted-foreground mb-1">New account name</label>
+            <input id="move-new-name" value={newName} onChange={(e) => setNewName(e.target.value)} placeholder="Octave" className="w-full rounded-md border border-border px-3 py-2 text-sm" />
+          </div>
+        )}
+
+        {orgId && orgId !== '__new__' && (tenants ?? []).length > 0 && (
+          <div>
+            <label htmlFor="move-tenant" className="block text-xs font-medium text-muted-foreground mb-1">Tenant (optional)</label>
+            <select id="move-tenant" value={tenantId} onChange={(e) => setTenantId(e.target.value)} className="w-full rounded-md border border-border px-3 py-2 text-sm bg-white">
+              <option value="">No tenant</option>
+              {(tenants ?? []).map((t) => <option key={t.id} value={t.id}>{t.name}</option>)}
+            </select>
+          </div>
+        )}
+
+        {observed && (
+          <label className="flex items-start gap-2 text-sm">
+            <input type="checkbox" checked={remember} onChange={(e) => setRemember(e.target.checked)} className="mt-0.5" />
+            <span>
+              Also remember that <span className="font-medium">"{observed}"</span> means this account
+              <span className="block text-xs text-muted-foreground">Future mentions attach automatically. Leave unticked if the name is a project or a one-off rather than another name for the company.</span>
+            </span>
+          </label>
+        )}
+
+        {error && <p className="text-sm text-red-600">{error}</p>}
+
+        <div className="flex justify-end gap-2">
+          <button onClick={onClose} className="rounded-md border border-border px-3 py-2 text-sm font-medium text-muted-foreground">Cancel</button>
+          <button onClick={submit} disabled={busy} className="rounded-md bg-primary px-3 py-2 text-sm font-medium text-white hover:bg-primary/90 disabled:opacity-50">
+            {busy ? 'Moving…' : held ? 'File it here' : 'Move it'}
+          </button>
+        </div>
+      </div>
+    </Modal>
+  )
+}

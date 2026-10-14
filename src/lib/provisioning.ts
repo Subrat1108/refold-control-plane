@@ -92,6 +92,27 @@ export interface ResolveAccountInput {
   sourceType?: string
 }
 
+// 7.5-pre2 — move ONE record to a different account, independently of its
+// resolution. This is what lets a record survive an identifier that is not
+// an account at all (an implementation name, a project) instead of being
+// binned with it.
+export interface ReassignProposalInput {
+  proposalId: string
+  orgId: string
+  tenantId?: string | null
+  // Write the observed identifier as an account_source, so the next sighting
+  // attaches itself. Off for a one-off or a plain correction.
+  rememberIdentifier?: boolean
+  sourceType?: string
+}
+
+export function reassignProposal(input: ReassignProposalInput) {
+  return invoke<{ ok: true; moved: number; orgId: string; remembered?: boolean; resolutionClosed?: boolean; outcome?: string }>({
+    action: 'reassign_proposal',
+    ...input,
+  })
+}
+
 export function resolveAccountProposal(input: ResolveAccountInput) {
   return invoke<{ ok: true; decision: string; orgId?: string; tenantId?: string | null; releasedCount: number }>({ action: 'resolve_account_proposal', ...input })
 }

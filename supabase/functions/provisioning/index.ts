@@ -442,6 +442,149 @@ async function enqueueBackfill(caller: Caller, body: Record<string, unknown>) {
 // are discarded (rejected, logged) and the identifier joins sync_learnings'
 // ignore list so it never re-proposes itself.
 
+// 7.5-pre2 — move ONE record to a different account.
+//
+// Until now a held record's account was decided entirely by its resolution:
+// you saw "1 record waiting" and nothing else, so "ignore" silently binned a
+// record that might belong somewhere real. The session owner hit exactly
+// that: CFIHOS is not a company, it is an implementation Octave is running,
+// and its engagement belonged to Octave -- which no decision could express.
+//
+// Two shapes, one lane:
+//   - a HELD record is released through the same `decideAndFile` tree a
+//     resolution uses, so dedupe and validation behave identically;
+//   - a PENDING record is simply re-pointed, which is how a confident but
+//     wrong attribution gets corrected before approval.
+async function reassignProposal(caller: Caller, body: Record<string, unknown>) {
+  const proposalId = body.proposalId as string
+  const orgId = body.orgId as string
+  if (!proposalId || !orgId) return json({ error: 'proposalId and orgId are required' }, 400)
+
+  const svc = caller.service
+  const { data: proposal } = await svc.from('proposals').select('*').eq('id', proposalId).maybeSingle()
+  if (!proposal) return json({ error: 'proposal not found' }, 404)
+  if (!['held', 'pending'].includes(proposal.status)) {
+    return json({ error: `only a held or pending proposal can be moved (this one is ${proposal.status})` }, 400)
+  }
+
+  const { data: org } = await svc.from('organizations').select('id, name').eq('id', orgId).maybeSingle()
+  if (!org) return json({ error: 'the target account does not exist' }, 400)
+
+  // A tenant, when given, must belong to the target account -- otherwise a
+  // record could be filed under a tenant of some other customer.
+  const tenantId = (body.tenantId as string) || null
+  if (tenantId) {
+    const { data: tenant } = await svc.from('tenants').select('id').eq('id', tenantId).eq('org_id', orgId).maybeSingle()
+    if (!tenant) return json({ error: 'that tenant does not belong to the target account' }, 400)
+  }
+
+  // ── a normal pending record: just re-point it ────────────────────────
+  if (proposal.status === 'pending') {
+    const payload = { ...(proposal.payload as Record<string, unknown>), tenant_id: tenantId }
+    const { error } = await svc.from('proposals').update({ org_id: orgId, payload }).eq('id', proposalId)
+    if (error) return json({ error: error.message }, 400)
+    await writeAudit(svc, caller.id, 'reassign_proposal', 'proposals', proposalId, orgId, { from: proposal.org_id, to: orgId, tenantId })
+    return json({ ok: true, moved: 1, orgId, tenantId, resolutionClosed: false })
+  }
+
+  // ── a held record: release it onto the chosen account ────────────────
+  const heldPayload = proposal.payload as { recordType: string; rawData: Record<string, unknown>; rawProjectRef?: string | null; rawType?: string | null }
+  const recordType = heldPayload.recordType
+  const targetTable = TARGET_TABLE[recordType]
+  if (!targetTable) return json({ error: `unknown record type ${recordType}` }, 400)
+
+  const { data, stripped } = filterKnownFields(recordType, heldPayload.rawData ?? {})
+  for (const field of REQUIRED_FIELDS[recordType] ?? []) {
+    if (data[field] === undefined || data[field] === null || data[field] === '') {
+      return json({ error: `this record cannot be filed: missing required field "${field}"` }, 400)
+    }
+  }
+
+  // tenant_id / project_id are merged INTO `data` -- decideAndFile takes
+  // them that way, not as separate arguments (same as the release loop in
+  // resolve_account_proposal below).
+  const needsProject = NEEDS_PROJECT[recordType]
+  let projectId: string | null = null
+  if (heldPayload.rawProjectRef) {
+    const proj = await resolveProject(svc, orgId, heldPayload.rawProjectRef)
+    if (proj) projectId = proj.id
+  }
+  // A record type that REQUIRES a project cannot be filed under an account
+  // where no matching project exists -- say so instead of silently dropping
+  // it, since the whole point of this action is that nothing goes missing.
+  if (needsProject === 'required' && !projectId) {
+    return json({ error: `a ${recordType} needs a project, and ${heldPayload.rawProjectRef ? `"${heldPayload.rawProjectRef}"` : 'none was named'} matches no project under ${org.name}. Create the project on that account first.` }, 400)
+  }
+  if (projectId) data.project_id = projectId
+  if (tenantId) data.tenant_id = tenantId
+
+  const ctxForDedupe: DecideCtx = {
+    source: proposal.source,
+    triggeredBy: proposal.triggered_by,
+    runId: proposal.run_id,
+    tokenId: proposal.ingest_token_id,
+    proposedBy: proposal.proposed_by,
+  }
+  const result = await decideAndFile(
+    svc,
+    {
+      recordType,
+      targetTable,
+      orgId,
+      operation: proposal.operation,
+      data,
+      sourceRef: proposal.source_ref ?? undefined,
+      evidenceUrl: proposal.evidence_url,
+      evidenceExcerpt: proposal.evidence_excerpt,
+      confidence: proposal.confidence,
+    },
+    ctxForDedupe,
+    stripped.length ? stripped : undefined,
+  )
+
+  await svc.from('proposals').update({ status: 'superseded', decided_by: caller.id, decided_at: new Date().toISOString(), reason: `moved to ${org.name}` }).eq('id', proposalId)
+
+  // Remember the identifier, if asked and if this record came from a
+  // resolution that knows what the identifier was.
+  const resolutionId = proposal.blocked_by_resolution_id as string | null
+  let remembered = false
+  if (body.rememberIdentifier === true && resolutionId) {
+    const { data: res } = await svc.from('proposals').select('payload').eq('id', resolutionId).maybeSingle()
+    const observed = (res?.payload as { observedName?: string } | null)?.observedName
+    if (observed) {
+      const { error: srcErr } = await svc.from('account_sources').insert({
+        org_id: orgId, tenant_id: tenantId, source_type: (body.sourceType as string) || 'name_variant', value: observed, created_by: caller.id,
+      })
+      // A duplicate identifier is not a failure -- it already points here.
+      if (!srcErr) {
+        remembered = true
+        await svc.from('sync_learnings').insert({
+          kind: 'alias_map', org_id: orgId, tenant_id: tenantId,
+          content: { identifier: observed, resolvedOrgId: orgId, resolvedTenantId: tenantId },
+          source_decision_ids: [resolutionId], created_by: caller.id,
+        })
+      }
+    }
+  }
+
+  // If that was the last record waiting on its resolution, close it --
+  // otherwise the Accounts section keeps an item with nothing behind it.
+  let resolutionClosed = false
+  if (resolutionId) {
+    const { count } = await svc.from('proposals').select('id', { count: 'exact', head: true }).eq('blocked_by_resolution_id', resolutionId).eq('status', 'held')
+    if (!count) {
+      await svc.from('proposals').update({
+        status: 'approved', decided_by: caller.id, decided_at: new Date().toISOString(),
+        target_id: orgId, reason: 'records reassigned to an existing account',
+      }).eq('id', resolutionId)
+      resolutionClosed = true
+    }
+  }
+
+  await writeAudit(svc, caller.id, 'reassign_proposal', 'proposals', proposalId, orgId, { to: orgId, tenantId, remembered, resolutionClosed, outcome: (result as { status?: string })?.status })
+  return json({ ok: true, moved: 1, orgId, tenantId, remembered, resolutionClosed, outcome: (result as { status?: string })?.status })
+}
+
 async function resolveAccountProposal(caller: Caller, body: Record<string, unknown>) {
   const resolutionId = body.resolutionId as string
   const decision = body.decision as string
@@ -519,19 +662,24 @@ async function resolveAccountProposal(caller: Caller, body: Record<string, unkno
     resolvedOrgId = newOrg.id
   }
 
-  // Save the observed identifier so it resolves instantly next time.
+  // Save the observed identifier so it resolves instantly next time --
+  // unless the caller declined. Declining is the "this is not an account,
+  // but its records belong to X" case: CFIHOS is an implementation Octave
+  // is running, so its records belong to Octave while "CFIHOS" itself is
+  // not an alias for the company.
   const ACCOUNT_SOURCE_TYPES = ['slack_channel', 'email_domain', 'zendesk_org_id', 'fireflies_hint', 'name_variant']
   const sourceType = (body.sourceType as string) || 'name_variant'
   if (!ACCOUNT_SOURCE_TYPES.includes(sourceType)) return json({ error: `sourceType must be one of ${ACCOUNT_SOURCE_TYPES.join(', ')}` }, 400)
-  const { error: sourceError } = await svc.from('account_sources').insert({
+  const remember = body.rememberIdentifier !== false
+  const { error: sourceError } = remember ? await svc.from('account_sources').insert({
     org_id: resolvedOrgId,
     tenant_id: resolvedTenantId,
     source_type: sourceType,
     value: resolutionPayload.observedName,
     created_by: caller.id,
-  })
+  }) : { error: null }
   if (sourceError) return json({ error: `could not save the identifier: ${sourceError.message}` }, 400)
-  await svc.from('sync_learnings').insert({
+  if (remember) await svc.from('sync_learnings').insert({
     kind: 'alias_map',
     org_id: resolvedOrgId,
     tenant_id: resolvedTenantId,
@@ -792,7 +940,7 @@ async function ownerSetUserStatus(caller: Caller, body: Record<string, unknown>)
   return json({ ok: true })
 }
 
-const SUPER_ACTIONS = new Set(['provision_org', 'invite_super_admin', 'assign_sub_role', 'set_user_status', 'set_reports_to', 'create_ingest_token', 'revoke_ingest_token', 'resolve_account_proposal', 'update_sync_settings', 'enqueue_backfill', 'enqueue_full_sync'])
+const SUPER_ACTIONS = new Set(['provision_org', 'invite_super_admin', 'assign_sub_role', 'set_user_status', 'set_reports_to', 'create_ingest_token', 'revoke_ingest_token', 'resolve_account_proposal', 'update_sync_settings', 'enqueue_backfill', 'enqueue_full_sync', 'reassign_proposal'])
 const OWNER_ACTIONS = new Set(['owner_invite_user', 'owner_assign_sub_role', 'owner_set_user_status'])
 
 Deno.serve(async (req: Request) => {
@@ -834,6 +982,8 @@ Deno.serve(async (req: Request) => {
         return createIngestToken(caller, body)
       case 'revoke_ingest_token':
         return revokeIngestToken(caller, body)
+      case 'reassign_proposal':
+        return await reassignProposal(caller, body)
       case 'resolve_account_proposal':
         return resolveAccountProposal(caller, body)
       case 'update_sync_settings':

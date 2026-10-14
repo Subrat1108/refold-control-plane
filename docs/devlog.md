@@ -16,6 +16,41 @@ Template:
 
 ---
 
+## Session 46 — 2026-10-14 — Approvals in two sections; a record can change account
+**Built:** CFIHOS is not a company — it is an implementation Octave is running
+— and no resolution decision could say so: "create account" invents a company,
+"ignore" bins the engagement that belonged to Octave. Held records were a bare
+count on their resolution, unreadable and unmovable. Approvals is now
+**Accounts** (what is this name?) and **Details** (every record waiting, its
+account shown and editable). New `reassign_proposal` provisioning action:
+a held record is released through the same `decideAndFile` tree a resolution
+uses; a pending record is re-pointed in place, which also fixes a wrong
+attribution before approval. Remembering the identifier is a checkbox, not a
+side effect — unticked, the record moves without the name becoming an alias.
+Moving the last held record auto-closes its resolution as *records
+reassigned*. `resolve_account_proposal` gained the same `rememberIdentifier`
+flag. New `useHeldRecords` hook, `HeldRecordCard`, `MoveAccountModal` (with
+create-an-account inline, so Octave can be made on the spot).
+**Deviations:** my first `decideAndFile` call passed `tenantId`/`projectId`
+as arguments; they are merged into `data` — corrected against the canonical
+release loop. Cleaned the cloud records first at the owner's request: all
+proposals, sync runs, queue and watermarks reset; accounts, `account_sources`
+and the two `alias_map` learnings from their Kantata/OvationCXM approvals
+kept. Three e2e failures chased: one was my own setup (`functions serve`
+without `--env-file` silently skips `supabase/.env`, so stub mode was off and
+the runner called the real Refold API with an empty key — "application list
+failed: 400"); one was real (I renamed the heading, the test asserted the old
+text); one was an ambiguous `getByLabel('Account')` matching the dialog and
+the remember-checkbox too. A fourth, the People sheet's Escape, was a flake —
+passed on re-run and twice after.
+**Decisions:** D-139
+**Next:** the owner's call on the 5 profiles blocking fixture deletion; the
+parked token rework.
+**Issues:** unchanged — the sweep still finishes near the 150s wall with no
+per-tool-call timeout, and records are still only posted at the end.
+
+---
+
 ## Session 45 — 2026-10-14 — stop paying to search for accounts that map to nothing
 **Built:** Measured where the tokens actually go: of one day's 1,908,594,
 **1,719,860 (90%) went to 18 per-account units that produced nothing**, and

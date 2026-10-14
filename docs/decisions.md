@@ -1885,6 +1885,34 @@ Only the parked rework — the runner lists and filters deterministically, the
 model reads only what qualifies — moves it, by cutting the number of turns
 rather than the size of the cap.
 
+## D-139 — a record's account is no longer hostage to its identifier (2026-10-14)
+The session owner hit a case none of the four resolution decisions could
+express: **CFIHOS is not a company.** It is an implementation Octave is
+running with Refold, so "create account" would invent a company that does not
+exist, and "ignore" would bin the engagement that genuinely belonged to
+Octave. Held records were only ever a COUNT on their resolution — you could
+not read one, let alone move it — so the account decision was the single
+lever over every record behind it.
+
+Approvals is now two sections. **Accounts** decides what an unrecognised name
+is (unchanged). **Details** lists every record waiting — held ones included,
+with their content visible for the first time — each showing the account it
+will be filed under, with that account editable. A new `reassign_proposal`
+action moves one record: a held record is released through the same
+`decideAndFile` tree a resolution uses (identical dedupe and validation), a
+pending record is simply re-pointed, which is also how a confident but wrong
+attribution gets corrected before approval.
+
+Two details that matter. Remembering the identifier is a **choice, not a
+consequence**: ticked, it writes an `account_source` so the next sighting
+attaches itself; unticked, the record moves and the name stays un-aliased —
+which is exactly right when the name is a project rather than another name
+for the company. And when the last held record of a resolution is moved away,
+that resolution auto-closes as *records reassigned* rather than *ignored*, so
+the Accounts section never shows an item with nothing behind it.
+`resolve_account_proposal` gained the same `rememberIdentifier` flag, so the
+one-click "all of these belong to X" path can also decline to create an alias.
+
 # Parked
 
 Out-of-scope ideas land here instead of derailing the current prompt block.

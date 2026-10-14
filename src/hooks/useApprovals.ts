@@ -175,6 +175,84 @@ export function useAccountResolutions() {
   return useQuery({ queryKey: ['account-resolutions'], queryFn: fetchAccountResolutions })
 }
 
+// ── Held records (7.5-pre2) ────────────────────────────────────────────────
+// Until now a held record was only a COUNT on its resolution -- you could
+// not read it, let alone move it, so "ignore" silently binned records that
+// belonged somewhere real. This fetches them with their content so the
+// Details section can show what is actually waiting and let it be re-pointed.
+
+export interface HeldRecordRow {
+  id: string
+  recordType: string
+  targetTable: string
+  observedName: string | null
+  resolutionId: string | null
+  summary: string
+  sourceRef: string | null
+  evidenceUrl: string | null
+  createdAt: string
+  proposedBy: string
+  source: string
+}
+
+// A one-line gist for the card header, whatever the record type is.
+function gistOf(recordType: string, raw: Record<string, unknown>): string {
+  const first = (...keys: string[]) => {
+    for (const k of keys) {
+      const v = raw[k]
+      if (typeof v === 'string' && v.trim()) return v.trim()
+    }
+    return ''
+  }
+  return first('title', 'summary', 'description', 'text', 'risk', 'external_key', 'health') || `${recordType} record`
+}
+
+async function fetchHeldRecords(): Promise<HeldRecordRow[]> {
+  const { data, error } = await supabase
+    .from('proposals')
+    .select('id, payload, target_table, source_ref, evidence_url, created_at, proposed_by, source, blocked_by_resolution_id')
+    .eq('status', 'held')
+    .order('created_at', { ascending: true })
+  if (error) throw new Error(error.message)
+  const rows = data ?? []
+  if (rows.length === 0) return []
+
+  // The observed identifier lives on the resolution, not the record.
+  const resolutionIds = [...new Set(rows.map((r) => r.blocked_by_resolution_id).filter(Boolean))] as string[]
+  const names = new Map<string, string>()
+  if (resolutionIds.length) {
+    const { data: res } = await supabase.from('proposals').select('id, payload').in('id', resolutionIds)
+    for (const r of res ?? []) {
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const observed = ((r.payload ?? {}) as any).observedName
+      if (observed) names.set(r.id as string, observed as string)
+    }
+  }
+
+  return rows.map((row) => {
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const payload = (row.payload ?? {}) as any
+    const recordType = (payload.recordType ?? 'record') as string
+    return {
+      id: row.id as string,
+      recordType,
+      targetTable: row.target_table as string,
+      resolutionId: (row.blocked_by_resolution_id as string | null) ?? null,
+      observedName: row.blocked_by_resolution_id ? names.get(row.blocked_by_resolution_id as string) ?? null : null,
+      summary: gistOf(recordType, (payload.rawData ?? {}) as Record<string, unknown>),
+      sourceRef: (row.source_ref as string | null) ?? null,
+      evidenceUrl: (row.evidence_url as string | null) ?? null,
+      createdAt: row.created_at as string,
+      proposedBy: row.proposed_by as string,
+      source: row.source as string,
+    }
+  })
+}
+
+export function useHeldRecords() {
+  return useQuery({ queryKey: ['held-records'], queryFn: fetchHeldRecords })
+}
+
 // ── Audit log screen ────────────────────────────────────────────────────────
 
 export interface AuditLogFilters {
