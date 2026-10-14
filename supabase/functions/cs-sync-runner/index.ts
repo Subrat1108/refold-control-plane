@@ -128,6 +128,9 @@ export interface ProcessResult {
   runId?: string
   skippedCount?: number
   truncated?: boolean
+  // The unit was skipped before any model call because the account has no
+  // sources mapped. Distinct from a truncated run: nothing was examined.
+  noSources?: boolean
 }
 
 // How many consecutive empty nightly cycles before an account is surfaced
@@ -299,9 +302,42 @@ export async function processUnit(svc: SupabaseClient, orgId: string, recordType
     if (recordType !== DISCOVERY) {
       const { data: health } = await svc
         .from('account_sync_health')
-        .select('consecutive_empty_nights')
+        .select('consecutive_empty_nights, last_found_at')
         .eq('org_id', orgId)
         .maybeSingle()
+
+      // An account with no `account_sources` has nothing mapping it to a
+      // Slack channel, an email domain or a Zendesk org -- there is no
+      // identifier to match on, so the agent can only search everything and
+      // report finding nothing. That is not a cheap failure: 18 such units
+      // cost 1.72M tokens in one day and produced zero records. Skip before
+      // spending anything.
+      //
+      // This is only safe because the discovery sweep no longer defers to
+      // an account that has no aliases (see refold-skill.md rule 1b): it
+      // emits those as "Account match needed" instead, which is how the
+      // account gets its first source. Without that rule this skip would be
+      // self-sealing -- no sources, so never scanned; never scanned, so
+      // never gains sources.
+      const { count: sourceCount } = await svc
+        .from('account_sources')
+        .select('id', { count: 'exact', head: true })
+        .eq('org_id', orgId)
+      if (!sourceCount && !health?.last_found_at) {
+        console.log(`run ${runId}: account ${orgId} has no account_sources and has never produced a record — skipping before spending any tokens (the discovery sweep covers it instead)`)
+        // 'partial', not 'success': the window was never examined, and
+        // finish_sync_unit holds the watermark on partial — so once sources
+        // exist, the next run still covers this period rather than skipping
+        // over it as already-done.
+        await finish('partial', {
+          counts: {},
+          skippedConnectors,
+          tokensUsed: 0,
+          skippedItems: [{ item: 'the entire unit — nothing was examined', reason: 'No sources are mapped for this account (no Slack channel, email domain or Zendesk org), so there is no identifier to match on and a scan could only report finding nothing. Skipped before spending any tokens. The discovery sweep raises an "Account match needed" when it sees this company; approving that attaches the identifier and this unit starts working.' }],
+        })
+        return { status: 'partial', counts: {}, skippedConnectors, runId, skippedCount: 1, noSources: true }
+      }
+
       if ((health?.consecutive_empty_nights ?? 0) >= 1) {
         tokenCap = Number(settings?.probe_token_budget ?? 25000)
         console.log(`run ${runId}: account has ${health?.consecutive_empty_nights} empty night(s) — probing on ${tokenCap} tokens instead of ${fullCap}`)

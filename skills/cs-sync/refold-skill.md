@@ -89,9 +89,19 @@ and `since`.
   export); a ticket always has a customer behind it.
 
 **Then, per candidate, exactly one of:**
-1. **Belongs to a known account/tenant** (alias match, or its name appears
-   in the title/summary/action items) → **skip**, reason = that account's
-   name. Its own sync already covers it; reporting it here duplicates it.
+1. **Belongs to a known account/tenant THAT HAS ALIASES** (alias match, or
+   its name appears in the title/summary/action items **and** that account's
+   `aliases` list is non-empty) → **skip**, reason = that account's name.
+   Its own sync already covers it; reporting it here duplicates it.
+1b. **Matches a known account by NAME, but that account's `aliases` list is
+   empty** (`"aliases": []`) → **do NOT skip — emit it**, exactly as you
+   would an unknown company, using the identifier you actually saw. An
+   account with no aliases has nothing mapping it to Slack, email or
+   meetings, so its own sync cannot find this item: nobody covers it.
+   Emitting it raises an "Account match needed" so a human can attach the
+   identifier to that existing account, after which its own sync works for
+   good. Skipping it would make the account permanently invisible — no
+   aliases means no sync, and no sync means it never gains aliases.
 2. **Clearly a customer/prospect but matches nothing known** → emit its
    records using your best-guess identifier as `account` (external email
    domain, channel-name suffix, Zendesk org, or the company name as

@@ -16,6 +16,41 @@ Template:
 
 ---
 
+## Session 45 — 2026-10-14 — stop paying to search for accounts that map to nothing
+**Built:** Measured where the tokens actually go: of one day's 1,908,594,
+**1,719,860 (90%) went to 18 per-account units that produced nothing**, and
+188,734 to the single sweep that found 7 companies and 12 records. The cause
+was not efficiency — both accounts had zero `account_sources`, so there was
+no identifier to match on. `processUnit` now checks `account_sources` first
+and skips at **zero tokens** when an account has none and has never produced
+a record (D-137). Shipped with its counterpart so it is not self-sealing:
+refold-skill.md rule 1b — a name match against an account with an empty
+`aliases` list is no longer skipped by the sweep, it is emitted so an
+"Account match needed" attaches the identifier. Account 360 shows "Not
+synced - no sources mapped". `skill-prompt.ts` regenerated (round-trip
+verified identical).
+**Deviations:** the skip first used an invented `skipped_no_sources` status;
+`sync_run_status` is an enum ('running','success','failed','partial') and it
+would have thrown — corrected to `partial`, which is also the honest choice
+since it holds the watermark for a window that was never examined. Also
+recorded why the 25k probe budget never bound (D-138): a cap can only end a
+run after the turn that crosses it, and one turn costs ~30-40k because the
+whole conversation is re-sent each time. D-132's fix is real and measured
+(412,784 -> 80,783 on accomplishment, 5.1x) but the floor is structural.
+Cleared the cloud sync history at the owner's request (34 runs, 36 queue
+rows, 2 tracking rows); all 9 pending and 6 held proposals kept. Deleting
+the two fictional accounts is BLOCKED and left undone: `profiles.org_id` is
+RESTRICT and 5 users hang off them, including two real colleagues
+(amritha.m@, rishiikesh.b@) and the three demo logins smoke-login tests.
+**Decisions:** D-137, D-138
+**Next:** the owner's call on those 5 profiles; then the parked rework.
+**Issues:** the sweep finished at 144s against a 150s wall — the deadline is
+still only checked between turns and there is no per-tool-call timeout, so a
+slow call can still lose a whole run. Records are still only posted at the
+end, so a wall-hit loses everything gathered.
+
+---
+
 ## Session 44 — 2026-10-14 — correct the planning room's status (no code)
 **Built:** docs only. The planning dashboard was four sessions stale and its
 headline claim was inverted — it said no real sync had run and the kill

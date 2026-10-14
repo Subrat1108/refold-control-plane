@@ -1847,6 +1847,44 @@ result, and neither is "run a Refresh": map sources on a real account
 the connector side inward and needs no sources at all, which is precisely
 why it is now claimed first.
 
+## D-137 — skip an account with no sources, but only because the sweep now covers it (2026-10-14)
+90% of one day's 1.9M tokens went to 18 per-account units that produced
+nothing: both accounts had **zero `account_sources`**, so there was no
+identifier to match on and the agent could only search every connector
+exhaustively and honestly report finding nothing. `processUnit` now checks
+`account_sources` before any model call and skips the unit at **zero tokens**
+when an account has none and has never produced a record.
+
+Done alone this would have been a bad trade: no sources -> never scanned ->
+never gains sources, a self-sealing blind spot, and exactly the "we were
+talking to them but nobody added them" miss that D-124 existed to fix. The
+sweep's own rule made it worse — it skipped anything matching a known
+account **by name** on the reasoning "that account's own sync already covers
+it", so both halves would have deferred to each other.
+
+So the skip ships with its counterpart: refold-skill.md rule 1b now says a
+name match against an account whose `aliases` list is **empty** must NOT be
+skipped — emit it like an unknown company, so an "Account match needed" is
+raised and approving it attaches the identifier. Self-healing instead of
+self-sealing. Account 360 says "Not synced - no sources mapped" rather than
+leaving a silent no-op, and a skipped unit deliberately does **not** count
+toward the 30-night risk flag (it was never examined, so counting it would
+march an unexamined account toward a risk proposal). Status is `partial`,
+not `success`, so `finish_sync_unit` holds the watermark and the window is
+re-covered once sources exist.
+
+## D-138 — a token cap cannot go below the cost of one turn (2026-10-14)
+The 25k probe budget from D-133 never bound: post-fix units still cost
+80-113k. The cap can only end a run *after* the turn that crosses it, and
+one turn costs ~30-40k on its own — the skill prompt (12,922 chars), the
+roster, the enums, the action catalog, plus every tool result so far, all
+re-sent because the whole conversation goes up every turn. Lowering the
+number further changes nothing. Measured improvement from D-132 is real
+(accomplishment 412,784 -> 80,783, a 5.1x cut) but the floor is structural.
+Only the parked rework — the runner lists and filters deterministically, the
+model reads only what qualifies — moves it, by cutting the number of turns
+rather than the size of the cap.
+
 # Parked
 
 Out-of-scope ideas land here instead of derailing the current prompt block.

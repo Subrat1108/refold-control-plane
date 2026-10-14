@@ -148,11 +148,22 @@ its tenants), `internal_email_domains` (who counts as "us"),
 
 **2. For each candidate, decide one of three things:**
 
-- **It belongs to a known account or tenant** (an `aliases` match, or the
-  account/tenant name appears in the title, summary or action items) →
+- **It belongs to a known account or tenant that has `aliases`** (an
+  `aliases` match, or the account/tenant name appears in the title, summary
+  or action items **and** that account's `aliases` list is non-empty) →
   **skip it.** Put it in `skipped` with the account name as the reason.
   That account's own sync already covers it; reporting it here too would
   file the same fact twice.
+- **It matches a known account by NAME, but that account's `aliases` list is
+  empty** (`"aliases": []`) → **do NOT skip it. Emit it**, exactly as you
+  would an unknown company, using the identifier you actually saw (the email
+  domain, the channel-name suffix, the Zendesk organization). An account with
+  no aliases has nothing mapping it to Slack, email or meetings, so **its own
+  sync cannot find this item** — it is not covered by anyone. Emitting it
+  raises an "Account match needed" so a human can attach the identifier to
+  that existing account, after which its own sync works for good. Skipping it
+  here would make the account permanently invisible: no aliases means no
+  sync, and no sync means it never gains aliases.
 - **It is clearly a customer or prospect, but matches nothing in
   `known_accounts`** → **this is what the sweep is for.** Emit its records
   with your best-guess identifier as `account` — the external email domain

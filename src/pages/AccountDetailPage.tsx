@@ -97,6 +97,10 @@ export function AccountDetailPage() {
   const { data: account, isLoading, isError, refetch } = useAccount(orgId ?? null)
   const { data: syncHealth } = useAccountSyncHealth()
   const emptyNights = (syncHealth ?? []).find((h) => h.orgId === orgId)?.consecutiveEmptyNights ?? 0
+  // An account with no sources is skipped by the sync entirely (it has no
+  // identifier to match on), so say so rather than leaving a silent no-op.
+  const { data: headerSources } = useAccountSources(orgId ?? null)
+  const hasNoSources = headerSources !== undefined && headerSources.length === 0
   const { data: segments } = useSegments()
   const { data: people } = useSuperAdmins()
   const { data: lastEngagements } = useLastEngagements()
@@ -182,7 +186,12 @@ export function AccountDetailPage() {
               usually means the account's name or sources match nothing in
               Slack/email/meetings, which is cheap to fix once someone sees
               it — and expensive to leave, since every night re-scans it. */}
-          {emptyNights >= 3 && (
+          {hasNoSources && (
+            <Tooltip content="The sync matches activity to an account by its Slack channel, email domain, Zendesk org id or a name variant. With none mapped there is nothing to match on, so this account is skipped rather than scanned at full cost. Add one below, or approve it from an 'Account match needed' item and the identifier is attached for you.">
+              <span className="text-xs font-medium text-amber-600">Not synced - no sources mapped</span>
+            </Tooltip>
+          )}
+          {!hasNoSources && emptyNights >= 3 && (
             <Tooltip content="Nothing has been found for this account in any connected source. Check the account's sources - the name may not match anything in Slack, email or meetings.">
               <span className={`text-xs font-medium ${emptyNights >= 30 ? 'text-red-600' : 'text-amber-600'}`}>
                 No data found in {emptyNights} nightly syncs
