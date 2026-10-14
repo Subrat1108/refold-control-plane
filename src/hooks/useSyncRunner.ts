@@ -5,7 +5,7 @@
 // edits via Approvals, not a form on this tab).
 import { useQuery } from '@tanstack/react-query'
 import { supabase } from '@/lib/supabase'
-import type { ActionItem, SyncQueueItem, SyncRun, SyncSettings, SyncState } from '@/types'
+import type { AccountSyncHealth, ActionItem, SyncQueueItem, SyncRun, SyncSettings, SyncState } from '@/types'
 
 async function fetchSyncState(orgId: string, recordType: string): Promise<SyncState | null> {
   const { data, error } = await supabase
@@ -42,11 +42,12 @@ export function useSyncRuns(limit = 50) {
 }
 
 async function fetchSyncSettings(): Promise<SyncSettings> {
-  const { data, error } = await supabase.from('sync_settings').select('kill_switch, daily_run_at_utc, max_units_per_run, max_units_per_day, max_tokens_per_unit, internal_email_domains, discovery_channel_patterns, updated_by, updated_at').eq('singleton', true).single()
+  const { data, error } = await supabase.from('sync_settings').select('kill_switch, daily_run_at_utc, max_units_per_run, max_units_per_day, max_tokens_per_unit, probe_token_budget, internal_email_domains, discovery_channel_patterns, updated_by, updated_at').eq('singleton', true).single()
   if (error) throw new Error(error.message)
   return {
     killSwitch: data.kill_switch, dailyRunAtUtc: data.daily_run_at_utc, maxUnitsPerRun: data.max_units_per_run,
     maxUnitsPerDay: data.max_units_per_day, maxTokensPerUnit: data.max_tokens_per_unit,
+    probeTokenBudget: data.probe_token_budget,
     internalEmailDomains: data.internal_email_domains ?? [], discoveryChannelPatterns: data.discovery_channel_patterns ?? [],
     updatedBy: data.updated_by, updatedAt: data.updated_at,
   }
@@ -93,4 +94,27 @@ async function fetchAccountActionItems(orgId: string): Promise<ActionItem[]> {
 
 export function useAccountActionItems(orgId: string | null) {
   return useQuery({ queryKey: ['account-action-items', orgId], queryFn: () => fetchAccountActionItems(orgId!), enabled: !!orgId })
+}
+
+// 7.5-pre2 Session 7 — accounts whose scans keep coming back empty. Only
+// rows with a non-zero count exist in practice, since any find resets to 0.
+async function fetchAccountSyncHealth(): Promise<AccountSyncHealth[]> {
+  const { data, error } = await supabase
+    .from('account_sync_health')
+    .select('org_id, consecutive_empty_nights, last_empty_date, last_found_at, flagged_at, organizations(name)')
+    .gt('consecutive_empty_nights', 0)
+    .order('consecutive_empty_nights', { ascending: false })
+  if (error) throw new Error(error.message)
+  return (data ?? []).map((r) => ({
+    orgId: r.org_id,
+    accountName: (r.organizations as unknown as { name: string } | null)?.name ?? 'Unknown account',
+    consecutiveEmptyNights: r.consecutive_empty_nights,
+    lastEmptyDate: r.last_empty_date,
+    lastFoundAt: r.last_found_at,
+    flaggedAt: r.flagged_at,
+  }))
+}
+
+export function useAccountSyncHealth() {
+  return useQuery({ queryKey: ['account-sync-health'], queryFn: fetchAccountSyncHealth })
 }

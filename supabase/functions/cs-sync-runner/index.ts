@@ -22,7 +22,7 @@ import { buildSyncContext, buildDiscoveryContext } from './context.ts'
 import { runSkillAgent, repairOutput } from './llm.ts'
 import { validateOutput } from './validate.ts'
 import { getConnectedApps, RECORD_TYPE_CONNECTORS, READ_BLOCKED_CONNECTORS } from './refold.ts'
-import { STUB_MODEL_OUTPUT_DISCOVERY, STUB_MODEL_OUTPUT_INVALID, STUB_MODEL_OUTPUT_VALID } from './fixtures.ts'
+import { STUB_MODEL_OUTPUT_DISCOVERY, STUB_MODEL_OUTPUT_EMPTY, STUB_MODEL_OUTPUT_INVALID, STUB_MODEL_OUTPUT_VALID } from './fixtures.ts'
 
 const SUPABASE_URL = Deno.env.get('SUPABASE_URL')!
 const ANON_KEY = Deno.env.get('SUPABASE_ANON_KEY')!
@@ -78,6 +78,10 @@ function resolveStubOutput(req: Request): { initial?: string; repair?: string } 
   const invalid = JSON.stringify(STUB_MODEL_OUTPUT_INVALID)
   if (key === 'invalid-then-repaired') return { initial: invalid, repair: valid }
   if (key === 'invalid-twice') return { initial: invalid, repair: invalid }
+  if (key === 'empty') {
+    const empty = JSON.stringify(STUB_MODEL_OUTPUT_EMPTY)
+    return { initial: empty, repair: empty }
+  }
   if (key === 'discovery') {
     const discovery = JSON.stringify(STUB_MODEL_OUTPUT_DISCOVERY)
     return { initial: discovery, repair: discovery }
@@ -124,6 +128,73 @@ export interface ProcessResult {
   runId?: string
   skippedCount?: number
   truncated?: boolean
+}
+
+// How many consecutive empty nightly cycles before an account is surfaced
+// for a human to look at. The owner's number.
+const EMPTY_NIGHTS_BEFORE_FLAG = 30
+
+// Record what this unit found and, at the threshold, surface the account.
+//
+// Counting happens once per NIGHT, not once per unit (the SQL function owns
+// that rule via last_empty_date), so eight record types scanned on the same
+// evening are one session, not eight.
+//
+// The flag is filed as a normal `health` PROPOSAL rather than written
+// straight onto organizations.health. Same visible outcome once approved,
+// but it cannot silently overwrite a rating a human set, and the reason is
+// on screen before anyone accepts it -- "we could not find any data" and
+// "this customer is in trouble" are not the same claim, so a person decides
+// which one this is.
+async function trackScanOutcome(
+  svc: SupabaseClient,
+  orgId: string,
+  found: boolean,
+  runId: string,
+  mode: string,
+  triggeredBy: string,
+): Promise<void> {
+  try {
+    const { data: nights, error } = await svc.rpc('record_account_scan_result', { p_org_id: orgId, p_found: found })
+    if (error) {
+      console.log(`run ${runId}: could not record scan outcome — ${error.message}`)
+      return
+    }
+    const count = Number(nights ?? 0)
+    if (found || count < EMPTY_NIGHTS_BEFORE_FLAG) return
+
+    // Two plain reads rather than a PostgREST embed: a new FK to
+    // organizations is exactly what makes an embed elsewhere go ambiguous
+    // (D-068), and nothing here needs the join.
+    const { data: flagRow } = await svc.from('account_sync_health').select('flagged_at').eq('org_id', orgId).maybeSingle()
+    // Already filed once — the threshold is a trigger, not a nightly alarm.
+    if (flagRow?.flagged_at) return
+    const { data: org } = await svc.from('organizations').select('health').eq('id', orgId).maybeSingle()
+    if (org?.health === 'risk') {
+      // Already at risk for some other reason; just stop re-checking.
+      await svc.rpc('mark_account_sync_flagged', { p_org_id: orgId })
+      return
+    }
+
+    console.log(`run ${runId}: account ${orgId} has ${count} consecutive empty nights — filing a health proposal for review`)
+    await postToIngest([{
+      record_type: 'health',
+      operation: 'update',
+      account: orgId,
+      // Stable, so re-filing dedupes against the same proposal instead of
+      // stacking duplicates in the inbox.
+      source_ref: `cs-hub:sync-no-data:${orgId}`,
+      data: {
+        health: 'risk',
+        health_reason: `No data found in any connected source for ${count} consecutive nightly syncs. The account may be mis-entered or renamed, may have no Slack/email/meeting presence to sync, or may genuinely be inactive - worth a look either way.`,
+      },
+      confidence: 0.5,
+    }], runId, mode, triggeredBy)
+    await svc.rpc('mark_account_sync_flagged', { p_org_id: orgId })
+  } catch (err) {
+    // Never let bookkeeping fail a run that otherwise succeeded.
+    console.log(`run ${runId}: scan-outcome tracking failed — ${String(err)}`)
+  }
 }
 
 async function postToIngest(records: unknown[], runId: string, mode: string, triggeredBy: string): Promise<Record<string, number>> {
@@ -214,7 +285,28 @@ export async function processUnit(svc: SupabaseClient, orgId: string, recordType
     // The cost ceiling is a real limit now, not a decorative setting. One
     // live run burned 653,835 tokens on a single unit against a 150,000
     // setting that nothing read.
-    const tokenCap = Number(settings?.max_tokens_per_unit ?? 150000)
+    //
+    // An account that found nothing on its last nightly cycle is scanned on
+    // a much smaller probe budget: confirming there is nothing there should
+    // cost the price of confirming it, not the price of an exhaustive
+    // search. One mis-typed account used to cost a full budget every night
+    // forever. A genuinely quiet customer is still scanned every night, just
+    // cheaply -- and goes straight back to the full budget the moment it
+    // produces a single record. A sweep is never probed: it is the thing
+    // that finds the accounts in the first place.
+    const fullCap = Number(settings?.max_tokens_per_unit ?? 150000)
+    let tokenCap = fullCap
+    if (recordType !== DISCOVERY) {
+      const { data: health } = await svc
+        .from('account_sync_health')
+        .select('consecutive_empty_nights')
+        .eq('org_id', orgId)
+        .maybeSingle()
+      if ((health?.consecutive_empty_nights ?? 0) >= 1) {
+        tokenCap = Number(settings?.probe_token_budget ?? 25000)
+        console.log(`run ${runId}: account has ${health?.consecutive_empty_nights} empty night(s) — probing on ${tokenCap} tokens instead of ${fullCap}`)
+      }
+    }
     let agent = await runSkillAgent(JSON.stringify(contextWithSkips), stub?.initial, recordType === DISCOVERY, tokenCap)
     if (agent.stopped === 'deadline') console.log(`run ${runId}: finished under the time budget — results may be partial`)
     if (agent.stopped === 'max_turns' || !agent.rawText) {
@@ -258,6 +350,7 @@ export async function processUnit(svc: SupabaseClient, orgId: string, recordType
     }
 
     await finish(status, { counts, skippedConnectors, tokensUsed: agent.tokensUsed, skippedItems, coveredThrough })
+    if (recordType !== DISCOVERY) await trackScanOutcome(svc, orgId, records.length > 0, runId, mode, triggeredBy)
     return { status, counts, skippedConnectors, runId, skippedCount: skippedItems.length, truncated }
   } catch (err) {
     await finish('failed', { error: String(err) })

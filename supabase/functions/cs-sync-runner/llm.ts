@@ -54,6 +54,14 @@ const MAX_OUTPUT_TOKENS = Number(Deno.env.get('CS_SYNC_MAX_OUTPUT_TOKENS') ?? '1
 // turn, turning a total loss into a partial result.
 const DEADLINE_MS = Number(Deno.env.get('CS_SYNC_DEADLINE_MS') ?? '100000')
 const WRAP_UP_RESERVE_MS = 35_000
+// Every tool result is re-sent as part of the conversation on EVERY later
+// turn, so one fat listing is not paid for once -- it is paid for again and
+// again until the run ends. That is how a 150k cap produced 412k-token
+// runs in production: a 90-channel Slack listing and a 150-transcript
+// Fireflies page sat in the history being re-billed. Truncating here is the
+// single biggest lever on spend, and it costs nothing the agent needs: the
+// marker below tells it plainly that there is more and what to do about it.
+const MAX_TOOL_RESULT_BYTES = Number(Deno.env.get('CS_SYNC_MAX_TOOL_RESULT_BYTES') ?? '24000')
 
 // OpenAI function-calling shape (OpenRouter normalizes this to each
 // provider's native tool format on the way out).
@@ -136,17 +144,91 @@ interface ToolCall {
   function: { name: string; arguments: string }
 }
 
+// Serialise a tool result, bounded. When the payload is an array-bearing
+// object (every Refold listing is) the array is CUT rather than the JSON
+// string sliced, so what the model receives is still valid JSON it can
+// parse -- a truncated string would be worse than useless. The note is
+// addressed to the model: it says how much is missing and that narrowing
+// beats paging, which is the behaviour change that actually saves tokens.
+function serialiseToolResult(result: unknown): string {
+  let text = JSON.stringify(result ?? null)
+  if (text.length <= MAX_TOOL_RESULT_BYTES) return text
+
+  // Find the longest array anywhere one level inside the result and trim it
+  // proportionally -- that is where the bulk invariably is. A bare array at
+  // the top level is wrapped first: `typeof [] === 'object'`, so without
+  // this it spreads into an object of numeric keys and nothing gets cut.
+  const record = (Array.isArray(result) ? { items: result } : result) as Record<string, unknown> | null
+  if (record && typeof record === 'object') {
+    const clone: Record<string, unknown> = { ...record }
+    const containers: Array<[Record<string, unknown>, string, unknown[]]> = []
+    const scan = (obj: Record<string, unknown>, depth: number) => {
+      if (depth > 3) return
+      for (const [key, value] of Object.entries(obj)) {
+        if (Array.isArray(value)) containers.push([obj, key, value])
+        else if (value && typeof value === 'object') {
+          const nested = { ...(value as Record<string, unknown>) }
+          obj[key] = nested
+          scan(nested, depth + 1)
+        }
+      }
+    }
+    scan(clone, 0)
+    containers.sort((a, b) => b[2].length - a[2].length)
+    const biggest = containers[0]
+    if (biggest && biggest[2].length > 1) {
+      const [owner, key, items] = biggest
+      // The note is part of the payload, so the search has to budget for it
+      // up front. Measuring the slice and THEN appending the note pushed the
+      // result back over the limit and silently fell through to the crude
+      // fallback below -- caught by the unit test, not by inspection.
+      const note = (kept: number) =>
+        `Showing ${kept} of ${items.length} items in "${key}" -- ${items.length - kept} omitted to stay inside this run's budget. Do NOT page for the rest: narrow the query instead (a shorter date range, a specific channel or account). If what you need is not here, record it in \`skipped\` and move on.`
+      const budget = MAX_TOOL_RESULT_BYTES - note(items.length).length - 16
+      clone._truncated = note(0)
+      let lo = 0, hi = items.length
+      while (lo < hi) {
+        const mid = Math.ceil((lo + hi) / 2)
+        owner[key] = items.slice(0, mid)
+        if (JSON.stringify(clone).length <= budget) lo = mid
+        else hi = mid - 1
+      }
+      if (lo > 0) {
+        owner[key] = items.slice(0, lo)
+        clone._truncated = note(lo)
+        text = JSON.stringify(clone)
+        if (text.length <= MAX_TOOL_RESULT_BYTES) return text
+      }
+    }
+  }
+
+  // Not array-shaped (or still too big): fall back to a hard slice, wrapped
+  // so it stays parseable JSON.
+  const fallbackNote = `Result was ${text.length} bytes, over this run's ${MAX_TOOL_RESULT_BYTES}-byte per-result limit. A prefix follows as text. Narrow the query rather than retrying.`
+  // Reserve the note and the enclosing JSON itself, or the wrapper pushes
+  // the "truncated" result back over the very limit it exists to enforce.
+  const room = Math.max(0, MAX_TOOL_RESULT_BYTES - fallbackNote.length - 64)
+  return JSON.stringify({ _truncated: fallbackNote, preview: text.slice(0, room) })
+}
+
 async function runConversation(messages: Array<Record<string, unknown>>, maxTurns: number, tokensUsedSoFar: number, model: string = MODEL, deadlineAt = Date.now() + DEADLINE_MS, forceFinal = false, tokenCap = Infinity): Promise<AgentResult> {
   let tokensUsed = tokensUsedSoFar
   let wrappingUp = forceFinal
   let stoppedOnTokens = false
+  // The prompt is re-sent in full every turn and only ever grows, so the
+  // last turn's prompt size is a sound floor for what the next one costs.
+  // Testing `tokensUsed >= tokenCap` ALONE is what let a 150k cap bill 412k
+  // in production: by the time the total crossed the line, the turn that
+  // crossed it had already been paid for. Projecting one turn ahead stops
+  // before the spend, not after it.
+  let lastPromptTokens = 0
 
   for (let turn = 1; turn <= maxTurns; turn++) {
     // Out of time: ask for whatever it has, with no tools offered so the
     // only possible reply is the final JSON.
     // Either ceiling — time or spend — ends gathering the same way: ask
     // for what it has rather than losing the run entirely.
-    const overTokens = tokensUsed >= tokenCap
+    const overTokens = tokensUsed + lastPromptTokens >= tokenCap
     if (!wrappingUp && (overTokens || Date.now() > deadlineAt - WRAP_UP_RESERVE_MS)) {
       wrappingUp = true
       stoppedOnTokens = overTokens
@@ -181,6 +263,7 @@ async function runConversation(messages: Array<Record<string, unknown>>, maxTurn
     })
     if (!res.ok) throw new Error(`OpenRouter API failed: ${res.status} ${await res.text()}`)
     const body = await res.json()
+    lastPromptTokens = body.usage?.prompt_tokens ?? lastPromptTokens
     tokensUsed += (body.usage?.prompt_tokens ?? 0) + (body.usage?.completion_tokens ?? 0)
 
     const choice = body.choices?.[0]
@@ -208,7 +291,7 @@ async function runConversation(messages: Array<Record<string, unknown>>, maxTurn
         continue
       }
       const result = await dispatchTool(call.function.name, args)
-      messages.push({ role: 'tool', tool_call_id: call.id, content: JSON.stringify(result) })
+      messages.push({ role: 'tool', tool_call_id: call.id, content: serialiseToolResult(result) })
     }
   }
 

@@ -925,3 +925,125 @@ begin
 
   raise notice 'ALL DISCOVERY SWEEP RLS TESTS PASSED';
 end $$;
+
+-- ── Account sync health + queue priority (7.5-pre2 Session 7) ─────────────
+do $$
+declare
+  n int;
+  v_org uuid;
+  v_nights int;
+  v_rt text;
+  v_prio int;
+begin
+  select id into v_org from public.organizations
+   where id <> '00000000-0000-0000-0000-000000000001' and status = 'active'
+   order by name limit 1;
+
+  -- Super admin reads the table; nobody else does, and nobody writes it
+  -- directly (same shape as sync_settings/sync_queue).
+  set local role service_role;
+  delete from public.sync_queue;
+  delete from public.account_sync_health;
+  update public.sync_settings set kill_switch = false where singleton = true;
+  insert into public.account_sync_health (org_id, consecutive_empty_nights, last_empty_date)
+  values (v_org, 4, current_date);
+  reset role;
+
+  set local role authenticated;
+  set local request.jwt.claims = '{"sub":"00000000-0000-0000-0000-000000001001","aal":"aal2"}'; -- super admin
+  select count(*) into n from public.account_sync_health;
+  assert n = 1, format('super admin should see the account_sync_health row, got %s', n);
+  reset role;
+
+  set local role authenticated;
+  set local request.jwt.claims = '{"sub":"00000000-0000-0000-0000-000000001002","aal":"aal2"}'; -- Prism owner
+  select count(*) into n from public.account_sync_health;
+  assert n = 0, 'a customer owner must not see account_sync_health';
+  reset role;
+
+  -- A table UPDATE with no policy matches zero rows rather than raising
+  -- (unlike INSERT's WITH CHECK barrier), so assert the value is UNCHANGED.
+  set local role authenticated;
+  set local request.jwt.claims = '{"sub":"00000000-0000-0000-0000-000000001001","aal":"aal2"}';
+  update public.account_sync_health set consecutive_empty_nights = 999 where org_id = v_org;
+  reset role;
+  set local role service_role;
+  select consecutive_empty_nights into v_nights from public.account_sync_health where org_id = v_org;
+  assert v_nights = 4, format('authenticated must not be able to write account_sync_health (got %s)', v_nights);
+  reset role;
+
+  -- The counting rule: one NIGHT is one session, however many record types
+  -- were scanned that evening.
+  set local role service_role;
+  delete from public.account_sync_health;
+  select public.record_account_scan_result(v_org, false) into n;
+  assert n = 1, format('first empty scan should count 1 night, got %s', n);
+  select public.record_account_scan_result(v_org, false) into n;
+  select public.record_account_scan_result(v_org, false) into n;
+  assert n = 1, format('further empty scans the SAME night must still count 1, got %s', n);
+
+  -- Any find resets the whole night, whatever order the units ran in.
+  select public.record_account_scan_result(v_org, true) into n;
+  assert n = 0, format('a producing scan must reset the counter to 0, got %s', n);
+  select count(*) into n from public.account_sync_health
+   where org_id = v_org and last_found_at is not null and last_empty_date is null;
+  assert n = 1, 'a producing scan must stamp last_found_at and clear last_empty_date';
+
+  -- Crossing the threshold, and not climbing past it twice in one night.
+  update public.account_sync_health
+     set consecutive_empty_nights = 29, last_empty_date = current_date - 1, flagged_at = null
+   where org_id = v_org;
+  select public.record_account_scan_result(v_org, false) into n;
+  assert n = 30, format('the 30th consecutive empty night should read 30, got %s', n);
+  select public.record_account_scan_result(v_org, false) into n;
+  assert n = 30, format('a second scan the same night must not advance past 30, got %s', n);
+
+  -- The flag is stamped once.
+  perform public.mark_account_sync_flagged(v_org);
+  select count(*) into n from public.account_sync_health where org_id = v_org and flagged_at is not null;
+  assert n = 1, 'mark_account_sync_flagged should stamp the row';
+
+  -- Queue priority: the sweep is CLAIMED first. Ordering by enqueued_at
+  -- alone was not enough — one enqueue_all_units call stamps every row with
+  -- the same transaction timestamp, so the claim needs the priority column
+  -- and a total tiebreak.
+  delete from public.account_sync_health;
+  delete from public.sync_queue;
+  select public.enqueue_all_units('daily', 20, 7) into n;
+  assert n > 1, format('enqueue_all_units should queue the sweep plus per-account units, got %s', n);
+  select record_type, priority into v_rt, v_prio from public.claim_sync_queue_item();
+  assert v_rt = 'discovery', format('the discovery sweep must be claimed FIRST, got %s', v_rt);
+  assert v_prio = 0, format('the sweep should carry priority 0, got %s', v_prio);
+
+  -- An account that keeps finding nothing sinks below the productive ones,
+  -- so a day's unit budget runs out on the barren accounts, not the live
+  -- ones.
+  delete from public.sync_queue;
+  insert into public.account_sync_health (org_id, consecutive_empty_nights, last_empty_date)
+  values (v_org, 12, current_date);
+  perform public.enqueue_all_units('daily', 20, 7);
+  select priority into v_prio from public.sync_queue where org_id = v_org limit 1;
+  assert v_prio = 112, format('a barren account should sort behind routine work (expected 112, got %s)', v_prio);
+
+  -- An account a human just confirmed jumps ahead of routine nightly work.
+  delete from public.sync_queue;
+  delete from public.account_sync_health;
+  select public.enqueue_account(v_org, 'daily', 7) into n;
+  assert n = 8, format('enqueue_account should queue one unit per record type, got %s', n);
+  select public.enqueue_account(v_org, 'daily', 7) into n;
+  assert n = 0, format('enqueue_account must not double-queue what is already pending, got %s', n);
+  select priority into v_prio from public.sync_queue where org_id = v_org limit 1;
+  assert v_prio = 50, format('a just-confirmed account should outrank routine work (expected 50, got %s)', v_prio);
+
+  -- The kill switch stops the new path too.
+  delete from public.sync_queue;
+  update public.sync_settings set kill_switch = true where singleton = true;
+  select public.enqueue_account(v_org, 'daily', 7) into n;
+  assert n = 0, 'enqueue_account must respect the kill switch';
+  update public.sync_settings set kill_switch = false where singleton = true;
+  delete from public.sync_queue;
+  delete from public.account_sync_health;
+  reset role;
+
+  raise notice 'ALL ACCOUNT SYNC HEALTH RLS TESTS PASSED';
+end $$;

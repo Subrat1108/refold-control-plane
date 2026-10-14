@@ -69,6 +69,15 @@ export const STUB_MODEL_OUTPUT_VALID = {
 // and raise exactly ONE account_resolution covering them — that merging is
 // the behaviour worth testing, since a sweep naturally finds several items
 // per unknown company.
+// A well-formed run that simply found nothing -- the shape a scan of an
+// account that does not exist in any connector returns. Drives the
+// empty-night counting and the 30-night flag in tests.
+export const STUB_MODEL_OUTPUT_EMPTY = {
+  run: { mode: 'scoped', source: 'agent', triggered_by: 'system' },
+  records: [],
+  skipped: [{ item: 'stub: nothing matched this account', reason: 'no source mentions this account' }],
+}
+
 export const STUB_MODEL_OUTPUT_DISCOVERY = {
   run: { mode: 'scoped', source: 'agent', triggered_by: 'system' },
   records: [

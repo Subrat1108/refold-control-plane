@@ -4,7 +4,7 @@
 // Edge Function (super_admin + AAL2), never a direct client write.
 import { useState } from 'react'
 import { useQueryClient } from '@tanstack/react-query'
-import { useSyncRuns, useSyncSettings, useSyncQueue, useAccountsRaw } from '@/hooks'
+import { useSyncRuns, useSyncSettings, useSyncQueue, useAccountsRaw, useAccountSyncHealth } from '@/hooks'
 import { DataTable, type Column } from '@/components/DataTable'
 import { StatusBadge } from '@/components/StatusBadge'
 import { CardSkeleton } from '@/components/SkeletonLoader'
@@ -15,18 +15,23 @@ import { processQueuedUnit } from '@/lib/syncRunner'
 import { supabase } from '@/lib/supabase'
 import type { SyncRun } from '@/types'
 
+// Mirrors EMPTY_NIGHTS_BEFORE_FLAG in the cs-sync-runner Edge Function.
+const EMPTY_NIGHTS_BEFORE_FLAG = 30
+
 export function SyncStatusPage() {
   const qc = useQueryClient()
   const { data: runs, isLoading, isError, refetch } = useSyncRuns()
   const { data: settings } = useSyncSettings()
   const { data: queue } = useSyncQueue(20)
   const { data: accounts } = useAccountsRaw()
+  const { data: emptyAccounts } = useAccountSyncHealth()
 
   const [killSwitch, setKillSwitch] = useState(false)
   const [dailyTime, setDailyTime] = useState('01:30:00')
   const [maxPerRun, setMaxPerRun] = useState(5)
   const [maxPerDay, setMaxPerDay] = useState(50)
   const [maxTokens, setMaxTokens] = useState(150000)
+  const [probeBudget, setProbeBudget] = useState(25000)
   const [savedAt, setSavedAt] = useState<string | null>(null)
   const [backfillOrgId, setBackfillOrgId] = useState('')
   const [backfillBusy, setBackfillBusy] = useState(false)
@@ -44,6 +49,7 @@ export function SyncStatusPage() {
     setMaxPerRun(settings.maxUnitsPerRun)
     setMaxPerDay(settings.maxUnitsPerDay)
     setMaxTokens(settings.maxTokensPerUnit)
+    setProbeBudget(settings.probeTokenBudget)
     setInternalDomains((settings.internalEmailDomains ?? []).join(', '))
     setChannelPatterns((settings.discoveryChannelPatterns ?? []).join(', '))
     setHydrated(true)
@@ -58,6 +64,7 @@ export function SyncStatusPage() {
       max_units_per_run: maxPerRun,
       max_units_per_day: maxPerDay,
       max_tokens_per_unit: maxTokens,
+      probe_token_budget: probeBudget,
       internal_email_domains: splitList(internalDomains),
       discovery_channel_patterns: splitList(channelPatterns),
     })
@@ -177,7 +184,7 @@ export function SyncStatusPage() {
 
       <section className="bg-white rounded-xl shadow-card p-6 space-y-4">
         <h2 className="text-sm font-semibold text-foreground">Settings</h2>
-        <div className="grid grid-cols-2 md:grid-cols-5 gap-4">
+        <div className="grid grid-cols-2 md:grid-cols-6 gap-4">
           <label className="flex items-center gap-2 text-sm">
             <input type="checkbox" checked={killSwitch} onChange={(e) => setKillSwitch(e.target.checked)} />
             Kill switch
@@ -195,10 +202,19 @@ export function SyncStatusPage() {
             <input type="number" min={1} value={maxPerDay} onChange={(e) => setMaxPerDay(Number(e.target.value))} className="w-full rounded-md border border-border px-2 py-1.5 text-sm" />
           </div>
           <div>
-            <label className="block text-xs font-medium text-muted-foreground mb-1">Max tokens / unit</label>
-            <input type="number" min={1000} step={1000} value={maxTokens} onChange={(e) => setMaxTokens(Number(e.target.value))} className="w-full rounded-md border border-border px-2 py-1.5 text-sm" />
+            <label htmlFor="sync-max-tokens" className="block text-xs font-medium text-muted-foreground mb-1">Max tokens / unit</label>
+            <input id="sync-max-tokens" type="number" min={1000} step={1000} value={maxTokens} onChange={(e) => setMaxTokens(Number(e.target.value))} className="w-full rounded-md border border-border px-2 py-1.5 text-sm" />
+          </div>
+          <div>
+            <label htmlFor="sync-probe-budget" className="block text-xs font-medium text-muted-foreground mb-1">Probe tokens / unit</label>
+            <input id="sync-probe-budget" type="number" min={1000} step={1000} value={probeBudget} onChange={(e) => setProbeBudget(Number(e.target.value))} className="w-full rounded-md border border-border px-2 py-1.5 text-sm" />
           </div>
         </div>
+        <p className="text-xs text-muted-foreground">
+          An account that found nothing last night is scanned on the smaller <strong>probe</strong> budget instead of the full one, so a mis-typed or
+          inactive account costs the price of confirming there is nothing there rather than the price of an exhaustive search. It returns to the full
+          budget the moment it produces a record.
+        </p>
         <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
           <div>
             <label className="block text-xs font-medium text-muted-foreground mb-1">Our own email domains (comma-separated)</label>
@@ -239,6 +255,41 @@ export function SyncStatusPage() {
               {(queue ?? []).slice(0, 10).map((q) => <li key={q.id}>{q.recordType} · {q.mode} · <StatusBadge status={q.status} /></li>)}
             </ul>
           </div>
+        )}
+      </section>
+
+      <section className="bg-white rounded-xl shadow-card p-6">
+        <h2 className="text-sm font-semibold text-foreground mb-1">Accounts not producing data</h2>
+        <p className="text-xs text-muted-foreground mb-3">
+          Counted once per night, not once per scan. These are scanned on the probe budget; after {EMPTY_NIGHTS_BEFORE_FLAG} consecutive empty nights a
+          health change is proposed for review. Usually it means the account name does not match anything in Slack, email or meetings - not that the
+          customer is unhappy.
+        </p>
+        {(emptyAccounts ?? []).length === 0 ? (
+          <p className="text-sm text-muted-foreground">Every account has found something on its most recent scan.</p>
+        ) : (
+          <table className="w-full text-sm">
+            <thead>
+              <tr className="text-left text-xs font-medium text-muted-foreground border-b border-border">
+                <th className="pb-2">Account</th>
+                <th className="pb-2">Empty nights</th>
+                <th className="pb-2">Last found</th>
+                <th className="pb-2">Flagged</th>
+              </tr>
+            </thead>
+            <tbody>
+              {(emptyAccounts ?? []).map((a) => (
+                <tr key={a.orgId} className="h-[52px] border-b border-border last:border-0">
+                  <td className="font-medium text-foreground">{a.accountName}</td>
+                  <td className={a.consecutiveEmptyNights >= EMPTY_NIGHTS_BEFORE_FLAG ? 'text-red-600 font-medium' : a.consecutiveEmptyNights >= 3 ? 'text-amber-600' : ''}>
+                    {a.consecutiveEmptyNights}
+                  </td>
+                  <td className="text-muted-foreground">{a.lastFoundAt ? formatDate(a.lastFoundAt) : 'Never'}</td>
+                  <td className="text-muted-foreground">{a.flaggedAt ? formatDate(a.flaggedAt) : '-'}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
         )}
       </section>
 

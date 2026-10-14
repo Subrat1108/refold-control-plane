@@ -677,11 +677,26 @@ export interface SyncSettings {
   maxUnitsPerRun: number
   maxUnitsPerDay: number
   maxTokensPerUnit: number
+  // 7.5-pre2 Session 7 — the smaller ceiling used for an account that found
+  // nothing on its last nightly cycle.
+  probeTokenBudget: number
   updatedBy: string | null
   updatedAt: string
   // 7.5-pre2 Session 6 — the discovery sweep's selection rules.
   internalEmailDomains: string[]
   discoveryChannelPatterns: string[]
+}
+
+// 7.5-pre2 Session 7 — how an account's scans have been going. Tracked
+// separately from the CS team's own Health rating: "we cannot find any data"
+// and "this customer is in trouble" are different claims.
+export interface AccountSyncHealth {
+  orgId: string
+  accountName: string
+  consecutiveEmptyNights: number
+  lastEmptyDate: string | null
+  lastFoundAt: string | null
+  flaggedAt: string | null
 }
 
 export type SyncQueueStatus = 'queued' | 'processing' | 'done' | 'error'

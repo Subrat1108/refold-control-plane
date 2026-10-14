@@ -244,8 +244,17 @@ test('super admin smoke: Home, Portfolio, Account 360, Approvals, Audit log, Sta
   // OpenRouter. Draining every queued unit takes a little while even with
   // stubs, hence the generous timeout.
   await expect(page.getByLabel('Look back (days)')).toHaveValue('7')
+
+  // 7.5-pre2 Session 7 — the probe budget and the empty-account table. The
+  // stub fixture always returns a record, so every account finds something
+  // and the table stays in its "nothing to report" state; what matters here
+  // is that both render and the page stays error-free.
+  await expect(page.getByLabel('Probe tokens / unit')).toHaveValue('25000')
+  await expect(page.getByRole('heading', { name: 'Accounts not producing data' })).toBeVisible()
+
   await page.getByRole('button', { name: 'Run sync now' }).click()
   await expect(page.getByRole('button', { name: 'Syncing…' })).toBeVisible()
   await expect(page.getByRole('button', { name: 'Run sync now' })).toBeVisible({ timeout: 120_000 })
+  await expect(page.getByText('Every account has found something on its most recent scan.')).toBeVisible()
   await expectNoErrors(page, errors)
 })

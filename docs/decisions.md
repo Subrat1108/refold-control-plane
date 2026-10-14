@@ -1756,6 +1756,67 @@ from 12 passing blocks to 10. Fixed by dropping the old signature
 explicitly in the same migration. Worth remembering for every future
 function signature change in this repo.
 
+## D-131 — the sync queue had no real order, so the sweep never ran (2026-10-14)
+`enqueue_all_units` appended `enqueue_discovery` after the per-account loop,
+which looked like "the sweep goes last" but was worse than that: every row a
+single call inserts gets the SAME `enqueued_at`, because `now()` is
+transaction-stable — and `claim_sync_queue_item` ordered by `enqueued_at`
+alone, with no tiebreak. The claim order was therefore heap order, i.e.
+arbitrary. Across 17 production runs the discovery sweep was never claimed
+once, which is why four runs spent 2.67M tokens searching for two fictional
+fixture accounts and never looked for the real ones. Reordering the INSERTs
+would have been cosmetic; the fix is an explicit `sync_queue.priority`
+(0 = sweep, 50 = an account a human just confirmed, 100 = routine, 100+n for
+accounts finding nothing) and a total claim order `(priority, enqueued_at,
+id)`. General lesson for this repo: "insert order" is not an order.
+
+## D-132 — a token cap checked between turns is not a cap (2026-10-14)
+`max_tokens_per_unit` was 150,000 and live runs used 208k/226k/381k/412k.
+Two compounding causes: the cap was tested only at the top of each turn, so
+the turn that crossed it had already been billed; and tool results were
+pushed into the conversation untruncated, where — since the whole message
+array is re-sent every turn — one 90-channel Slack listing or 150-transcript
+Fireflies page was re-billed again and again. Fixed by truncating each tool
+result to a byte budget (cutting the longest array so the JSON stays
+parseable, with a note telling the model to narrow rather than page) and by
+projecting the next turn's cost from the last turn's `prompt_tokens` before
+issuing it. The truncation helper was unit-tested before anything was built
+on it, which caught two real bugs: the truncation note was appended after the
+size search (pushing the result back over the limit) and a top-level array
+spread into numeric keys instead of being cut.
+
+## D-133 — an unproductive account gets a probe, not a deactivation (2026-10-14)
+The session owner rejected deactivating the two fictional accounts: *"It can
+be a human error that someone adds an invalid account and all the tokens
+should not utilized on it and it becomes a bottleneck."* So the fix is
+systemic. `account_sync_health` counts consecutive empty NIGHTS per account —
+once per nightly cycle, not once per unit, so eight record types scanned the
+same evening count once. Any find resets it unconditionally, so order within
+a night does not matter. An account at 1+ empty nights is scanned on
+`sync_settings.probe_token_budget` (25k) instead of the full 150k, returning
+to full the moment it produces a record; a genuinely quiet customer is still
+scanned nightly, just cheaply. At 30 consecutive empty nights the runner
+files a `health` PROPOSAL (risk + reason) rather than writing
+`organizations.health` directly — the owner asked for the existing Health
+field, and a proposal delivers exactly that once approved while keeping the
+one property a direct write would destroy: it cannot silently overwrite a
+rating a human set, and the reason is on screen before anyone accepts it.
+Tracked in its own table rather than columns on `organizations`, which
+carries the generic audit trigger and would log a row on every nightly unit.
+
+## D-134 — re-association on account approval was already built (2026-10-14)
+The owner asked that "once an account has been approved or edited or set as a
+namespace/org(account)/tenant the fetched details association should be
+updated as well before it is approved as a valid record." This already works
+and needed no code: `resolve_account_proposal` resolves the decision to a
+concrete org/tenant (creating the tenant on a `map_tenant`), writes
+`account_sources`, then releases every held record through
+`_shared/dedupe.ts` carrying that resolved org/tenant. Worth recording
+precisely because the shape surprises: the release does NOT mutate the held
+row — it marks the original `superseded` and files a NEW proposal, exactly as
+a fresh sighting would. Asserted directly for the first time this session
+(12 checks), since Session 7's design depends on it.
+
 # Parked
 
 Out-of-scope ideas land here instead of derailing the current prompt block.

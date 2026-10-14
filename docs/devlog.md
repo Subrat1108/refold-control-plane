@@ -16,6 +16,42 @@ Template:
 
 ---
 
+## Session 43 — 2026-10-14 — discovery first; a budget that stops dead accounts
+**Built:** Four production runs had cost 2.67M tokens for zero records, all
+spent hunting two fictional fixture accounts; deleting them was rejected
+("It can be a human error that someone adds an invalid account and all the
+tokens should not utilized on it"), so the fix is systemic. One migration
+(`20261014000002_account_sync_health.sql`): `sync_queue.priority` + a total
+claim order, `account_sync_health`, `record_account_scan_result()`,
+`mark_account_sync_flagged()`, `enqueue_account()`,
+`sync_settings.probe_token_budget`, and `enqueue_all_units` reordered so the
+sweep goes first. `llm.ts` truncates every tool result and projects the next
+turn's cost before issuing it. `index.ts` picks a probe budget for accounts
+finding nothing, records each unit's outcome, and files a `health` proposal
+at 30 empty nights. `provisioning` queues a just-resolved account's full
+pass. UI: probe-budget field + "Accounts not producing data" on
+`/sync-status`, an empty-nights indicator on Account 360 from 3 nights.
+**Deviations:** The root cause was worse than planned for — the sweep was
+not merely enqueued last. One `enqueue_all_units` call stamps every row with
+the same `enqueued_at` (now() is transaction-stable) and the claim ordered
+by it with no tiebreak, so claim order was heap order; reordering the
+INSERTs alone would have been cosmetic. Added the priority column, which was
+not in the approved plan. Confirmed live: prod had a discovery unit queued
+at the backfilled default 100, indistinguishable from the other 14 —
+promoted to 0 by hand (an update; nothing deleted). One planned item needed
+no code: re-association on account approval already worked, so it was
+asserted (12 checks) rather than rebuilt.
+**Decisions:** D-131–D-134
+**Next:** the owner's first real sync on the new ordering — the real test of
+whether discovery-first finds the actual accounts. Then 7.5-pre2 Session 3
+(learning loop), then Session 6 (context-store bootstrap).
+**Issues:** kill switch is OFF on cloud (the owner turned it off) with 15
+units still queued from 2026-10-12; they drain sweep-first now. Whether the
+150k full cap should come down is a judgement to make after the first run
+that actually finds something. Token-sustainability rework still parked.
+
+---
+
 ## Session 42 — 2026-10-12 — park token sustainability; Slack custom-action spec
 **Built:** docs only, no code. Token sustainability parked explicitly with
 the measurement behind it (one live 7-day sweep = 154k tokens for 14

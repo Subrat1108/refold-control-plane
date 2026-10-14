@@ -76,6 +76,50 @@ Points, streaks, badges, team leaderboards — computed from the audit log + pro
 ## Last session
 (See docs/devlog.md for full session history — this is just the pointer.)
 
+Date: 2026-10-14
+Completed: 7.5-pre2 Session 7 — discovery first, and a budget that stops
+dead accounts. Four production runs had cost 2.67M tokens for zero records,
+all of it spent hunting two fictional fixture accounts; deleting them was
+explicitly rejected, so the fix is systemic. Root cause was worse than
+expected (D-131): the sweep was not merely enqueued last — one
+enqueue_all_units call stamps every row with the SAME enqueued_at (now() is
+transaction-stable) and the claim ordered by it with no tiebreak, so claim
+order was heap order and the sweep was never claimed once in 17 runs. Added
+sync_queue.priority (0 = sweep, 50 = an account a human just confirmed,
+100 = routine, 100+n for accounts finding nothing) and a total claim order.
+Token cap made real (D-132): it was only checked between turns, and tool
+results entered the conversation untruncated where the whole array is
+re-sent each turn — so a 150k cap produced 412k runs. Results are now
+truncated per call (longest array cut, JSON stays parseable, with a note
+telling the model to narrow rather than page) and the next turn's cost is
+projected before it is issued. Probe budget + risk flag (D-133): new
+account_sync_health counts consecutive empty NIGHTS per account (once per
+nightly cycle, not per unit; any find resets it); an account at 1+ empty
+nights is scanned on probe_token_budget (25k) instead of 150k and returns
+to full the moment it produces a record; at 30 nights the runner files a
+`health` PROPOSAL (risk + reason) rather than writing organizations.health
+directly, so it can never silently overwrite a human's rating. Surfaced on
+Account 360 from 3 nights and in a new "Accounts not producing data" table
+on /sync-status. Resolving an account_resolution now queues that account's
+full pass immediately. Re-association on account approval needed no code
+(D-134) — already built; asserted directly for the first time.
+Verified: fresh db reset; rls_test.sql new ACCOUNT SYNC HEALTH block + all
+12 prior green; a 6-case unit test of the truncation helper (which caught
+two real bugs before anything was built on it); a 13-check stub-mode script
+against the real local Edge Function; a 12-check re-association script;
+smoke-login all 3 roles; npm run e2e green (extended); typecheck/lint/build
+green.
+Cloud: db push --dry-run matched exactly 1 migration; migration list 43/43
+local=remote; cs-sync-runner + provisioning redeployed; the one already-
+queued discovery unit promoted to priority 0.
+Decisions made: D-131–D-134
+Known issues: kill switch is OFF on cloud (the owner turned it off to run
+their own syncs) with 15 units queued from 2026-10-12 — they drain
+sweep-first now. Whether the 150k full cap should come down is a judgement
+to make after the first run that actually finds something.
+
+---
+
 Date: 2026-10-12 (later same day)
 Completed: 7.5-pre2 Session 6 — the discovery sweep, closing a real gap the
 session owner spotted: the runner only ever synced accounts that already

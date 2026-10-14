@@ -7,6 +7,7 @@ import {
   useSuperAdmins,
   useSegments,
   useAccount,
+  useAccountSyncHealth,
   updateAccount,
   useCoverage,
   coveragePct,
@@ -94,6 +95,8 @@ export function AccountDetailPage() {
   const { orgId } = useParams<{ orgId: string }>()
   const [tab, setTab] = useState('overview')
   const { data: account, isLoading, isError, refetch } = useAccount(orgId ?? null)
+  const { data: syncHealth } = useAccountSyncHealth()
+  const emptyNights = (syncHealth ?? []).find((h) => h.orgId === orgId)?.consecutiveEmptyNights ?? 0
   const { data: segments } = useSegments()
   const { data: people } = useSuperAdmins()
   const { data: lastEngagements } = useLastEngagements()
@@ -174,6 +177,18 @@ export function AccountDetailPage() {
           <StatusBadge status={account.lifecycleStage} />
           <span className="text-xs text-muted-foreground">Last engagement: {lastEngagementAt ? formatDate(lastEngagementAt) : 'never'}</span>
           <span className="text-xs text-muted-foreground">Coverage: {pct}%</span>
+          {/* 7.5-pre2 Session 7 — surfaced early, well before the 30-night
+              threshold files a health proposal. Three empty nights running
+              usually means the account's name or sources match nothing in
+              Slack/email/meetings, which is cheap to fix once someone sees
+              it — and expensive to leave, since every night re-scans it. */}
+          {emptyNights >= 3 && (
+            <Tooltip content="Nothing has been found for this account in any connected source. Check the account's sources - the name may not match anything in Slack, email or meetings.">
+              <span className={`text-xs font-medium ${emptyNights >= 30 ? 'text-red-600' : 'text-amber-600'}`}>
+                No data found in {emptyNights} nightly syncs
+              </span>
+            </Tooltip>
+          )}
           {account.deploymentType !== 'internal' && (
             <Link
               to={account.deploymentType === 'cloud' ? `/cloud-customers/${account.id}` : `/onprem-customers/${account.id}`}

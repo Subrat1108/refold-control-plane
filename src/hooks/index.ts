@@ -158,4 +158,4 @@ export {
   createActionItem,
   updateActionItem,
 } from './useStandups'
-export { useSyncState, useSyncRuns, useSyncSettings, useSyncQueue, useAccountActionItems } from './useSyncRunner'
+export { useSyncState, useSyncRuns, useSyncSettings, useSyncQueue, useAccountActionItems, useAccountSyncHealth } from './useSyncRunner'

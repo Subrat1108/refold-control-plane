@@ -107,6 +107,7 @@ export interface SyncSettingsPatch {
   max_units_per_run?: number
   max_units_per_day?: number
   max_tokens_per_unit?: number
+  probe_token_budget?: number
   internal_email_domains?: string[]
   discovery_channel_patterns?: string[]
 }

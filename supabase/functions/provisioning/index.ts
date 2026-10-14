@@ -381,7 +381,7 @@ async function revokeIngestToken(caller: Caller, body: Record<string, unknown>) 
 // kill switch / cron time / caps form. sync_settings is a singleton row
 // with no direct authenticated write policy at all (same shape as
 // ingest_tokens) — this action is the only way to change it.
-const SYNC_SETTINGS_FIELDS = ['kill_switch', 'daily_run_at_utc', 'max_units_per_run', 'max_units_per_day', 'max_tokens_per_unit', 'internal_email_domains', 'discovery_channel_patterns'] as const
+const SYNC_SETTINGS_FIELDS = ['kill_switch', 'daily_run_at_utc', 'max_units_per_run', 'max_units_per_day', 'max_tokens_per_unit', 'probe_token_budget', 'internal_email_domains', 'discovery_channel_patterns'] as const
 
 async function updateSyncSettings(caller: Caller, body: Record<string, unknown>) {
   const patch: Record<string, unknown> = {}
@@ -620,7 +620,21 @@ async function resolveAccountProposal(caller: Caller, body: Record<string, unkno
   await svc.from('proposals').update({ status: 'approved', decided_by: caller.id, decided_at: new Date().toISOString(), target_id: resolvedOrgId }).eq('id', resolutionId)
   await writeAudit(svc, caller.id, 'resolve_account_' + decision, 'proposals', resolutionId, resolvedOrgId, { decision, resolvedOrgId, resolvedTenantId, releasedCount })
 
-  return json({ ok: true, decision, orgId: resolvedOrgId, tenantId: resolvedTenantId, releasedCount })
+  // The sweep's own held records arrived with this resolution, but they are
+  // only what discovery happened to see. Queue the account's full
+  // per-account pass now rather than making it wait for the next nightly
+  // cycle -- an account someone just confirmed is real is exactly the one
+  // worth looking at properly. Best-effort: the queue is not the point of
+  // this request, so a failure here must not fail the resolution.
+  let enqueued = 0
+  try {
+    const { data } = await svc.rpc('enqueue_account', { p_org_id: resolvedOrgId })
+    enqueued = Number(data ?? 0)
+  } catch (err) {
+    console.log(`resolve_account: could not queue a sync for ${resolvedOrgId} — ${String(err)}`)
+  }
+
+  return json({ ok: true, decision, orgId: resolvedOrgId, tenantId: resolvedTenantId, releasedCount, enqueued })
 }
 
 // ── set_user_status ───────────────────────────────────────────────────────────
