@@ -16,6 +16,36 @@ Template:
 
 ---
 
+## Session 47 — 2026-10-14 — what happens to the queue when nobody is watching
+**Built:** Prompted by "if the screen gets locked, does the sync stop?". The
+screen was the wrong thing to worry about — the drain is driven by awaited
+fetches, so a locked screen keeps going and a sleeping machine only pauses
+it. Reading the code to answer that turned up two ways a unit left the queue
+for good (D-140). A `locked` result was written as `error`, taking a
+recoverable unit out of `queued` permanently; it now stays queued with a
+`retry_after`, and both claim paths skip a waiting row (without that, the
+drain re-picks the same locked unit forever). And a row marked `processing`
+was never reclaimed, so a worker killed at the wall stranded it — latent only
+because the browser drain never sets `processing`, and due to go live with
+the dispatcher. New `requeue_stale_sync_units()` puts back anything claimed
+over 20 minutes ago and closes `sync_runs` rows stuck at `running`;
+`dispatch_sync_queue()` reclaims before it claims.
+Also set the `cs_sync_runner_auth` Vault secret on cloud (D-141), completing
+the autonomous path. The key was piped from `supabase projects api-keys`
+into `vault.create_secret` without ever being printed.
+**Deviations:** none to the plan. Two of my own test bugs: an INSERT with 6
+values for 5 columns, and running `rls_test.sql` twice against one database
+(the standing trap — it leaves fixtures), which reported 0 passing blocks
+until reset.
+**Decisions:** D-140, D-141
+**Next:** the owner decides the kill switch — it is currently `true`, which
+holds the nightly job AND makes "Run sync now" queue nothing.
+**Issues:** the sweep still finishes near the 150s wall with no per-tool-call
+timeout, and records are still only posted at the end — so a wall-hit loses
+what was gathered, even though the unit is now correctly retried.
+
+---
+
 ## Session 46 — 2026-10-14 — Approvals in two sections; a record can change account
 **Built:** CFIHOS is not a company — it is an implementation Octave is running
 — and no resolution decision could say so: "create account" invents a company,

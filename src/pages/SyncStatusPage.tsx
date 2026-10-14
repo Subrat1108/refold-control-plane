@@ -113,6 +113,9 @@ export function SyncStatusPage() {
         // bug (D-131).
         const { data: next } = await supabase
           .from('sync_queue').select('id').eq('status', 'queued')
+          // Skip a unit that is waiting out a still-held lock, or this loop
+          // picks the same one forever.
+          .or(`retry_after.is.null,retry_after.lte.${new Date().toISOString()}`)
           .order('priority', { ascending: true })
           .order('enqueued_at', { ascending: true })
           .order('id', { ascending: true })

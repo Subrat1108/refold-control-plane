@@ -1047,3 +1047,83 @@ begin
 
   raise notice 'ALL ACCOUNT SYNC HEALTH RLS TESTS PASSED';
 end $$;
+
+-- ── Queue retry + stale reclaim (7.5-pre2) ────────────────────────────────
+do $$
+declare
+  n int;
+  v_org uuid;
+  v_rt text;
+begin
+  select id into v_org from public.organizations
+   where id <> '00000000-0000-0000-0000-000000000001' and status = 'active'
+   order by name limit 1;
+
+  set local role service_role;
+  update public.sync_settings set kill_switch = false where singleton = true;
+  delete from public.sync_queue;
+  delete from public.sync_runs;
+
+  -- A unit claimed by a worker that then died is put back, not lost. This
+  -- is what stops the queue quietly shrinking every time a run is killed.
+  insert into public.sync_queue (org_id, record_type, mode, status, claimed_at, priority)
+  values (v_org, 'ticket', 'daily', 'processing', now() - interval '45 minutes', 100);
+  select public.requeue_stale_sync_units() into n;
+  assert n = 1, format('a stale processing row should be requeued, got %s', n);
+  select count(*) into n from public.sync_queue where status = 'queued' and claimed_at is null;
+  assert n = 1, 'the requeued row should be queued again with claimed_at cleared';
+
+  -- A unit claimed moments ago is genuinely running -- never steal it.
+  delete from public.sync_queue;
+  insert into public.sync_queue (org_id, record_type, mode, status, claimed_at, priority)
+  values (v_org, 'risk', 'daily', 'processing', now() - interval '2 minutes', 100);
+  select public.requeue_stale_sync_units() into n;
+  assert n = 0, format('a freshly claimed row must not be requeued, got %s', n);
+
+  -- A sync_runs row left at 'running' by the same death is closed, so the
+  -- Sync Status screen stops showing a run that will never finish.
+  delete from public.sync_queue;
+  insert into public.sync_runs (mode, triggered_by, status, started_at, scope)
+  values ('daily', 'system', 'running', now() - interval '45 minutes', '{"record_type":"ticket"}'::jsonb);
+  perform public.requeue_stale_sync_units();
+  select count(*) into n from public.sync_runs where status = 'running';
+  assert n = 0, format('a long-dead running row should be closed as failed, got %s still running', n);
+
+  -- retry_after: a unit waiting out a still-held lock is passed over rather
+  -- than claimed in a loop, and becomes claimable once the wait is up.
+  delete from public.sync_queue;
+  delete from public.sync_runs;
+  insert into public.sync_queue (org_id, record_type, mode, status, priority, retry_after)
+  values (v_org, 'health', 'daily', 'queued', 100, now() + interval '10 minutes');
+  insert into public.sync_queue (org_id, record_type, mode, status, priority, retry_after)
+  values (v_org, 'escalation', 'daily', 'queued', 100, null);
+  select record_type into v_rt from public.claim_sync_queue_item();
+  assert v_rt = 'escalation', format('a waiting unit must be passed over, expected escalation, got %s', v_rt);
+  update public.sync_queue set retry_after = now() - interval '1 minute' where record_type = 'health';
+  select record_type into v_rt from public.claim_sync_queue_item();
+  assert v_rt = 'health', format('once its wait is up the unit becomes claimable, got %s', v_rt);
+
+  -- Nothing claimable is a null row, not an error.
+  delete from public.sync_queue;
+  insert into public.sync_queue (org_id, record_type, mode, status, priority, retry_after)
+  values (v_org, 'milestone', 'daily', 'queued', 100, now() + interval '30 minutes');
+  select record_type into v_rt from public.claim_sync_queue_item();
+  assert v_rt is null, format('everything waiting should claim nothing, got %s', v_rt);
+
+  delete from public.sync_queue;
+  reset role;
+
+  -- The reclaim function is service-role only (D-121: name anon and
+  -- authenticated explicitly, they hold EXECUTE by default here).
+  set local role authenticated;
+  set local request.jwt.claims = '{"sub":"00000000-0000-0000-0000-000000001001","aal":"aal2"}';
+  begin
+    perform public.requeue_stale_sync_units();
+    assert false, 'authenticated must not be able to run requeue_stale_sync_units';
+  exception when insufficient_privilege then
+    null; -- expected
+  end;
+  reset role;
+
+  raise notice 'ALL SYNC QUEUE RETRY RLS TESTS PASSED';
+end $$;

@@ -467,10 +467,25 @@ async function handleQueued(req: Request, body: { queue_id?: string }): Promise<
     typeof item.window_days === 'number' ? item.window_days : undefined,
   )
 
+  // `locked` is not a failure -- the unit's 15-minute sync_state lock is
+  // still held by a run that was interrupted. Writing it as `error` took the
+  // row out of `queued` permanently, so a unit that just needed a few
+  // minutes was silently lost. Leave it queued and pass over it until the
+  // lock can have expired.
+  if (result.status === 'locked') {
+    await service.from('sync_queue').update({
+      status: 'queued',
+      retry_after: new Date(Date.now() + 16 * 60_000).toISOString(),
+      error: 'the previous run of this unit is still holding its lock — will retry',
+      run_id: result.runId ?? null,
+    }).eq('id', item.id)
+    return json(result)
+  }
+
   await service.from('sync_queue').update({
     status: result.status === 'success' || result.status === 'partial' ? 'done' : 'error',
     finished_at: new Date().toISOString(),
-    error: result.error ?? (result.status === 'locked' ? 'unit already locked — another run in progress' : null),
+    error: result.error ?? null,
     run_id: result.runId ?? null,
   }).eq('id', item.id)
 

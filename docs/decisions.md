@@ -1913,6 +1913,45 @@ the Accounts section never shows an item with nothing behind it.
 `resolve_account_proposal` gained the same `rememberIdentifier` flag, so the
 one-click "all of these belong to X" path can also decline to create an alias.
 
+## D-140 — two ways a unit silently left the queue for good (2026-10-14)
+Both found by answering "if the screen gets locked, does the sync stop?",
+which turned out to be the wrong thing to worry about — the drain is driven
+by awaited fetches, so a locked screen keeps going, and a sleeping machine
+only pauses it (the in-flight unit still completes server-side, the rest stay
+`queued`). The real fragility was what happened to a unit when a run died.
+
+**A lock was treated as a failure.** An interrupted unit holds its
+`sync_state` lock for 15 minutes; re-running inside that window returned
+`locked`, and the caller wrote the row as `error` — which takes it out of
+`queued` permanently. A unit that needed four more minutes was lost, and the
+only sign was an "already running" message. Now `locked` leaves the row
+queued with `retry_after = now() + 16 min`, and both claim paths (the SQL
+`claim_sync_queue_item` and the browser drain's own query) skip a waiting row
+— without that skip the drain re-picks the same locked unit forever.
+
+**A claimed row was never reclaimed.** `claim_sync_queue_item` marks a row
+`processing` and nothing reset one, so a worker killed at the ~150s wall
+stranded it permanently. Latent until now only because the browser drain
+never sets `processing` — it would have gone live the moment the pg_cron
+dispatcher was switched on, i.e. exactly when nobody is watching. New
+`requeue_stale_sync_units()` puts back anything claimed over 20 minutes ago
+(above both the function wall and the 15-minute lock TTL, so it cannot race
+a live run) and closes `sync_runs` rows left lying at `running`, which the
+Sync Status screen was otherwise showing as runs that would never finish.
+`dispatch_sync_queue()` now reclaims before it claims.
+
+## D-141 — the Vault secret is set; the kill switch is the only thing holding it (2026-10-14)
+`cs_sync_runner_auth` now exists on cloud (the service-role key, read only by
+`dispatch_sync_queue()` to authenticate its `pg_net` call). The key was never
+printed into the transcript — piped from `supabase projects api-keys`
+straight into `vault.create_secret`. This completes the autonomous path: the
+5-minute `pg_cron` tick can now dispatch for real. It does not, because
+`kill_switch` is `true` — verified by calling `dispatch_sync_queue()`
+directly and getting 0. That switch is now the single control over whether
+the Hub spends money unattended, which is worth stating plainly given one
+day's manual runs cost 3.47M tokens. Note it also gates the manual button:
+with the switch on, "Run sync now" queues nothing.
+
 # Parked
 
 Out-of-scope ideas land here instead of derailing the current prompt block.
