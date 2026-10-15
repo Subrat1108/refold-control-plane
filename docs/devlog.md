@@ -16,6 +16,35 @@ Template:
 
 ---
 
+## Session 49 — 2026-10-15 — the nightly covers one day, not seven
+**Built:** The owner's rule: "daily sync should only sync per day not 7 days.
+7 days or more/less is for manual trigger." Daily mode now resolves to
+exactly one day and no longer falls back to the watermark for its floor —
+which is what had been producing week-long nightlies, since a `partial` run
+holds the watermark by design and 41 of 41 units ended partial. A watermark
+newer than a day is still honoured (it only shrinks the scan); an explicit
+day range from the manual trigger always wins; backfill keeps its 90 days.
+Sync Status now states the distinction on screen.
+**Deviations:** none to the instruction. Flagged rather than hidden: a missed
+night is no longer re-covered automatically — catching up is what the manual
+trigger's wider range is for. Also recorded what this does not fix (D-145):
+the per-unit floor is fixed overhead re-sent every turn, not data volume, so
+a one-day window should land nearer 60-120k than the 185k median rather than
+falling sevenfold. Runs average 108s against a 65s wrap-up — time-bound, not
+data-bound.
+**Verified:** 8-case unit test of the window rules (daily with no watermark,
+with a stale 30-day watermark, with a fresh 6-hour one, the daily sweep, two
+manual ranges, the manual sweep default, backfill); 15 RLS blocks; e2e;
+typecheck/lint/build. One JSX break of my own, caught by typecheck and
+repaired before it reached anything.
+**Decisions:** D-145
+**Next:** let a real nightly run and measure the actual one-day cost.
+**Issues:** 31 units remain queued behind the kill switch; the learning loop
+will not reduce tokens (it adds to the context re-sent each turn) — it buys
+accuracy, not spend.
+
+---
+
 ## Session 48 — 2026-10-15 — the 138-run review, and three faults it exposed
 **Built:** Reviewed the first dataset big enough to judge the pipeline — 138
 runs, 11,553,163 tokens, 91 records (D-142). Confirmed the sourceless skip

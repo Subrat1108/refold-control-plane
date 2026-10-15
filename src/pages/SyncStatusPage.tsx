@@ -194,6 +194,10 @@ export function SyncStatusPage() {
             </span>
           )}
         </div>
+        <p className="text-xs text-muted-foreground">
+          This day range applies to <strong>this manual run only</strong>. The nightly sync always covers <strong>one day</strong>, so a routine pass costs
+          a day&apos;s worth rather than a week&apos;s — widen it here when you need to catch up on a gap or re-scan history.
+        </p>
       </section>
 
       <section className="bg-white rounded-xl shadow-card p-6 space-y-4">

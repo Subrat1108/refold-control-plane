@@ -42,6 +42,13 @@ const DISCOVERY_DEFAULT_WINDOW_DAYS = 7
 // cold-start default, matching the sweep; the watermark takes over from
 // the second run on, and the Sync Status page can override it per run.
 const FIRST_RUN_LOOKBACK_DAYS = 7
+// The nightly job covers ONE day, always. It used to fall back to the
+// watermark and then to 7 days -- and because 41 of 41 units ended
+// `partial`, which deliberately holds the watermark, every "daily" run was
+// re-scanning the same 7-day window at ~185k tokens a unit. A routine
+// nightly pass should cost a day, not a week. Catching up on a gap is what
+// the manual trigger and its day picker are for.
+const DAILY_WINDOW_DAYS = 1
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
@@ -265,15 +272,31 @@ export async function processUnit(svc: SupabaseClient, orgId: string, recordType
 
   try {
     const { data: stateRow } = await svc.from('sync_state').select('last_synced_at').eq('org_id', orgId).eq('record_type', recordType).maybeSingle()
-    // An explicit window (the "Scan for unknown accounts" button) wins over
-    // the watermark — asking for "the last 7 days" should mean that even on
-    // a unit that has already run. Otherwise: watermark, else the mode's
-    // default lookback (a sweep defaults to 7 days rather than all-time,
-    // since listing every meeting ever would blow the turn budget).
-    const defaultDays = windowDays ?? (mode === 'backfill' ? 90 : recordType === DISCOVERY ? DISCOVERY_DEFAULT_WINDOW_DAYS : FIRST_RUN_LOOKBACK_DAYS)
-    const since = windowDays
-      ? new Date(Date.now() - windowDays * 86_400_000).toISOString()
-      : stateRow?.last_synced_at ?? new Date(Date.now() - defaultDays * 86_400_000).toISOString()
+    // An explicit window (the manual trigger's day picker) always wins —
+    // asking for "the last 7 days" should mean that even on a unit that has
+    // already run.
+    //
+    // With no explicit window the mode decides:
+    //   daily    — exactly ONE day, never more. Not the watermark: a
+    //              `partial` run holds the watermark by design, so leaning
+    //              on it meant the nightly re-scanned a full week every
+    //              night. A routine pass costs a day's worth or it is not
+    //              routine. (A recent watermark is still honoured when it
+    //              is NEWER than a day, which only makes the scan smaller.)
+    //   backfill — 90 days, deliberately wide.
+    //   scoped   — the watermark, else a first-run lookback.
+    let since: string
+    if (windowDays) {
+      since = new Date(Date.now() - windowDays * 86_400_000).toISOString()
+    } else if (mode === 'daily') {
+      const oneDayAgo = new Date(Date.now() - DAILY_WINDOW_DAYS * 86_400_000).toISOString()
+      const mark = stateRow?.last_synced_at as string | undefined
+      since = mark && mark > oneDayAgo ? mark : oneDayAgo
+    } else {
+      const defaultDays = mode === 'backfill' ? 90 : recordType === DISCOVERY ? DISCOVERY_DEFAULT_WINDOW_DAYS : FIRST_RUN_LOOKBACK_DAYS
+      since = stateRow?.last_synced_at ?? new Date(Date.now() - defaultDays * 86_400_000).toISOString()
+    }
+    console.log(`run ${runId} ${recordType}: mode=${mode} since=${since}${windowDays ? ` (explicit ${windowDays}d)` : mode === 'daily' ? ' (daily = 1 day)' : ''}`)
 
     const neededConnectors = RECORD_TYPE_CONNECTORS[recordType] ?? []
     const connectedApps = await getConnectedApps()

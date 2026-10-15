@@ -2010,6 +2010,37 @@ its records. Raising `CS_SYNC_DEADLINE_MS` is also off the table: this
 project is on Supabase's free tier, where the wall is 150s, and the current
 100s/35s split is already the right margin for it.
 
+## D-145 — the nightly covers one day; the day picker is for manual runs (2026-10-15)
+The nightly was re-scanning a full week every night. Not by configuration —
+by accident of correctness. A `partial` run deliberately holds the watermark
+(it did not cover the window, so it will not claim to), and **41 of 41 units
+ended partial**, so the watermark never advanced and the fallback was a
+7-day lookback. Measured: 7-day windows averaged 207,796 tokens, "default"
+windows 206,852 — identical, because they were the same scan.
+
+Daily mode now resolves to **exactly one day**, and deliberately does NOT
+lean on the watermark for its floor: leaning on it is what produced the
+week-long nightly. A watermark NEWER than a day is still honoured, since
+that only makes the scan smaller. An explicit `windowDays` from the manual
+trigger always wins, and the Sync Status page now says so.
+
+The tradeoff, stated rather than buried: a missed night is no longer
+re-covered automatically. That is the right shape for this system — routine
+passes stay cheap, and catching up on a gap is exactly what the manual
+trigger with a wider range is for. It also means a run of failures no longer
+silently inflates every subsequent nightly.
+
+Worth recording what this does NOT fix: the per-unit floor is set by fixed
+overhead, not data volume. Every turn re-sends the skill prompt (12,922
+chars), the roster, the enums and the action catalogue, and the agent must
+still ask all four connectors about the account whichever window it has.
+Observed floor 55,387 tokens, median 185,386, runs averaging 108 seconds
+against a wrap-up that begins at 65 — these are time-bound, not data-bound.
+A one-day window should land nearer 60-120k than 185k, which is a real cut
+but nothing like the 7x the arithmetic suggests. Only the parked rework
+(runner lists and filters; the model sees only qualifying items) changes the
+shape of that.
+
 # Parked
 
 Out-of-scope ideas land here instead of derailing the current prompt block.
