@@ -1952,6 +1952,64 @@ the Hub spends money unattended, which is worth stating plainly given one
 day's manual runs cost 3.47M tokens. Note it also gates the manual button:
 with the switch on, "Run sync now" queues nothing.
 
+## D-142 — the 138-run review: what 11.5M tokens actually bought (2026-10-15)
+First dataset big enough to judge the pipeline. 138 runs over ~19.5 hours,
+**11,553,163 recorded tokens**, producing **91 records** plus 17 account
+matches — ~127k tokens per record, down from 448k. The real bill is higher
+still: a run that dies never records its usage, and 43 runs died.
+
+What the measurements settled:
+- **The sourceless skip (D-137) works.** Prism and Meridian were scanned 37
+  times for **zero tokens**; at the 124k average that avoided ~4.6M.
+- **The nightly ran autonomously** at 01:30:03 — pg_cron via the Vault
+  secret, no browser. Machine-independence confirmed.
+- **31% of runs died** (43/138), and because the agent only emits records in
+  its FINAL answer, everything gathered dies with them. This, not the
+  searching, is now the dominant waste.
+- **93 runs were `partial` at an average of 66 seconds**, against a wrap-up
+  that begins at 65. They are all hitting the clock, not the token cap.
+- **Partial does NOT duplicate.** Verified against real data: 91 proposals,
+  **0 duplicated `source_ref`s**, none missing one, and 31 `updated_pending`
+  outcomes — re-sent records merging into their existing proposal rather
+  than filing twice. Re-covering ground costs tokens, never duplicates.
+
+## D-143 — "cannot run now" is not "this unit failed" (2026-10-15)
+The same mistake in two more places, both found by the review.
+
+**Pausing destroyed the backlog.** Flipping the kill switch ON while units
+were queued returned `failed`, and the caller wrote each row as `error` —
+removing it from `queued` permanently. 30 units were lost to a pause. A
+paused unit now returns `locked` (the existing "keep it queued" signal) with
+no `retry_after`, since there is no lock to wait out and the operator decides
+when it resumes. The 30 rows were restored by the migration.
+
+**The reaper was unreachable exactly when it was needed.**
+`requeue_stale_sync_units()` sat after `dispatch_sync_queue()`'s kill-switch
+early return, so with the system paused nothing ever reclaimed a unit
+stranded by a dead worker — one row from the 01:30 nightly had been stuck at
+`processing` for hours and could not have recovered. Cleaning up after a
+death is not "doing work" and must not be gated: the reclaim now runs first,
+before any gate. Verified live — calling `dispatch_sync_queue()` with the
+switch on dispatched 0 and returned the stranded unit to `queued`.
+
+## D-144 — a lookup gets a hard ceiling; the clock is checked mid-turn (2026-10-15)
+Runs were dying at the Edge Function's ~150s wall because the deadline was
+only tested BETWEEN turns and no single call had a timeout — one slow Slack
+or Fireflies lookup ran unbounded and took the run's records with it. Now
+each call aborts at 25s (surfaced to the model as a readable tool result
+telling it to narrow, not retry), and the clock is checked between calls
+within a turn, with every remaining `tool_call` still answered because the
+API rejects a turn with an unanswered one. Worst case is now 3 calls x 25s =
+75s before finalising, leaving 75s of the wall for the final turn.
+**Not done, and worth being clear about:** "save records as they are found"
+is impossible under the current agent contract — the model emits records
+only in its final answer, so there is nothing to save mid-run. Genuine
+incremental saving would need the model to file records through a tool as it
+goes. The deadline work is what converts a death into a partial that keeps
+its records. Raising `CS_SYNC_DEADLINE_MS` is also off the table: this
+project is on Supabase's free tier, where the wall is 150s, and the current
+100s/35s split is already the right margin for it.
+
 # Parked
 
 Out-of-scope ideas land here instead of derailing the current prompt block.

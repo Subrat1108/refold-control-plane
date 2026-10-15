@@ -16,6 +16,34 @@ Template:
 
 ---
 
+## Session 48 — 2026-10-15 — the 138-run review, and three faults it exposed
+**Built:** Reviewed the first dataset big enough to judge the pipeline — 138
+runs, 11,553,163 tokens, 91 records (D-142). Confirmed the sourceless skip
+saved ~4.6M tokens (37 runs at zero cost), the nightly fired autonomously at
+01:30 via pg_cron, and — answering a direct question — that a `partial` run
+does NOT duplicate: 0 duplicated `source_ref`s across 91 proposals, with 31
+`updated_pending` outcomes showing re-sends merging correctly.
+Three fixes. A paused unit no longer returns `failed`, which was writing
+queue rows to `error` and removing them permanently — pausing had destroyed
+30 units; they are restored (D-143). The stale-unit reaper now runs BEFORE
+the kill-switch gate, since cleaning up after a dead worker is not "doing
+work" — verified live by reclaiming a unit stranded since the 01:30 nightly
+(D-143). And each outbound lookup now aborts at 25s with the clock checked
+between calls inside a turn, so one slow call can no longer run past the
+~150s wall and take the run's records with it (D-144).
+**Deviations:** I had offered "save records as they are found" and withdrew
+it — the model emits records only in its final answer, so there is nothing
+to save mid-run; real incremental saving needs a tool-based filing contract.
+Also withdrew the suggestion to raise `CS_SYNC_DEADLINE_MS`: the project is
+on the free tier (150s wall), where the current margin is already correct.
+**Decisions:** D-142, D-143, D-144
+**Next:** 31 units are queued and will start the moment the kill switch goes
+off — roughly 3.4M tokens at current efficiency. The owner decides.
+**Issues:** 31% of runs were dying before this session's fix; the fix is
+deployed but unproven against real traffic. Per-record cost is still ~127k.
+
+---
+
 ## Session 47 — 2026-10-14 — what happens to the queue when nobody is watching
 **Built:** Prompted by "if the screen gets locked, does the sync stop?". The
 screen was the wrong thing to worry about — the drain is driven by awaited

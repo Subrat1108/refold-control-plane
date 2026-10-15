@@ -1127,3 +1127,39 @@ begin
 
   raise notice 'ALL SYNC QUEUE RETRY RLS TESTS PASSED';
 end $$;
+
+-- ── Pausing must not destroy the queue (7.5-pre2) ─────────────────────────
+do $$
+declare
+  n int;
+  v_org uuid;
+begin
+  select id into v_org from public.organizations
+   where id <> '00000000-0000-0000-0000-000000000001' and status = 'active'
+   order by name limit 1;
+
+  set local role service_role;
+  delete from public.sync_queue;
+  delete from public.sync_runs;
+
+  -- The reaper must run even while the system is paused. Cleaning up after
+  -- a worker that died is not "doing work" — gating it meant a stranded
+  -- unit could never be recovered while the kill switch was on, which is
+  -- exactly when nobody is watching.
+  update public.sync_settings set kill_switch = true where singleton = true;
+  insert into public.sync_queue (org_id, record_type, mode, status, claimed_at, priority)
+  values (v_org, 'ticket', 'daily', 'processing', now() - interval '45 minutes', 100);
+  perform public.dispatch_sync_queue();
+  select count(*) into n from public.sync_queue where status = 'queued';
+  assert n = 1, format('a stranded unit must be reclaimed even with the kill switch ON, got %s queued', n);
+
+  -- ...and the switch still stops anything NEW being dispatched.
+  select public.dispatch_sync_queue() into n;
+  assert n = 0, format('the kill switch must still block dispatch, got %s', n);
+
+  update public.sync_settings set kill_switch = false where singleton = true;
+  delete from public.sync_queue;
+  reset role;
+
+  raise notice 'ALL KILL SWITCH QUEUE RLS TESTS PASSED';
+end $$;

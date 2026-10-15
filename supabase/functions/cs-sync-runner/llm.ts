@@ -279,7 +279,24 @@ async function runConversation(messages: Array<Record<string, unknown>>, maxTurn
       return { rawText: (message.content as string) ?? null, tokensUsed, turns: turn, stopped: wrappingUp ? (stoppedOnTokens ? 'token_cap' : 'deadline') : 'end_turn', messages }
     }
 
+    // A model can ask for several lookups in one turn. The deadline used to
+    // be checked only BETWEEN turns, so a turn holding five slow calls ran
+    // straight past the Edge Function's ~150s wall and took the run's
+    // records with it. Check the clock between calls too, and once the
+    // budget is gone stop making them — every tool_call still gets a reply,
+    // because the API rejects a turn with an unanswered one.
+    let outOfTime = false
     for (const call of toolCalls) {
+      if (outOfTime || Date.now() > deadlineAt - WRAP_UP_RESERVE_MS) {
+        outOfTime = true
+        messages.push({
+          role: 'tool',
+          tool_call_id: call.id,
+          content: JSON.stringify({ error: 'skipped: this run is out of time. Do not retry — reply now with the final JSON for what you already have, and list anything you did not reach in `skipped`.' }),
+        })
+        continue
+      }
+
       let args: Record<string, unknown> = {}
       try {
         // OpenAI-shape `arguments` is a JSON *string*, and a model can
@@ -293,6 +310,7 @@ async function runConversation(messages: Array<Record<string, unknown>>, maxTurn
       const result = await dispatchTool(call.function.name, args)
       messages.push({ role: 'tool', tool_call_id: call.id, content: serialiseToolResult(result) })
     }
+    if (outOfTime) console.log(`run out of time mid-turn after ${turn} turns — remaining tool calls skipped, finalising`)
   }
 
   return { rawText: null, tokensUsed, turns: maxTurns, stopped: 'max_turns', messages }

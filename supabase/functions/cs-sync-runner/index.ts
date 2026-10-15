@@ -218,7 +218,11 @@ async function postToIngest(records: unknown[], runId: string, mode: string, tri
 
 export async function processUnit(svc: SupabaseClient, orgId: string, recordType: string, mode: 'scoped' | 'daily' | 'backfill', triggeredBy: string, stub?: { initial?: string; repair?: string }, windowDays?: number): Promise<ProcessResult> {
   const { data: settings } = await svc.from('sync_settings').select('*').limit(1).single()
-  if (settings?.kill_switch) return { status: 'failed', error: 'kill switch is on' }
+  // Paused is not failed. Returning `failed` here made the caller write the
+  // queue row as `error`, which takes it out of `queued` for good — so
+  // pausing the system destroyed 30 queued units in one go. `locked` is the
+  // existing "cannot run right now, keep it queued" signal; reuse it.
+  if (settings?.kill_switch) return { status: 'locked', error: 'the sync is paused (kill switch is on) — this unit stays queued', runId: undefined }
 
   const { data: locked } = await svc.rpc('try_lock_sync_unit', { p_org_id: orgId, p_record_type: recordType })
   if (!locked) return { status: 'locked' }
@@ -473,10 +477,14 @@ async function handleQueued(req: Request, body: { queue_id?: string }): Promise<
   // minutes was silently lost. Leave it queued and pass over it until the
   // lock can have expired.
   if (result.status === 'locked') {
+    const paused = /paused/i.test(result.error ?? '')
     await service.from('sync_queue').update({
       status: 'queued',
-      retry_after: new Date(Date.now() + 16 * 60_000).toISOString(),
-      error: 'the previous run of this unit is still holding its lock — will retry',
+      // A pause has no lock to wait out — the operator decides when it
+      // resumes, so don't make the unit sit out an arbitrary 16 minutes
+      // after they un-pause.
+      retry_after: paused ? null : new Date(Date.now() + 16 * 60_000).toISOString(),
+      error: result.error ?? 'the previous run of this unit is still holding its lock — will retry',
       run_id: result.runId ?? null,
     }).eq('id', item.id)
     return json(result)

@@ -90,14 +90,36 @@ export async function resolveActions(queries: string[]): Promise<unknown> {
 // x-api-key + linked_account_id only, no session token, no MCP round-trip.
 // Always returns HTTP 200 even on an underlying app failure; callers must
 // check `node_status` themselves.
+// A single lookup gets a hard ceiling. Without one, a slow Slack or
+// Fireflies call runs past the Edge Function's ~150s wall and kills the
+// whole run -- and because the agent only emits its records in its FINAL
+// answer, everything gathered dies with it. 31% of one day's runs ended
+// that way. Aborting the call instead leaves the loop alive to wrap up,
+// which turns a total loss into a partial that keeps its records.
+const TOOL_CALL_TIMEOUT_MS = Number(Deno.env.get('CS_SYNC_TOOL_TIMEOUT_MS') ?? '25000')
+
 export async function executeActionDeterministic(applicationSlug: string, actionId: string, inputPayload: Record<string, unknown>): Promise<{ node_status: string; [k: string]: unknown }> {
   if (STUB_MODE) return stubExecuteAction(applicationSlug, actionId)
-  const res = await fetch(`${REFOLD_BASE}/api/v2/integration-schema/${applicationSlug}/actions/${actionId}/execute`, {
-    method: 'POST',
-    headers: { 'x-api-key': API_KEY, linked_account_id: LINKED_ACCOUNT_ID, 'Content-Type': 'application/json' },
-    body: JSON.stringify(inputPayload),
-  })
-  return await res.json()
+  const abort = new AbortController()
+  const timer = setTimeout(() => abort.abort(), TOOL_CALL_TIMEOUT_MS)
+  try {
+    const res = await fetch(`${REFOLD_BASE}/api/v2/integration-schema/${applicationSlug}/actions/${actionId}/execute`, {
+      method: 'POST',
+      headers: { 'x-api-key': API_KEY, linked_account_id: LINKED_ACCOUNT_ID, 'Content-Type': 'application/json' },
+      body: JSON.stringify(inputPayload),
+      signal: abort.signal,
+    })
+    return await res.json()
+  } catch (err) {
+    // Surface it as a tool RESULT, not a thrown run failure: the model can
+    // read this, narrow its query and carry on.
+    if (err instanceof Error && err.name === 'AbortError') {
+      return { node_status: 'Errored', error: `this call took longer than ${Math.round(TOOL_CALL_TIMEOUT_MS / 1000)}s and was cancelled. Narrow it (a shorter date range, one channel, fewer items) rather than retrying as-is.` }
+    }
+    throw err
+  } finally {
+    clearTimeout(timer)
+  }
 }
 
 // Connected is not the same as usable. Slack reports `connected: true`
