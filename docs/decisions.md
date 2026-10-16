@@ -2220,6 +2220,33 @@ codebase avoids.
 The RLS block asserts the property that matters and cannot be eyeballed: after
 a move, no record disagrees with its tenant about which account it belongs to.
 
+## D-152 — the hierarchy is shown by expanding one table, not by a second design (2026-10-16)
+The Portfolio board needed to show what sits under an account without
+becoming two layouts — the trap the Approvals screen fell into, where
+records with and without an account looked like different species (D-147).
+So `DataTable` gained an optional `renderExpanded`: accounts with tenants
+get a chevron and open in place; cloud accounts, which have none by
+definition, render exactly as before. One component, one design.
+
+On-prem tenants are grouped under the cluster each signup runs in. That is
+**presentation only** — the tenants remain a flat list (D-149), so no query
+or policy gains a level.
+
+One bug worth recording because it is easy to repeat: `renderExpanded`
+returned `<AccountTenants/>` unconditionally, and a JSX element is always
+truthy even when the component renders `null`. Every row therefore grew a
+chevron and the ones without tenants expanded to nothing. Emptiness has to
+be decided by the caller, before constructing the element. It was caught
+only because the e2e assertion was made unconditional — the earlier guarded
+version (`if (await expander.count())`) would have skipped silently and
+passed, which is exactly how the tenant-parent bug reached the owner.
+
+New `/accounts/:orgId/tenants/:tenantId` page: a tenant is one signup on an
+account, so its page lives under that account rather than as a top-level
+entity. It shows where the signup runs and says plainly that metrics are
+absent — for air-gapped accounts, that Refold has no access and figures
+arrive by entry or upload.
+
 # Parked
 
 Out-of-scope ideas land here instead of derailing the current prompt block.

@@ -16,6 +16,35 @@ Template:
 
 ---
 
+## Session 57 — 2026-10-16 — Stage 2b (part 2): the hierarchy on the board
+**Built:** `DataTable` gained an optional `renderExpanded`, so an account
+with tenants opens in place on the Portfolio board while a cloud account
+renders exactly as before — one component and one design rather than a
+second layout for "accounts with children" (D-152). On-prem tenants are
+grouped by the cluster each signup runs in (presentation only; the data
+stays flat per D-149). New `/accounts/:orgId/tenants/:tenantId` page showing
+where a signup runs and an honest empty state for metrics.
+**Deviations:** none. One real bug caught mid-build: `renderExpanded`
+returned `<AccountTenants/>` unconditionally and a JSX element is truthy
+even when the component renders null, so EVERY row grew a chevron and the
+ones without tenants expanded to nothing. Emptiness must be decided by the
+caller before the element is constructed.
+**Verified:** the e2e assertions for this were deliberately made
+unconditional — the guarded first version would have skipped silently and
+passed, which is how the tenant-parent bug reached the owner last time. That
+change is what caught the chevron bug. 17 RLS blocks; e2e green twice in a
+row (one intervening failure was the known People-sheet Escape flake on a
+cold dev server, not this work); typecheck/lint/build.
+**Decisions:** D-152
+**Next:** Stage 2d (retire `useMockData.ts`), then 2c (Add details + file
+upload), then Stage 3 (nav).
+**Issues:** unchanged. Note the local fixtures give Prism Analytics tenants
+despite being a cloud account, which the model says should not happen — the
+board shows whatever exists rather than hiding real rows, but it is a
+fixture inconsistency worth tidying.
+
+---
+
 ## Session 56 — 2026-10-16 — Stage 2b (part 1): accounts and tenants are editable
 **Built:** The owner found that nothing about an account or tenant could be
 changed after creation — name, segment, lifecycle, deployment shape, or which

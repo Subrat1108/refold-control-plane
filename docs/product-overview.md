@@ -266,6 +266,18 @@ Reports history and logged as an engagement.
 - Search + "Ask the Hub" answers over KB, docs, and account records (scoped by
   role).
 
+### 5.11a The board shows the hierarchy
+
+An account with tenants expands in place on the Portfolio board — same
+table, same row, a chevron. Cloud accounts have no tenants by definition and
+render exactly as before, so there is no second layout for "accounts with
+children". On-premise tenants are grouped under the cluster each signup runs
+in; dedicated-cluster accounts list theirs flat.
+
+Each tenant links to its own page (`/accounts/:orgId/tenants/:tenantId`),
+showing where that signup runs — cluster, namespace, Refold org id, linked
+account id — and its metrics.
+
 ### 5.11b Editing an account or a tenant
 
 Both are editable after creation, which matters because many accounts are

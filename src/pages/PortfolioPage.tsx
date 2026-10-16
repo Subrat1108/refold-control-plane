@@ -17,6 +17,8 @@ import {
   usePersonRoles,
   addRole,
   endRole,
+  useAccountTree,
+  useTenants,
 } from '@/hooks'
 import { DataTable, type Column } from '@/components/DataTable'
 import { StatusBadge } from '@/components/StatusBadge'
@@ -58,6 +60,7 @@ function BoardTab() {
   const qc = useQueryClient()
   const { data: accounts, isLoading, isError, refetch } = usePortfolioAccounts()
   const { data: segments } = useSegments()
+  const { data: accountTree } = useAccountTree()
   const { data: myRoles } = usePersonRoles(profile?.id ?? null)
   const { scope, scopeTarget, setScope } = useScope(PAGE)
   const { data: scopedIds } = useScopedAccountIds(scope, scopeTarget)
@@ -91,6 +94,14 @@ function BoardTab() {
     if (filters.lifecycle) rows = rows.filter((a) => a.lifecycleStage === filters.lifecycle)
     return rows
   }, [accounts, scopedIds, filters])
+
+  // Tenants per account, for the expandable rows. Cloud accounts have none
+  // by definition, so they simply render without a chevron.
+  const tenantsByOrg = useMemo(() => {
+    const m = new Map<string, { id: string; name: string }[]>()
+    for (const a of accountTree ?? []) if (a.tenants.length) m.set(a.id, a.tenants)
+    return m
+  }, [accountTree])
 
   const grouped = useMemo(() => {
     const bySegment = new Map<string, PortfolioAccountRow[]>()
@@ -169,7 +180,19 @@ function BoardTab() {
           <section key={segmentName} className="space-y-2">
             <h2 className="text-sm font-semibold text-foreground">{segmentName} <span className="text-muted-foreground font-normal">({rows.length})</span></h2>
             <div className="bg-white rounded-xl shadow-card p-6">
-              <DataTable columns={columns} data={rows} rowKey={(a) => a.id} />
+              <DataTable
+                columns={columns}
+                data={rows}
+                rowKey={(a) => a.id}
+                // Decide emptiness HERE, not inside the component: returning
+                // <AccountTenants/> unconditionally is always a truthy element,
+                // so every row grew a chevron and accounts with no tenants
+                // expanded to nothing.
+                renderExpanded={(a) => {
+                  const t = tenantsByOrg.get(a.id)
+                  return t?.length ? <AccountTenants account={a} tenants={t} /> : null
+                }}
+              />
             </div>
           </section>
         ))
@@ -411,6 +434,59 @@ function CoverageTab() {
       <p className="text-xs text-muted-foreground mt-4">
         "Pending approval" isn't shown yet — it needs the Approvals inbox (7.3).
       </p>
+    </div>
+  )
+}
+
+// Stage 2b — what sits under an account, on the board itself.
+//
+// Cloud accounts have no tenants, so this renders nothing and the row shows
+// no chevron. For on-prem the tenants are grouped by the cluster and
+// namespace each signup runs in — grouping only; the tenants themselves are
+// a flat list (D-149), so this is a presentation detail rather than a
+// second level of data.
+function AccountTenants({ account, tenants }: { account: PortfolioAccountRow; tenants: { id: string; name: string }[] }) {
+  const { data: full } = useTenants(tenants.length ? account.id : null)
+  if (!tenants.length) return null
+
+  // `full` carries cluster/namespace; the tree's slim rows are only a
+  // placeholder while it loads.
+  const rows: { id: string; name: string; clusterName?: string | null; namespaceName?: string | null; notes?: string | null }[] = full ?? tenants
+  const onPrem = account.deploymentType === 'on_premise'
+
+  const groups = (() => {
+    if (!onPrem) return [['', rows] as const]
+    const by = new Map<string, typeof rows>()
+    for (const t of rows) {
+      const key = t.clusterName || t.notes || 'Cluster not recorded'
+      by.set(key, [...(by.get(key) ?? []), t])
+    }
+    return [...by.entries()].sort((a, b) => a[0].localeCompare(b[0]))
+  })()
+
+  return (
+    <div className="space-y-3">
+      <p className="text-xs text-muted-foreground">
+        {rows.length} tenant{rows.length === 1 ? '' : 's'} — one per signup on this account.
+      </p>
+      {groups.map(([group, list]) => (
+        <div key={group || 'all'}>
+          {group && <p className="text-xs font-semibold text-muted-foreground uppercase mb-1">{group}</p>}
+          <ul className="space-y-1">
+            {list.map((t) => {
+              const ns = t.namespaceName
+              return (
+                <li key={t.id} className="flex items-center justify-between gap-3">
+                  <Link to={`/accounts/${account.id}/tenants/${t.id}`} className="text-sm text-primary hover:underline">{t.name}</Link>
+                  <span className="text-xs text-muted-foreground">
+                    {ns ? <>namespace <code className="font-mono">{ns}</code></> : 'namespace not recorded'}
+                  </span>
+                </li>
+              )
+            })}
+          </ul>
+        </div>
+      ))}
     </div>
   )
 }

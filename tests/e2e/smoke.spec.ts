@@ -64,6 +64,24 @@ test('super admin smoke: Home, Portfolio, Account 360, Approvals, Audit log, Sta
   await expect(page.getByRole('heading', { name: 'Portfolio' })).toBeVisible()
   await expectNoErrors(page, errors)
 
+  // Stage 2b: an account with tenants expands in place on the board, so the
+  // hierarchy is visible without leaving it. Cloud accounts have none and
+  // show no chevron — one table, not two designs.
+  // Asserted, not guarded: seed fixtures give two accounts tenants, so a
+  // conditional here could pass while the feature was broken — which is
+  // precisely how the tenant-parent bug reached the owner.
+  const expander = page.getByRole('button', { name: 'Expand' }).first()
+  await expect(expander).toBeVisible()
+  await expander.click()
+  await expect(page.getByText(/tenant[s]? — one per signup/).first()).toBeVisible()
+  const tenantLink = page.locator('a[href*="/tenants/"]').first()
+  await expect(tenantLink).toBeVisible()
+  await tenantLink.click()
+  await expect(page.getByRole('heading', { name: 'Where it runs' })).toBeVisible()
+  await expectNoErrors(page, errors)
+  await page.goBack()
+  await expectNoErrors(page, errors)
+
   const firstAccountLink = page.locator('table a[href^="/accounts/"]').first()
   await expect(firstAccountLink).toBeVisible()
   const accountName = (await firstAccountLink.textContent())?.trim()

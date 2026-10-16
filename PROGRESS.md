@@ -78,7 +78,11 @@ Points, streaks, badges, team leaderboards — computed from the audit log + pro
 (See docs/devlog.md for full session history — this is just the pointer.)
 
 Date: 2026-10-16
-Completed: Session 56 — Stage 2b part 1 (D-151): accounts and tenants
+Completed: Session 57 — Stage 2b part 2 (D-152): the Portfolio board
+expands an account in place to show its tenants, via one DataTable rather
+than a second layout; on-prem tenants group by cluster (presentation only).
+New per-tenant page at /accounts/:orgId/tenants/:tenantId.
+Session 56 — Stage 2b part 1 (D-151): accounts and tenants
 are editable at last (name, segment, lifecycle, deployment shape), and a
 tenant can be moved to a different account — which moves its records across
 all twelve tenant-bearing tables plus its account_sources identifiers in one

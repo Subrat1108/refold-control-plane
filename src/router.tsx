@@ -2,6 +2,7 @@ import { createBrowserRouter, Navigate } from 'react-router-dom'
 import { AppLayout } from '@/components/layout/AppLayout'
 import { RequireAuth } from '@/components/RequireAuth'
 import { CustomerDetailRedirect } from '@/components/CustomerDetailRedirect'
+import { TenantDetailPage } from '@/pages/TenantDetailPage'
 import { RouteGuard } from '@/components/RouteGuard'
 import { RouteError } from '@/components/RouteError'
 import { OrgScopeGuard } from '@/components/OrgScopeGuard'
@@ -72,6 +73,12 @@ export const router = createBrowserRouter([
         // 7.2b — Account 360 (6 tabs).
         path: 'accounts/:orgId',
         element: <RouteGuard allowedRoles={['super_admin']}><AccountDetailPage /></RouteGuard>,
+      },
+      {
+        // Stage 2b — a tenant is one signup on an account, so its page lives
+        // under that account rather than as a top-level entity.
+        path: 'accounts/:orgId/tenants/:tenantId',
+        element: <RouteGuard allowedRoles={['super_admin']}><TenantDetailPage /></RouteGuard>,
       },
       {
         path: 'cloud-customers',
