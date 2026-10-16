@@ -12,6 +12,10 @@ function mapTenant(row: Record<string, unknown>): Tenant {
     orgId: row.org_id as string,
     name: row.name as string,
     notes: (row.notes as string) ?? null,
+    clusterName: (row.cluster_name as string) ?? null,
+    namespaceName: (row.namespace_name as string) ?? null,
+    refoldOrgId: (row.refold_org_id as string) ?? null,
+    linkedAccountId: (row.linked_account_id as string) ?? null,
     createdAt: row.created_at as string,
   }
 }
@@ -38,10 +42,26 @@ export function useTenants(orgId: string | null) {
   return useQuery({ queryKey: ['tenants', orgId], queryFn: () => fetchTenants(orgId!), enabled: !!orgId })
 }
 
-export async function createTenant(orgId: string, name: string, notes: string | null, actorId: string): Promise<string> {
+export interface TenantLocation {
+  clusterName?: string | null
+  namespaceName?: string | null
+  refoldOrgId?: string | null
+  linkedAccountId?: string | null
+}
+
+export async function createTenant(orgId: string, name: string, notes: string | null, actorId: string, location: TenantLocation = {}): Promise<string> {
   const { data, error } = await supabase
     .from('tenants')
-    .insert({ org_id: orgId, name, notes, created_by: actorId })
+    .insert({
+      org_id: orgId,
+      name,
+      notes,
+      created_by: actorId,
+      cluster_name: location.clusterName ?? null,
+      namespace_name: location.namespaceName ?? null,
+      refold_org_id: location.refoldOrgId ?? null,
+      linked_account_id: location.linkedAccountId ?? null,
+    })
     .select('id')
     .single()
   if (error) throw new Error(error.message)

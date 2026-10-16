@@ -1163,3 +1163,48 @@ begin
 
   raise notice 'ALL KILL SWITCH QUEUE RLS TESTS PASSED';
 end $$;
+
+-- ── Tenant identification (2026-10-16) ────────────────────────────────────
+do $$
+declare
+  n int;
+  v_org uuid;
+  v_tenant uuid;
+begin
+  select id into v_org from public.organizations
+   where deployment_type = 'on_premise' and status = 'active' order by name limit 1;
+
+  set local role authenticated;
+  set local request.jwt.claims = '{"sub":"00000000-0000-0000-0000-000000001001","aal":"aal2"}'; -- super admin
+  -- A tenant records WHERE it lives; cluster and namespace are columns, not
+  -- tables, so this is a plain insert at the same level as any other tenant.
+  insert into public.tenants (org_id, name, cluster_name, namespace_name, refold_org_id, linked_account_id)
+  values (v_org, 'rls-location-tenant', 'prod-eu-1', 'refold-apac', 'org_abc123', 'la_xyz789')
+  returning id into v_tenant;
+
+  select count(*) into n from public.tenants
+   where id = v_tenant and cluster_name = 'prod-eu-1' and namespace_name = 'refold-apac'
+     and refold_org_id = 'org_abc123' and linked_account_id = 'la_xyz789';
+  assert n = 1, 'a tenant should carry its cluster/namespace/org identification';
+
+  -- The grouped on-prem view looks tenants up BY that location, which is the
+  -- only reason these are indexed rather than merely stored.
+  select count(*) into n from public.tenants
+   where org_id = v_org and cluster_name = 'prod-eu-1' and namespace_name = 'refold-apac';
+  assert n >= 1, 'tenants must be findable by cluster + namespace';
+  reset role;
+
+  -- Customer roles still see nothing.
+  set local role authenticated;
+  set local request.jwt.claims = '{"sub":"00000000-0000-0000-0000-000000001002","aal":"aal2"}'; -- Prism owner
+  select count(*) into n from public.tenants where id = v_tenant;
+  assert n = 0, 'a customer owner must not see another account''s tenant';
+  reset role;
+
+  set local role authenticated;
+  set local request.jwt.claims = '{"sub":"00000000-0000-0000-0000-000000001001","aal":"aal2"}';
+  delete from public.tenants where id = v_tenant;
+  reset role;
+
+  raise notice 'ALL TENANT IDENTIFICATION RLS TESTS PASSED';
+end $$;

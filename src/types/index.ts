@@ -463,11 +463,20 @@ export interface Account {
 // 7.5-pre2 Session 1 — an end-customer/program/sub-account under one
 // account (e.g. a platform customer's bank program). Never an account
 // itself; the sync agent can never create or promote one on its own.
+// One signup on an account = one Refold org/workspace. Cloud accounts have
+// none (tracked at account level only); dedicated-cluster and on-premise
+// accounts have one per signup. Cluster and namespace are recorded for
+// identification, NOT as levels to navigate — the UI groups on-prem tenants
+// by them, the data stays flat.
 export interface Tenant {
   id: string
   orgId: string
   name: string
   notes: string | null
+  clusterName: string | null      // on-prem: which of the account's K8s clusters
+  namespaceName: string | null    // on-prem: which Refold installation in it
+  refoldOrgId: string | null      // the Refold org/workspace this signup created
+  linkedAccountId: string | null  // its Refold linked account
   createdAt: string
 }
 

@@ -16,6 +16,33 @@ Template:
 
 ---
 
+## Session 53 — 2026-10-16 — the hierarchy, settled and encoded
+**Built:** The owner defined the domain properly and it collapsed three
+competing models into one (D-149). Account = an organisation using Refold;
+tenant = one signup = one Refold org/workspace — confirmed as the same thing,
+not two levels. Cloud accounts have no tenants (their customers are Refold
+linked accounts the Hub deliberately ignores); dedicated-cluster and on-prem
+accounts have one per signup. Cluster and namespace are IDENTIFICATION on the
+tenant, not tiers: `tenants` gains `cluster_name`, `namespace_name`,
+`refold_org_id`, `linked_account_id` plus an index for the grouped on-prem
+lookup. The picker asks for cluster/namespace only when the parent account is
+on-premise, where they mean something.
+**Deviations:** this supersedes the approved plan's `namespaces` table —
+Stage 2 is now smaller, not larger. Also surfaced the "org" collision that
+had been making this hard to discuss: `organizations` is the ACCOUNT here,
+while a Refold org is the workspace a signup creates.
+**Verified:** new RLS block (a tenant carries its location, is findable by
+cluster + namespace, and stays invisible to a customer owner) + all 15 prior
+blocks; smoke-login; e2e; typecheck/lint/build; migration pushed.
+**Decisions:** D-149
+**Next:** Stage 2 proper — one merged page per account and tenant, with the
+on-prem grouping, replacing the mock admin panel.
+**Issues:** account deployment models are still mostly unset (Kantata is
+stored as cloud despite being a dedicated cluster), and Stage 2's views read
+off those fields.
+
+---
+
 ## Session 52 — 2026-10-16 — tenant creation actually works
 **Built:** Owner hit two bugs in yesterday's picker: the tenant parent
 dropdown listed one account, and there was no way to create an account from

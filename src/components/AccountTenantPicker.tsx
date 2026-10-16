@@ -56,8 +56,14 @@ export function AccountTenantPicker({ value, onChange, label = 'Account', id = '
   const [segmentId, setSegmentId] = useState('')
   const [deploymentType, setDeploymentType] = useState<DeploymentType>('cloud')
   const [deploymentModel, setDeploymentModel] = useState<DeploymentModel | ''>('')
-  // new-tenant form
+  // new-tenant form. Cluster and namespace are asked for only where they
+  // mean something — an on-prem signup lives in a namespace inside one of
+  // the account's own K8s clusters, and recording that is how a tenant is
+  // identified later. A dedicated-cluster or cloud account has no such
+  // location, so the fields stay hidden rather than inviting noise.
   const [parentOrgId, setParentOrgId] = useState('')
+  const [clusterName, setClusterName] = useState('')
+  const [namespaceName, setNamespaceName] = useState('')
 
   const selected = value ? (tree ?? []).find((a) => a.id === value.orgId) ?? null : null
   const canHaveTenants = (model: string | null) => !!model && TENANTED_MODELS.includes(model)
@@ -104,7 +110,12 @@ export function AccountTenantPicker({ value, onChange, label = 'Account', id = '
       } else {
         if (!parentOrgId) throw new Error('Choose the account this sits under')
         if (!profile) throw new Error('Not signed in')
-        const tenantId = await createTenant(parentOrgId, trimmed, null, profile.id)
+        const parent = (tree ?? []).find((a) => a.id === parentOrgId)
+        const onPrem = parent?.deploymentType === 'on_premise'
+        const tenantId = await createTenant(parentOrgId, trimmed, null, profile.id, {
+          clusterName: onPrem ? clusterName.trim() || null : null,
+          namespaceName: onPrem ? namespaceName.trim() || null : null,
+        })
         await refetch()
         onChange({ orgId: parentOrgId, tenantId })
       }
@@ -193,9 +204,21 @@ export function AccountTenantPicker({ value, onChange, label = 'Account', id = '
           </select>
         </div>
         <div>
-          <label htmlFor={`${id}-tname`} className="block text-xs font-medium text-muted-foreground mb-1">Tenant name</label>
+          <label htmlFor={`${id}-tname`} className="block text-xs font-medium text-muted-foreground mb-1">Tenant name <span className="font-normal">(the signup / Refold org)</span></label>
           <input id={`${id}-tname`} value={name} onChange={(e) => setName(e.target.value)} placeholder="Kantata PS" className="w-full rounded-md border border-border px-3 py-2 text-sm" />
         </div>
+        {(tree ?? []).find((a) => a.id === parentOrgId)?.deploymentType === 'on_premise' && (
+          <div className="grid grid-cols-2 gap-2">
+            <div>
+              <label htmlFor={`${id}-cluster`} className="block text-xs font-medium text-muted-foreground mb-1">Cluster <span className="font-normal">(optional)</span></label>
+              <input id={`${id}-cluster`} value={clusterName} onChange={(e) => setClusterName(e.target.value)} placeholder="prod-eu-1" className="w-full rounded-md border border-border px-3 py-2 text-sm" />
+            </div>
+            <div>
+              <label htmlFor={`${id}-namespace`} className="block text-xs font-medium text-muted-foreground mb-1">Namespace <span className="font-normal">(optional)</span></label>
+              <input id={`${id}-namespace`} value={namespaceName} onChange={(e) => setNamespaceName(e.target.value)} placeholder="refold-apac" className="w-full rounded-md border border-border px-3 py-2 text-sm" />
+            </div>
+          </div>
+        )}
         {error && <p className="text-sm text-red-600">{error}</p>}
         <div className="flex gap-2">
           <button onClick={create} disabled={busy || !name.trim() || !parentOrgId} className="rounded-md bg-primary px-3 py-1.5 text-xs font-medium text-white hover:bg-primary/90 disabled:opacity-50">

@@ -2126,6 +2126,44 @@ Generalisable: a conditional affordance keyed on optional metadata will be
 wrong whenever that metadata is usually blank. Either make the field
 mandatory where it matters, or let the condition inform rather than forbid.
 
+## D-149 — the hierarchy, settled: account → tenant, two levels (2026-10-16)
+Three competing models had been running at once — the mock admin panel's
+`cluster → namespace → org → tenant`, the Hub's real `account → tenant`, and
+an approved plan for `account → namespace → tenant`. Worse, **"org" meant two
+different things**: `organizations` is the customer ACCOUNT in the Hub, while
+a Refold "org" is the workspace a signup creates. That collision is why the
+shape kept being hard to pin down.
+
+The owner's definition, now authoritative:
+
+- **Account** = an organisation using Refold; the CS team's unit of ownership
+  (FDE / EDL / TA).
+- **Tenant** = one signup on that account, which IS one Refold org/workspace.
+  Confirmed as the same thing, not two levels.
+
+Per deployment shape:
+- **cloud** — shared infra. The account's own customers are Refold *linked
+  accounts* the Hub deliberately does not track individually; account-level
+  metrics only, so **no tenants**.
+- **dedicated_cluster** — a Refold-managed instance for one account; usually
+  one signup per their customer, one linked account each. Each signup is a
+  tenant. Metrics for the account AND per tenant.
+- **on_premise** — the account installs via helm/terraform on its own infra
+  (Refold has no access). Several K8s clusters, each with several namespaces,
+  each namespace one installation, each installation one or more signups.
+  Each signup is a tenant. Metrics for the account AND per tenant.
+
+**Cluster and namespace are identification, not hierarchy** — the owner's
+explicit call. They are columns on `tenants` (`cluster_name`,
+`namespace_name`, plus `refold_org_id` and `linked_account_id`), so every
+query and RLS policy stays two levels deep while the UI groups on-prem
+tenants into cluster → namespace accordions. Presentation over flat data is
+far cheaper to own than two more tables with their own policies, FKs and
+D-068 ambiguity risk.
+
+This **supersedes the approved plan's `namespaces` table** — Stage 2 no
+longer needs one, which removes the largest piece of schema work from it.
+
 # Parked
 
 Out-of-scope ideas land here instead of derailing the current prompt block.
