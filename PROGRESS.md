@@ -78,7 +78,26 @@ Points, streaks, badges, team leaderboards — computed from the audit log + pro
 (See docs/devlog.md for full session history — this is just the pointer.)
 
 Date: 2026-10-16
-Completed: Production-readiness Stage 1 (Sessions 50–52) and the hierarchy
+Completed: Session 55 — made the documentation protocol enforceable (D-150).
+The owner should not have to ask whether docs were updated; they had to
+twice. `npm run docs:check` now fails when devlog/CLAUDE.md/PROGRESS.md
+disagree about the latest session or the devlog cites a missing D- id, and
+`npm run verify` bundles it with typecheck/lint/build. The end-of-session
+protocol was rewritten to 11 explicit unprompted steps and gained
+build-spec-v3/product-overview updates, Edge Function redeploys, and the
+e2e `--env-file` requirement.
+Session 54 — Stage 2a: `/accounts/:orgId` gained a Deployment tab absorbing
+the old cloud/on-prem customer pages (shape, tenants grouped by cluster,
+honest empty state for metrics — no mock numbers ported);
+`CustomerDetailRedirect` folds old super-admin links in while leaving the
+frozen customer portals alone. All 12 accounts given an explicit deployment
+shape: Kantata split into Kantata Engg + Kantata PS (6 tenants), Naehas 6
+tenants across two clusters, Octave/Movius/zycus on-prem air-gapped.
+Could NOT work the Approvals backlog as asked: provisioning needs a real
+AAL2 session and raw SQL would bypass the one write pipeline; pre-created
+the six accounts the sweep found instead so each resolution is a pick.
+
+Earlier the same day: Production-readiness Stage 1 (Sessions 50–52) and the hierarchy
 settled (Session 53). Approvals: one list, one card design for every pending
 item attributed or not, leading with the record and its evidence — an opaque
 `zendesk-org:24623057340828` was in fact "Calendly Auth Issue", and that

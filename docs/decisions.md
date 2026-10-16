@@ -2164,6 +2164,33 @@ D-068 ambiguity risk.
 This **supersedes the approved plan's `namespaces` table** — Stage 2 no
 longer needs one, which removes the largest piece of schema work from it.
 
+## D-150 — the doc protocol is enforced, not just written (2026-10-16)
+The end-of-session protocol has required updating PROGRESS.md and this
+file's status block since Phase 6. It was still skipped for four sessions
+running (50–53) while `devlog.md` and `decisions.md` stayed current — and
+the owner had to notice, for the second time (D-135 was the same failure,
+and logging the lesson did not prevent the repeat). A rule that lives only
+in prose gets dropped under momentum.
+
+So it is now checkable: `scripts/docs-check.ts` (`npm run docs:check`,
+also inside `npm run verify`) fails when the newest `docs/devlog.md` entry's
+date disagrees with CLAUDE.md's "Last session" or PROGRESS.md's pointer, or
+when the newest devlog entry cites a `D-` id that has no section here.
+Verified by deliberately staling CLAUDE.md and confirming a non-zero exit.
+
+The protocol itself was rewritten to say "do ALL of this unprompted — if the
+owner asks whether the docs were updated, the protocol has already failed",
+and gained three things it had been missing: build-spec-v3.md /
+product-overview.md when the domain model, a contract or a screen's behaviour
+changes (the spec described a hierarchy that had been false for weeks —
+D-149); redeploying any changed Edge Function; and the `--env-file
+supabase/.env` requirement for e2e, without which stub mode is off and the
+runner calls the real Refold API with an empty key.
+
+What the check cannot catch is whether the spec was updated when it should
+have been — there is no reliable textual signal for "the domain model
+changed" — so that stays a prompted note rather than a gate.
+
 # Parked
 
 Out-of-scope ideas land here instead of derailing the current prompt block.

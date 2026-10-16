@@ -9,7 +9,9 @@
     "preview": "vite preview",
     "lint": "eslint .",
     "typecheck": "tsc --noEmit",
-    "e2e": "playwright test"
+    "e2e": "playwright test",
+    "docs:check": "npx --yes tsx scripts/docs-check.ts",
+    "verify": "npm run typecheck && npm run lint && npm run build && npm run docs:check"
   },
   "dependencies": {
     "@radix-ui/react-dialog": "^1.1.16",

@@ -18,30 +18,48 @@ git clone -b dev https://github.com/Subrat1108/refold-control-plane.git && cd re
 (If already cloned: `git pull` then the same reads.) To locate code:
 `grep -rin "SearchTerm" src/ --include=*.ts --include=*.tsx`
 
-**End of every session** — before finishing, always:
-1. Update the checklist in `PROGRESS.md`
-2. Prepend a session entry to `docs/devlog.md` (newest first, use the template there)
-3. Log any decisions made to `docs/decisions.md`
-4. Refresh the **Current status** block at the top of this file
-5. **If the session added migrations, push them to the cloud project
-   (`supabase db push`) BEFORE pushing code to `dev`** — `dev` auto-deploys
-   (single-environment mode, D-066), so code that expects a new table/column
-   must not reach Netlify before the schema does.
-6. **If the session added migrations, run the role-login smoke check** (each
-   demo role signs in and loads its profile — `scripts/smoke-login.ts`)
-   against a fresh local `supabase db reset` before pushing. A new column or
-   FK can silently break the profile-load query that every login depends on
-   (D-068 — PostgREST embeds go ambiguous the moment a table gains a second
-   relationship to the same target, e.g. `organizations.owner_profile_id` vs
-   `profiles.org_id`); this catches it locally instead of in production.
-7. **If the session changed UI (pages, components, nav, routing), run
-   `npm run e2e`** (headless Playwright, `tests/e2e/smoke.spec.ts`) against a
-   fresh `supabase db reset` + a running `npm run dev`, before pushing. It
-   signs in through the real login + MFA challenge screens (a seeded,
-   pre-verified TOTP factor in `seed.sql` — local-only fixture data) and
-   clicks through Home/Portfolio/Account 360/Approvals/Audit log/Standups/
-   People. Report the actual run output, not a summary claim.
-8. Commit per the convention below and **push to `dev`**
+**End of every session** — do ALL of this unprompted. The session owner
+should never have to ask whether the docs were updated; if they ask, the
+protocol has already failed. This is not a checklist to run when convenient
+— a session is not finished until it passes.
+
+1. **Prepend a session entry to `docs/devlog.md`** (newest first, template at
+   the top of that file). This is the source of truth for "when was the last
+   session", and the drift check reads its date.
+2. **Log every decision to `docs/decisions.md`** at the next free `D-` id.
+   A decision is anything a future session would otherwise re-litigate: a
+   trade-off taken, a defect's root cause, a rejected approach and why.
+3. **Refresh the Current status block at the top of this file** — Last
+   session, Next up, Blockers, Known issues. The planning room reads this
+   first and acts on it; a stale block is worse than none (D-135: it said
+   "no real sync has run" while 17 had, and the owner had to catch it).
+4. **Update the checklist and Last session block in `PROGRESS.md`.**
+5. **If the domain model, a contract, or a screen's behaviour changed,
+   update `docs/build-spec-v3.md` and/or `docs/product-overview.md`.** The
+   spec is not a historical record — it describes the system as it IS. It
+   described `clusters → namespaces → orgs → tenants` for weeks after that
+   stopped being true (D-149).
+6. **Run `npm run docs:check`** — it fails if the devlog, CLAUDE.md and
+   PROGRESS.md disagree about the latest session, or if the devlog cites a
+   `D-` id that does not exist. `npm run verify` runs typecheck, lint, build
+   and this together.
+7. **If the session added migrations, push them to cloud (`supabase db push`)
+   BEFORE pushing code to `dev`** — `dev` auto-deploys (single-environment,
+   D-066), so code expecting a new table must not reach Netlify before the
+   schema does. Then confirm `supabase migration list` parity.
+8. **If the session added migrations, run the role-login smoke check**
+   (`scripts/smoke-login.ts`) against a fresh `supabase db reset`. A new
+   column or FK can silently break the profile-load query every login
+   depends on (D-068 — PostgREST embeds go ambiguous the moment a table
+   gains a second relationship to the same target).
+9. **If the session changed UI (pages, components, nav, routing), run
+   `npm run e2e`** against a fresh `supabase db reset` + a running
+   `npm run dev` **and a running `npx supabase functions serve --env-file
+   supabase/.env`** — without the env file, stub mode is off and the runner
+   calls the real Refold API with an empty key. Report the actual output,
+   not a summary claim.
+10. **Redeploy any Edge Function whose code changed.**
+11. Commit per the convention below and **push to `dev`**.
 
 A session that doesn't push is invisible to the planning room.
 
@@ -85,6 +103,9 @@ Product vision / screen-by-screen walkthrough: `docs/product-overview.md`.
 - `npm run build` — production build to /dist
 - `npm run lint` — ESLint
 - `npm run typecheck` — tsc --noEmit (run before every commit)
+- `npm run docs:check` — fails if devlog/CLAUDE.md/PROGRESS.md disagree about
+  the latest session, or the devlog cites a non-existent `D-` id
+- `npm run verify` — typecheck + lint + build + docs:check, in one go
 
 ## Folder structure
 ```

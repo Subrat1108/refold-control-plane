@@ -16,6 +16,30 @@ Template:
 
 ---
 
+## Session 55 — 2026-10-16 — make the doc protocol enforceable
+**Built:** The owner asked not to have to prompt for doc updates after every
+deployment, decision and spec change. The protocol already required most of
+it and was still skipped for four sessions (D-150) — so it is now mechanical:
+`scripts/docs-check.ts` / `npm run docs:check` fails when devlog, CLAUDE.md
+and PROGRESS.md disagree about the latest session, or when the devlog cites a
+`D-` id with no section in decisions.md. `npm run verify` bundles typecheck +
+lint + build + docs:check. The end-of-session protocol was rewritten to 11
+explicit steps, stating it runs unprompted, and gained what it had been
+missing: build-spec-v3.md / product-overview.md on domain-model, contract or
+screen-behaviour changes; redeploying changed Edge Functions; and the
+`--env-file supabase/.env` requirement for e2e.
+**Deviations:** the check cannot verify the spec was updated when it should
+have been — no reliable textual signal for "the domain model changed" — so
+that remains a printed reminder rather than a gate.
+**Verified:** confirmed the check FAILS (exit 1, named reason) against a
+deliberately staled CLAUDE.md, then passes restored. A check that cannot fail
+is worthless.
+**Decisions:** D-150
+**Next:** Stage 2b — hierarchy on the Portfolio board + per-tenant pages.
+**Issues:** unchanged.
+
+---
+
 ## Session 54 — 2026-10-16 — Stage 2a: one page per account
 **Built:** `/accounts/:orgId` gains a **Deployment** tab carrying what
 `/cloud-customers/:id` and `/onprem-customers/:id` used to show: the account's
