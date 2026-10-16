@@ -10,12 +10,9 @@ import {
   useScopedAccountIds,
   useAccountResolutions,
   useHeldRecords,
-  useAccountsRaw,
-  useSegments,
-  useTenants,
 } from '@/hooks'
 import { resolveAccountProposal, reassignProposal } from '@/lib/provisioning'
-import { createAccount } from '@/hooks/usePortfolio'
+import { AccountTenantPicker, type AccountChoice } from '@/components/AccountTenantPicker'
 import { SourceBadge } from '@/components/SourceBadge'
 import { Modal } from '@/components/Modal'
 import { ScopeSwitcher } from '@/components/ScopeSwitcher'
@@ -24,7 +21,7 @@ import { CardSkeleton } from '@/components/SkeletonLoader'
 import { ErrorState } from '@/components/ErrorState'
 import { EmptyState } from '@/components/EmptyState'
 import { formatDate } from '@/utils/formatDate'
-import type { AccountResolutionRow, ProposalRow, SavedView } from '@/types'
+import type { ProposalRow, ResolutionCandidate, SavedView } from '@/types'
 import type { HeldRecordRow } from '@/hooks/useApprovals'
 
 const PAGE = 'approvals'
@@ -40,8 +37,8 @@ export function ApprovalsPage() {
   const [selected, setSelected] = useState<Set<string>>(new Set())
   const [editTarget, setEditTarget] = useState<ProposalRow | null>(null)
   const [rejectTarget, setRejectTarget] = useState<ProposalRow | null>(null)
-  const [resolveTarget, setResolveTarget] = useState<AccountResolutionRow | null>(null)
   const [moveTarget, setMoveTarget] = useState<HeldRecordRow | null>(null)
+  const [clusterTarget, setClusterTarget] = useState<Cluster | null>(null)
   const [moveProposalTarget, setMoveProposalTarget] = useState<ProposalRow | null>(null)
 
   const { data: proposals, isLoading, isError, refetch } = useProposals({
@@ -51,6 +48,29 @@ export function ApprovalsPage() {
   })
   const { data: resolutions } = useAccountResolutions()
   const { data: heldRecords } = useHeldRecords()
+
+  // One list, but a decision is asked once per unrecognised identifier
+  // rather than once per record: 17 records behind one Zendesk org is one
+  // decision, not 17. Each row inside can still be sent somewhere else.
+  const clusters: Cluster[] = (() => {
+    const byKey = new Map<string, Cluster>()
+    for (const h of heldRecords ?? []) {
+      const key = h.resolutionId ?? `orphan:${h.id}`
+      const found = byKey.get(key)
+      if (found) { found.records.push(h); continue }
+      const res = (resolutions ?? []).find((r) => r.id === h.resolutionId)
+      byKey.set(key, {
+        resolutionId: h.resolutionId,
+        identifier: h.observedName ?? 'an unrecognised name',
+        scope: res?.scope ?? 'account',
+        knownOrgName: res?.knownOrgName ?? null,
+        candidates: res?.candidates ?? [],
+        firstSeen: res?.createdAt ?? h.createdAt,
+        records: [h],
+      })
+    }
+    return [...byKey.values()].sort((a, b) => b.firstSeen.localeCompare(a.firstSeen))
+  })()
 
   const refresh = () => {
     qc.invalidateQueries({ queryKey: ['proposals'] })
@@ -91,34 +111,10 @@ export function ApprovalsPage() {
       <div>
         <h1 className="text-xl font-semibold text-foreground">Approvals</h1>
         <p className="text-sm text-muted-foreground mt-0.5">
-          <span className="font-medium">Accounts</span> decides what an unrecognised name is. <span className="font-medium">Details</span> is every record waiting —
-          each shows the account it will be filed under, and you can change it.
+          Everything waiting on you, in one list. Each item shows what it is and which account it will be filed under — and where the Hub could not work the
+          account out, you can set it (or create one) without leaving the row.
         </p>
       </div>
-
-      {(resolutions ?? []).length > 0 && (
-        <div className="rounded-xl border border-amber-300 bg-amber-50 p-4 space-y-3">
-          <h2 className="text-sm font-semibold text-foreground">Accounts · match needed ({resolutions!.length})</h2>
-          <div className="space-y-2">
-            {resolutions!.map((r) => (
-              <div key={r.id} className="bg-white rounded-lg border border-amber-200 p-3 flex items-center justify-between gap-3 flex-wrap">
-                <div>
-                  <p className="text-sm font-medium text-foreground">
-                    "{r.observedName}" {r.scope === 'tenant' ? <>— a possible tenant of <span className="font-semibold">{r.knownOrgName ?? 'unknown account'}</span></> : '— unrecognized account'}
-                  </p>
-                  <p className="text-xs text-muted-foreground mt-0.5">
-                    {r.heldCount} record{r.heldCount === 1 ? '' : 's'} waiting · first seen {formatDate(r.createdAt)}
-                    {r.candidates.length > 0 && <> · candidates: {r.candidates.map((c) => `${c.name} (${Math.round(c.confidence * 100)}%)`).join(', ')}</>}
-                  </p>
-                </div>
-                <button onClick={() => setResolveTarget(r)} className="rounded-md bg-primary px-3 py-1.5 text-xs font-medium text-white hover:bg-primary/90 whitespace-nowrap">Resolve</button>
-              </div>
-            ))}
-          </div>
-        </div>
-      )}
-
-      <h2 className="text-sm font-semibold text-foreground pt-2">Details · records waiting</h2>
 
       <div className="flex items-center justify-between flex-wrap gap-3">
         <div className="flex items-center gap-2 flex-wrap">
@@ -151,10 +147,15 @@ export function ApprovalsPage() {
         </div>
       )}
 
-      {(heldRecords ?? []).length > 0 && (
+      {clusters.length > 0 && (
         <div className="space-y-3">
-          {heldRecords!.map((h) => (
-            <HeldRecordCard key={h.id} record={h} onMove={() => setMoveTarget(h)} />
+          {clusters.map((c) => (
+            <UnresolvedCluster
+              key={c.resolutionId ?? c.identifier}
+              cluster={c}
+              onDecide={() => setClusterTarget(c)}
+              onMoveOne={(rec) => setMoveTarget(rec)}
+            />
           ))}
         </div>
       )}
@@ -163,7 +164,7 @@ export function ApprovalsPage() {
         <CardSkeleton />
       ) : isError ? (
         <ErrorState onRetry={() => refetch()} />
-      ) : (proposals ?? []).length === 0 && (heldRecords ?? []).length === 0 ? (
+      ) : (proposals ?? []).length === 0 && clusters.length === 0 ? (
         <EmptyState title="Nothing pending" description="All caught up — no proposals waiting for a decision in this scope." />
       ) : (
         <div className="space-y-3">
@@ -184,7 +185,7 @@ export function ApprovalsPage() {
 
       <EditThenApproveModal proposal={editTarget} onClose={() => setEditTarget(null)} onDone={refresh} />
       <RejectModal proposal={rejectTarget} onClose={() => setRejectTarget(null)} onDone={refresh} />
-      <ResolveAccountModal resolution={resolveTarget} onClose={() => setResolveTarget(null)} onDone={refresh} />
+      <ResolveClusterModal cluster={clusterTarget} onClose={() => setClusterTarget(null)} onDone={refresh} />
       <MoveAccountModal
         held={moveTarget}
         proposal={moveProposalTarget}
@@ -290,163 +291,6 @@ function EditThenApproveModal({ proposal, onClose, onDone }: { proposal: Proposa
   )
 }
 
-type ResolveDecision = 'map_existing' | 'map_tenant' | 'create_account' | 'ignore'
-
-function ResolveAccountModal({ resolution, onClose, onDone }: { resolution: AccountResolutionRow | null; onClose: () => void; onDone: () => void }) {
-  const { data: accounts } = useAccountsRaw()
-  const { data: segments } = useSegments()
-  const [decision, setDecision] = useState<ResolveDecision>('map_existing')
-  const [orgId, setOrgId] = useState('')
-  const { data: tenants } = useTenants(orgId || null)
-  const [tenantId, setTenantId] = useState('')
-  const [newTenantName, setNewTenantName] = useState('')
-  const [newAccountName, setNewAccountName] = useState('')
-  const [segmentId, setSegmentId] = useState('')
-  const [lifecycleStage, setLifecycleStage] = useState('prospect')
-  const [busy, setBusy] = useState(false)
-  const [error, setError] = useState('')
-
-  useEffect(() => {
-    if (resolution) {
-      setDecision('map_existing')
-      setOrgId(resolution.scope === 'tenant' ? resolution.knownOrgId ?? '' : '')
-      setTenantId('')
-      setNewTenantName('')
-      setNewAccountName(resolution.observedName)
-      setSegmentId('')
-      setLifecycleStage('prospect')
-      setError('')
-    }
-  }, [resolution])
-
-  async function submit(e: React.FormEvent) {
-    e.preventDefault()
-    if (!resolution) return
-    setBusy(true)
-    setError('')
-    try {
-      if (decision === 'map_existing') {
-        if (!orgId) throw new Error('Choose an account')
-        await resolveAccountProposal({ resolutionId: resolution.id, decision, orgId })
-      } else if (decision === 'map_tenant') {
-        if (!orgId) throw new Error('Choose an account')
-        if (!tenantId && !newTenantName.trim()) throw new Error('Choose an existing tenant or name a new one')
-        await resolveAccountProposal({ resolutionId: resolution.id, decision, orgId, tenantId: tenantId || undefined, newTenantName: tenantId ? undefined : newTenantName.trim() })
-      } else if (decision === 'create_account') {
-        if (!newAccountName.trim()) throw new Error('Account name is required')
-        await resolveAccountProposal({ resolutionId: resolution.id, decision, name: newAccountName.trim(), segmentId: segmentId || null, lifecycleStage })
-      } else {
-        await resolveAccountProposal({ resolutionId: resolution.id, decision: 'ignore' })
-      }
-      onDone()
-      onClose()
-    } catch (err) {
-      setError(err instanceof Error ? err.message : 'Failed to resolve')
-    } finally {
-      setBusy(false)
-    }
-  }
-
-  return (
-    <Modal open={!!resolution} onClose={onClose} title="Resolve account match">
-      {resolution && (
-        <form onSubmit={submit} className="space-y-4">
-          <p className="text-sm text-muted-foreground">
-            "{resolution.observedName}" — {resolution.heldCount} record{resolution.heldCount === 1 ? '' : 's'} waiting.
-            {resolution.scope === 'tenant' && <> Seen as a possible tenant of <span className="font-medium text-foreground">{resolution.knownOrgName}</span>.</>}
-          </p>
-
-          <div className="grid grid-cols-2 gap-2">
-            {([
-              ['map_existing', 'Map to existing account'],
-              ['map_tenant', 'Map as tenant of…'],
-              ['create_account', 'Create new account'],
-              ['ignore', 'Ignore — not a customer'],
-            ] as [ResolveDecision, string][]).map(([value, label]) => (
-              <button key={value} type="button" onClick={() => setDecision(value)} className={`text-left rounded-md border px-3 py-2 text-xs font-medium transition-colors ${decision === value ? 'border-primary bg-primary/5 text-foreground' : 'border-border text-muted-foreground hover:bg-muted'}`}>
-                {label}
-              </button>
-            ))}
-          </div>
-
-          {decision === 'map_existing' && (
-            <div>
-              <label className="block text-sm font-medium text-foreground mb-1.5">Account</label>
-              <select value={orgId} onChange={(e) => setOrgId(e.target.value)} className="w-full rounded-md border border-border px-3 py-2 text-sm bg-white">
-                <option value="">Choose…</option>
-                {(accounts ?? []).map((a) => <option key={a.id} value={a.id}>{a.name}</option>)}
-              </select>
-            </div>
-          )}
-
-          {decision === 'map_tenant' && (
-            <div className="space-y-3">
-              <div>
-                <label className="block text-sm font-medium text-foreground mb-1.5">Account</label>
-                <select value={orgId} onChange={(e) => { setOrgId(e.target.value); setTenantId('') }} className="w-full rounded-md border border-border px-3 py-2 text-sm bg-white">
-                  <option value="">Choose…</option>
-                  {(accounts ?? []).map((a) => <option key={a.id} value={a.id}>{a.name}</option>)}
-                </select>
-              </div>
-              {orgId && (tenants ?? []).length > 0 && (
-                <div>
-                  <label className="block text-sm font-medium text-foreground mb-1.5">Existing tenant</label>
-                  <select value={tenantId} onChange={(e) => { setTenantId(e.target.value); if (e.target.value) setNewTenantName('') }} className="w-full rounded-md border border-border px-3 py-2 text-sm bg-white">
-                    <option value="">None — create new below</option>
-                    {(tenants ?? []).map((t) => <option key={t.id} value={t.id}>{t.name}</option>)}
-                  </select>
-                </div>
-              )}
-              {!tenantId && (
-                <div>
-                  <label className="block text-sm font-medium text-foreground mb-1.5">New tenant name</label>
-                  <input value={newTenantName} onChange={(e) => setNewTenantName(e.target.value)} placeholder={resolution.observedName} className="w-full rounded-md border border-border px-3 py-2 text-sm" />
-                </div>
-              )}
-            </div>
-          )}
-
-          {decision === 'create_account' && (
-            <div className="space-y-3">
-              <div>
-                <label className="block text-sm font-medium text-foreground mb-1.5">Account name</label>
-                <input value={newAccountName} onChange={(e) => setNewAccountName(e.target.value)} className="w-full rounded-md border border-border px-3 py-2 text-sm" />
-              </div>
-              <div>
-                <label className="block text-sm font-medium text-foreground mb-1.5">Segment <span className="text-muted-foreground font-normal">(optional)</span></label>
-                <select value={segmentId} onChange={(e) => setSegmentId(e.target.value)} className="w-full rounded-md border border-border px-3 py-2 text-sm bg-white">
-                  <option value="">—</option>
-                  {(segments ?? []).map((s) => <option key={s.id} value={s.id}>{s.name}</option>)}
-                </select>
-              </div>
-              <div>
-                <label className="block text-sm font-medium text-foreground mb-1.5">Lifecycle stage</label>
-                <select value={lifecycleStage} onChange={(e) => setLifecycleStage(e.target.value)} className="w-full rounded-md border border-border px-3 py-2 text-sm bg-white">
-                  <option value="prospect">Prospect</option>
-                  <option value="poc">POC</option>
-                  <option value="onboarding">Onboarding</option>
-                  <option value="live">Live</option>
-                </select>
-              </div>
-            </div>
-          )}
-
-          {decision === 'ignore' && (
-            <p className="text-sm text-muted-foreground">
-              Every record waiting on this will be discarded, and "{resolution.observedName}" will be added to the ignore list so it never re-proposes itself.
-            </p>
-          )}
-
-          {error && <p className="text-xs text-red-600">{error}</p>}
-          <button type="submit" disabled={busy} className="w-full rounded-md bg-primary px-3 py-2.5 text-sm font-medium text-white hover:bg-primary/90 disabled:opacity-40 disabled:cursor-not-allowed">
-            {busy ? 'Resolving…' : 'Resolve'}
-          </button>
-        </form>
-      )}
-    </Modal>
-  )
-}
-
 function RejectModal({ proposal, onClose, onDone }: { proposal: ProposalRow | null; onClose: () => void; onDone: () => void }) {
   const { profile } = useSupabaseAuth()
   const [reason, setReason] = useState('')
@@ -481,36 +325,168 @@ function RejectModal({ proposal, onClose, onDone }: { proposal: ProposalRow | nu
   )
 }
 
+// Deciding for a whole cluster at once.
+//
+// The old modal offered four abstract choices over an opaque string and no
+// way to create what was missing — which is how "CFIHOS is an implementation
+// Octave runs" became unanswerable. Here the records are shown first, the
+// picker carries the real hierarchy, and anything absent can be created in
+// place.
+function ResolveClusterModal({ cluster, onClose, onDone }: {
+  cluster: Cluster | null; onClose: () => void; onDone: () => void
+}) {
+  const [choice, setChoice] = useState<AccountChoice | null>(null)
+  const [remember, setRemember] = useState(true)
+  const [busy, setBusy] = useState(false)
+  const [error, setError] = useState<string | null>(null)
+  const [progress, setProgress] = useState<string | null>(null)
 
-// A held record, shown in full for the first time. Previously these were a
-// bare count on their resolution, so "ignore" could silently bin a record
-// that belonged to a real account. Now you read it, then decide.
-function HeldRecordCard({ record, onMove }: { record: HeldRecordRow; onMove: () => void }) {
+  useEffect(() => {
+    if (!cluster) return
+    setChoice(null); setRemember(true); setError(null); setProgress(null)
+  }, [cluster])
+
+  if (!cluster) return null
+
+  async function apply(ignore = false) {
+    if (!cluster) return
+    setBusy(true); setError(null)
+    try {
+      if (ignore) {
+        if (!cluster.resolutionId) throw new Error('Nothing to ignore here')
+        await resolveAccountProposal({ resolutionId: cluster.resolutionId, decision: 'ignore' })
+      } else {
+        if (!choice) throw new Error('Choose an account first')
+        // Move every record in the cluster. The last one closes the
+        // resolution automatically (reassign_proposal handles that), so
+        // there is no separate "resolve" step to forget.
+        let done = 0
+        for (const rec of cluster.records) {
+          setProgress(`Filing ${++done} of ${cluster.records.length}…`)
+          await reassignProposal({
+            proposalId: rec.id,
+            orgId: choice.orgId,
+            tenantId: choice.tenantId,
+            rememberIdentifier: remember,
+          })
+        }
+      }
+      onDone(); onClose()
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Could not apply that')
+    } finally {
+      setBusy(false); setProgress(null)
+    }
+  }
+
+  return (
+    <Modal open={!!cluster} onClose={onClose} title="Which account do these belong to?">
+      <div className="space-y-4">
+        <div className="rounded-md bg-muted/50 p-3 space-y-1.5 max-h-44 overflow-y-auto">
+          {cluster.records.map((r) => (
+            <div key={r.id}>
+              <p className="text-sm text-foreground">{r.summary}</p>
+              {r.evidenceExcerpt && <p className="text-xs text-muted-foreground italic">&ldquo;{r.evidenceExcerpt}&rdquo;</p>}
+            </div>
+          ))}
+        </div>
+        <p className="text-xs text-muted-foreground">
+          The Hub saw these as <code className="font-mono">{cluster.identifier}</code> and could not match it to anything it knows.
+        </p>
+
+        <AccountTenantPicker value={choice} onChange={setChoice} id="cluster-account" />
+
+        <label className="flex items-start gap-2 text-sm">
+          <input type="checkbox" checked={remember} onChange={(e) => setRemember(e.target.checked)} className="mt-0.5" />
+          <span>
+            Also remember that <span className="font-medium">&ldquo;{cluster.identifier}&rdquo;</span> means this
+            <span className="block text-xs text-muted-foreground">
+              Future mentions attach on their own. Leave it unticked when the name is a project or a one-off rather than another name for the company.
+            </span>
+          </span>
+        </label>
+
+        {error && <p className="text-sm text-red-600">{error}</p>}
+        {progress && <p className="text-sm text-muted-foreground">{progress}</p>}
+
+        <div className="flex justify-between gap-2">
+          <button onClick={() => apply(true)} disabled={busy} className="rounded-md border border-border px-3 py-2 text-sm font-medium text-muted-foreground hover:bg-muted disabled:opacity-50">
+            Not a customer — ignore
+          </button>
+          <div className="flex gap-2">
+            <button onClick={onClose} className="rounded-md border border-border px-3 py-2 text-sm font-medium text-muted-foreground">Cancel</button>
+            <button onClick={() => apply(false)} disabled={busy || !choice} className="rounded-md bg-primary px-3 py-2 text-sm font-medium text-white hover:bg-primary/90 disabled:opacity-50">
+              {busy ? 'Filing…' : `File ${cluster.records.length} record${cluster.records.length === 1 ? '' : 's'}`}
+            </button>
+          </div>
+        </div>
+      </div>
+    </Modal>
+  )
+}
+
+// A group of records the Hub could not attribute, all sharing one
+// unrecognised identifier.
+//
+// The identifier is deliberately NOT the headline. `zendesk-org:24623057340828`
+// tells a human nothing; the records behind it ("Calendly Auth Issue") tell
+// them everything — and that evidence was sitting in the database unshown
+// while the old modal asked for a decision on the opaque string alone.
+export interface Cluster {
+  resolutionId: string | null
+  identifier: string
+  scope: 'account' | 'tenant'
+  knownOrgName: string | null
+  candidates: ResolutionCandidate[]
+  firstSeen: string
+  records: HeldRecordRow[]
+}
+
+function UnresolvedCluster({ cluster, onDecide, onMoveOne }: {
+  cluster: Cluster; onDecide: () => void; onMoveOne: (r: HeldRecordRow) => void
+}) {
+  const [expanded, setExpanded] = useState(false)
+  const shown = expanded ? cluster.records : cluster.records.slice(0, 3)
+
   return (
     <div className="bg-white rounded-xl shadow-card p-6 space-y-3 border-l-4 border-amber-400">
       <div className="flex items-start justify-between gap-4 flex-wrap">
-        <div>
-          <p className="text-sm font-semibold text-foreground capitalize">{record.recordType.replace(/_/g, ' ')}</p>
+        <div className="min-w-0">
+          <p className="text-sm font-semibold text-foreground">
+            {cluster.records.length} record{cluster.records.length === 1 ? '' : 's'} with no account yet
+          </p>
           <p className="text-xs text-muted-foreground mt-0.5">
-            proposed by {record.proposedBy} · {formatDate(record.createdAt)}
+            Seen as <code className="font-mono">{cluster.identifier}</code>
+            {cluster.scope === 'tenant' && cluster.knownOrgName && <> · a possible tenant of <span className="font-medium">{cluster.knownOrgName}</span></>}
+            {' '}· first seen {formatDate(cluster.firstSeen)}
+            {cluster.candidates.length > 0 && <> · best guesses: {cluster.candidates.map((c) => `${c.name} (${Math.round(c.confidence * 100)}%)`).join(', ')}</>}
           </p>
         </div>
-        <SourceBadge source={record.source as ProposalRow['source']} verifiedAt={null} />
-      </div>
-
-      <p className="text-sm text-foreground">{record.summary}</p>
-
-      <div className="flex items-center justify-between gap-3 flex-wrap pt-1 border-t border-border">
-        <p className="text-xs text-muted-foreground pt-2">
-          Account:{' '}
-          <span className="font-medium text-amber-700">
-            not set — seen as "{record.observedName ?? 'an unrecognised name'}"
-          </span>
-        </p>
-        <button onClick={onMove} className="rounded-md bg-primary px-3 py-1.5 text-xs font-medium text-white hover:bg-primary/90">
+        <button onClick={onDecide} className="rounded-md bg-primary px-3 py-1.5 text-xs font-medium text-white hover:bg-primary/90 whitespace-nowrap">
           Set account
         </button>
       </div>
+
+      <ul className="space-y-2 pt-1 border-t border-border">
+        {shown.map((r) => (
+          <li key={r.id} className="pt-2 flex items-start justify-between gap-3">
+            <div className="min-w-0">
+              <p className="text-sm text-foreground">{r.summary}</p>
+              {r.evidenceExcerpt && <p className="text-xs text-muted-foreground mt-0.5 italic">&ldquo;{r.evidenceExcerpt}&rdquo;</p>}
+              <p className="text-xs text-muted-foreground mt-0.5 capitalize">{r.recordType.replace(/_/g, ' ')} · {formatDate(r.createdAt)}</p>
+            </div>
+            <button onClick={() => onMoveOne(r)} className="text-xs font-medium text-primary hover:underline whitespace-nowrap">
+              this one is different
+            </button>
+          </li>
+        ))}
+      </ul>
+
+      {cluster.records.length > 3 && (
+        <button onClick={() => setExpanded((v) => !v)} className="text-xs font-medium text-primary hover:underline">
+          {expanded ? 'Show fewer' : `Show all ${cluster.records.length}`}
+        </button>
+      )}
     </div>
   )
 }
@@ -520,25 +496,20 @@ function HeldRecordCard({ record, onMove }: { record: HeldRecordRow; onMove: () 
 function MoveAccountModal({ held, proposal, onClose, onDone }: {
   held: HeldRecordRow | null; proposal: ProposalRow | null; onClose: () => void; onDone: () => void
 }) {
-  const { data: accounts } = useAccountsRaw()
   const open = !!held || !!proposal
   const proposalId = held?.id ?? proposal?.id ?? ''
   const observed = held?.observedName ?? null
 
-  const [orgId, setOrgId] = useState('')
-  const [newName, setNewName] = useState('')
-  const [tenantId, setTenantId] = useState('')
+  const [choice, setChoice] = useState<AccountChoice | null>(null)
   // Default ON for a held record (it carries an identifier worth learning),
   // OFF when correcting a record that already had an account.
   const [remember, setRemember] = useState(true)
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState<string | null>(null)
-  const { data: tenants } = useTenants(orgId && orgId !== '__new__' ? orgId : null)
 
   useEffect(() => {
     if (!open) return
-    setOrgId(''); setNewName(''); setTenantId(''); setError(null)
-    setRemember(!!held)
+    setChoice(null); setError(null); setRemember(!!held)
   }, [open, held])
 
   if (!open) return null
@@ -546,17 +517,11 @@ function MoveAccountModal({ held, proposal, onClose, onDone }: {
   async function submit() {
     setBusy(true); setError(null)
     try {
-      let targetOrgId = orgId
-      if (orgId === '__new__') {
-        const name = newName.trim()
-        if (!name) throw new Error('Give the new account a name')
-        targetOrgId = await createAccount({ name, segmentId: null, deploymentModel: null, deploymentType: 'cloud' })
-      }
-      if (!targetOrgId) throw new Error('Pick an account')
+      if (!choice) throw new Error('Choose where it belongs')
       await reassignProposal({
         proposalId,
-        orgId: targetOrgId,
-        tenantId: tenantId || null,
+        orgId: choice.orgId,
+        tenantId: choice.tenantId,
         rememberIdentifier: remember && !!observed,
       })
       onDone(); onClose()
@@ -568,46 +533,22 @@ function MoveAccountModal({ held, proposal, onClose, onDone }: {
   }
 
   return (
-    <Modal open={open} onClose={onClose} title={held ? 'Set this record\'s account' : 'Change this record\'s account'}>
+    <Modal open={open} onClose={onClose} title={held ? 'Where does this one belong?' : 'Change this record\'s account'}>
       <div className="space-y-4">
         <p className="text-sm text-muted-foreground">
           {held
-            ? <>Seen as <span className="font-medium text-foreground">"{observed}"</span>. If that name is not a company — an implementation, a project, a programme — pick the account it actually belongs to and leave the box below unticked.</>
+            ? <>{held.summary}{held.evidenceExcerpt ? <span className="block text-xs italic mt-1">&ldquo;{held.evidenceExcerpt}&rdquo;</span> : null}</>
             : <>Currently filed under <span className="font-medium text-foreground">{proposal?.accountName ?? 'an unknown account'}</span>.</>}
         </p>
 
-        <div>
-          <label htmlFor="move-account" className="block text-xs font-medium text-muted-foreground mb-1">Account</label>
-          <select id="move-account" value={orgId} onChange={(e) => { setOrgId(e.target.value); setTenantId('') }} className="w-full rounded-md border border-border px-3 py-2 text-sm bg-white">
-            <option value="">Select an account…</option>
-            {(accounts ?? []).map((a) => <option key={a.id} value={a.id}>{a.name}</option>)}
-            <option value="__new__">+ Create a new account…</option>
-          </select>
-        </div>
-
-        {orgId === '__new__' && (
-          <div>
-            <label htmlFor="move-new-name" className="block text-xs font-medium text-muted-foreground mb-1">New account name</label>
-            <input id="move-new-name" value={newName} onChange={(e) => setNewName(e.target.value)} placeholder="Octave" className="w-full rounded-md border border-border px-3 py-2 text-sm" />
-          </div>
-        )}
-
-        {orgId && orgId !== '__new__' && (tenants ?? []).length > 0 && (
-          <div>
-            <label htmlFor="move-tenant" className="block text-xs font-medium text-muted-foreground mb-1">Tenant (optional)</label>
-            <select id="move-tenant" value={tenantId} onChange={(e) => setTenantId(e.target.value)} className="w-full rounded-md border border-border px-3 py-2 text-sm bg-white">
-              <option value="">No tenant</option>
-              {(tenants ?? []).map((t) => <option key={t.id} value={t.id}>{t.name}</option>)}
-            </select>
-          </div>
-        )}
+        <AccountTenantPicker value={choice} onChange={setChoice} id="move-account" />
 
         {observed && (
           <label className="flex items-start gap-2 text-sm">
             <input type="checkbox" checked={remember} onChange={(e) => setRemember(e.target.checked)} className="mt-0.5" />
             <span>
-              Also remember that <span className="font-medium">"{observed}"</span> means this account
-              <span className="block text-xs text-muted-foreground">Future mentions attach automatically. Leave unticked if the name is a project or a one-off rather than another name for the company.</span>
+              Also remember that <span className="font-medium">&ldquo;{observed}&rdquo;</span> means this
+              <span className="block text-xs text-muted-foreground">Leave unticked if it is a project or a one-off rather than another name for the company.</span>
             </span>
           </label>
         )}

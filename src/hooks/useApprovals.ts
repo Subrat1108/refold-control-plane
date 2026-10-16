@@ -188,6 +188,10 @@ export interface HeldRecordRow {
   observedName: string | null
   resolutionId: string | null
   summary: string
+  // What the thing actually IS, in the source's own words. An identifier
+  // like `zendesk-org:24623057340828` means nothing to a human; its
+  // evidence ("Calendly Auth Issue") means everything.
+  evidenceExcerpt: string | null
   sourceRef: string | null
   evidenceUrl: string | null
   createdAt: string
@@ -210,7 +214,7 @@ function gistOf(recordType: string, raw: Record<string, unknown>): string {
 async function fetchHeldRecords(): Promise<HeldRecordRow[]> {
   const { data, error } = await supabase
     .from('proposals')
-    .select('id, payload, target_table, source_ref, evidence_url, created_at, proposed_by, source, blocked_by_resolution_id')
+    .select('id, payload, target_table, source_ref, evidence_url, evidence_excerpt, created_at, proposed_by, source, blocked_by_resolution_id')
     .eq('status', 'held')
     .order('created_at', { ascending: true })
   if (error) throw new Error(error.message)
@@ -240,6 +244,7 @@ async function fetchHeldRecords(): Promise<HeldRecordRow[]> {
       resolutionId: (row.blocked_by_resolution_id as string | null) ?? null,
       observedName: row.blocked_by_resolution_id ? names.get(row.blocked_by_resolution_id as string) ?? null : null,
       summary: gistOf(recordType, (payload.rawData ?? {}) as Record<string, unknown>),
+      evidenceExcerpt: (row.evidence_excerpt as string | null) ?? null,
       sourceRef: (row.source_ref as string | null) ?? null,
       evidenceUrl: (row.evidence_url as string | null) ?? null,
       createdAt: row.created_at as string,

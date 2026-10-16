@@ -2041,6 +2041,38 @@ but nothing like the 7x the arithmetic suggests. Only the parked rework
 (runner lists and filters; the model sees only qualifying items) changes the
 shape of that.
 
+## D-146 — Approvals is one list, and it leads with evidence (2026-10-16)
+The screen asked for decisions it gave no basis for. A pinned "Accounts ·
+match needed" section sat above a separate "Details · records waiting"
+section showing the same work twice, and the resolve modal offered four
+abstract choices over an opaque string — *"zendesk org 29547552465692"* —
+with no way to tell what that org was or to create it. The context was
+already in the database and simply unshown: that identifier's held record is
+titled **"Calendly Auth Issue"**. 80 items were queued behind this.
+
+Now one list. Records the Hub could not attribute **cluster under the
+identifier they share**, so 17 records behind one Zendesk org is one
+decision rather than 17 — with a per-row "this one is different" escape for
+the odd one out. That keeps "a single list" without reintroducing the
+repetition the two-section layout existed to avoid. Each cluster shows its
+records and their evidence excerpts up front; the identifier is secondary
+text, where it belongs.
+
+New shared `AccountTenantPicker` replaces every flat account `<select>`.
+Accounts are optgroup headings, tenants are indented beneath with a ↳ and a
+"(tenant)" suffix, and the account's own option keeps its plain name whether
+or not it has tenants — so the label never shifts depending on data shape
+(caught by e2e: selecting by label failed when an account gained a tenant).
+It creates accounts AND tenants inline, which is the gap that made "CFIHOS
+is an implementation Octave runs" unanswerable: the right answer existed and
+there was nowhere to enter it.
+
+No backend change was needed. `reassign_proposal` already takes
+`orgId` + optional `tenantId` + `rememberIdentifier` and auto-closes a
+resolution when its last record leaves, so filing a cluster is just that
+call per record — the last one closes the match automatically, with no
+separate "resolve" step to forget.
+
 # Parked
 
 Out-of-scope ideas land here instead of derailing the current prompt block.

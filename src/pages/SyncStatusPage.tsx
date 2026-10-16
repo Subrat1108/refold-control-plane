@@ -4,7 +4,7 @@
 // Edge Function (super_admin + AAL2), never a direct client write.
 import { useState } from 'react'
 import { useQueryClient } from '@tanstack/react-query'
-import { useSyncRuns, useSyncSettings, useSyncQueue, useAccountsRaw, useAccountSyncHealth } from '@/hooks'
+import { useSyncRuns, useSyncSettings, useSyncQueue, useAccountTree, useAccountSyncHealth } from '@/hooks'
 import { DataTable, type Column } from '@/components/DataTable'
 import { StatusBadge } from '@/components/StatusBadge'
 import { CardSkeleton } from '@/components/SkeletonLoader'
@@ -23,7 +23,7 @@ export function SyncStatusPage() {
   const { data: runs, isLoading, isError, refetch } = useSyncRuns()
   const { data: settings } = useSyncSettings()
   const { data: queue } = useSyncQueue(20)
-  const { data: accounts } = useAccountsRaw()
+  const { data: accountTree } = useAccountTree()
   const { data: emptyAccounts } = useAccountSyncHealth()
 
   const [killSwitch, setKillSwitch] = useState(false)
@@ -255,10 +255,16 @@ export function SyncStatusPage() {
         <h2 className="text-sm font-semibold text-foreground">Run backfill</h2>
         <div className="flex items-end gap-2">
           <div className="flex-1">
-            <label className="block text-xs font-medium text-muted-foreground mb-1">Account (leave blank for all)</label>
-            <select value={backfillOrgId} onChange={(e) => setBackfillOrgId(e.target.value)} className="w-full rounded-md border border-border px-2 py-1.5 text-sm bg-white">
+            <label htmlFor="backfill-account" className="block text-xs font-medium text-muted-foreground mb-1">Account (leave blank for all)</label>
+            {/* Backfill is account-scoped, so this picks the account only —
+                hence allowCreate off and tenants not offered. */}
+            <select id="backfill-account" value={backfillOrgId} onChange={(e) => setBackfillOrgId(e.target.value)} className="w-full rounded-md border border-border px-2 py-1.5 text-sm bg-white">
               <option value="">All accounts</option>
-              {(accounts ?? []).map((a) => <option key={a.id} value={a.id}>{a.name}</option>)}
+              {(accountTree ?? []).map((a) => (
+                <option key={a.id} value={a.id}>
+                  {a.name}{a.tenants.length ? ` (${a.tenants.length} tenant${a.tenants.length === 1 ? '' : 's'})` : ''}
+                </option>
+              ))}
             </select>
           </div>
           <button onClick={runBackfill} disabled={backfillBusy} className="rounded-md border border-border px-3 py-2 text-sm font-medium hover:bg-muted disabled:opacity-50">

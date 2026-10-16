@@ -122,55 +122,35 @@ test('super admin smoke: Home, Portfolio, Account 360, Approvals, Audit log, Sta
   }
   await expectNoErrors(page, errors)
 
-  // ── Details section (7.5-pre2): held records are now READABLE and can be
-  // re-pointed at any account, instead of being an opaque count on their
-  // resolution. This is what stops "ignore" binning a record that belonged
-  // to a real account — the CFIHOS case. ──
-  await expect(page.getByRole('heading', { name: 'Details · records waiting' })).toBeVisible()
+  // ── Approvals as ONE list (7.5-pre2 Stage 1) ──
+  // The pinned "match needed" section and the separate held-records section
+  // are gone: unattributed records now cluster under the identifier they
+  // share, and each cluster is one decision. The row leads with what the
+  // record IS, not the opaque identifier — that was the whole complaint.
+  const cluster = page.locator('div').filter({ hasText: /record[s]? with no account yet/ }).first()
+  await expect(cluster).toBeVisible()
+  // The evidence is on screen, not hidden behind a modal.
+  await expect(page.getByText('smoke test escalation (map existing)').first()).toBeVisible()
   await expect(page.getByRole('button', { name: 'Set account' }).first()).toBeVisible()
-  // Open the move modal and confirm it offers both an existing account and
-  // creating a new one on the spot, then close without moving (the four
-  // resolution decisions below still need their held records).
+
+  // Decide for a whole cluster at once, choosing an existing account from
+  // the hierarchy-aware picker.
   await page.getByRole('button', { name: 'Set account' }).first().click()
+  await expect(page.getByRole('dialog')).toBeVisible()
   await expect(page.getByLabel('Account', { exact: true })).toBeVisible()
+  // The picker offers creating both an account and a tenant inline — the
+  // gap that made "CFIHOS belongs to Octave" unanswerable before.
   await expect(page.getByRole('option', { name: '+ Create a new account…' })).toBeAttached()
-  await page.getByRole('button', { name: 'Cancel' }).click()
+  await expect(page.getByRole('option', { name: '+ Create a new tenant…' })).toBeAttached()
+  await page.getByLabel('Account', { exact: true }).selectOption({ label: 'Prism Analytics' })
+  await page.getByRole('button', { name: /^File \d+ record/ }).click()
+  await expect(page.getByRole('dialog')).not.toBeVisible({ timeout: 30_000 })
   await expectNoErrors(page, errors)
 
-  // ── Account match needed (7.5-pre2 Session 2): resolve each of the 4 ways ──
-  // Fixtures (seed_account_resolutions.sql) render oldest-first: map_existing,
-  // map_tenant, create_account, ignore — resolving the first repeatedly walks
-  // through all four in that fixed order as each row disappears in turn.
-  await expect(page.getByRole('heading', { name: 'Accounts · match needed (4)' })).toBeVisible()
-
-  // 1. map_existing
-  await page.getByRole('button', { name: 'Resolve' }).first().click()
-  await page.getByRole('dialog').getByRole('combobox').first().selectOption({ label: 'Prism Analytics' })
-  await page.getByRole('button', { name: 'Resolve', exact: true }).last().click()
-  await expect(page.getByText('Accounts · match needed (3)')).toBeVisible()
-  await expectNoErrors(page, errors)
-
-  // 2. map_tenant
-  await page.getByRole('button', { name: 'Resolve' }).first().click()
-  await page.getByRole('button', { name: 'Map as tenant of…' }).click()
-  await page.getByRole('dialog').getByRole('combobox').first().selectOption({ label: 'Meridian Laboratories' })
-  await page.getByPlaceholder('smoke-map-tenant').fill('Smoke Test Tenant')
-  await page.getByRole('button', { name: 'Resolve', exact: true }).last().click()
-  await expect(page.getByText('Accounts · match needed (2)')).toBeVisible()
-  await expectNoErrors(page, errors)
-
-  // 3. create_account
-  await page.getByRole('button', { name: 'Resolve' }).first().click()
-  await page.getByRole('button', { name: 'Create new account' }).click()
-  await page.getByRole('button', { name: 'Resolve', exact: true }).last().click()
-  await expect(page.getByText('Accounts · match needed (1)')).toBeVisible()
-  await expectNoErrors(page, errors)
-
-  // 4. ignore
-  await page.getByRole('button', { name: 'Resolve' }).first().click()
-  await page.getByRole('button', { name: 'Ignore — not a customer' }).click()
-  await page.getByRole('button', { name: 'Resolve', exact: true }).last().click()
-  await expect(page.getByText('Accounts · match needed')).not.toBeVisible()
+  // Ignoring is still available, now alongside the records it would discard.
+  await page.getByRole('button', { name: 'Set account' }).first().click()
+  await page.getByRole('button', { name: 'Not a customer — ignore' }).click()
+  await expect(page.getByRole('dialog')).not.toBeVisible({ timeout: 30_000 })
   await expectNoErrors(page, errors)
 
   // ── Audit log (inside the collapsed-by-default "Admin" disclosure) ──

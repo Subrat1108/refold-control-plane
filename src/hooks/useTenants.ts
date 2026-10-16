@@ -83,3 +83,41 @@ export async function deleteAccountSource(id: string): Promise<void> {
   const { error } = await supabase.from('account_sources').delete().eq('id', id)
   if (error) throw new Error(error.message)
 }
+
+// Every account with its tenants, in one fetch — so a picker can show the
+// real hierarchy instead of a flat list in which an account and a tenant
+// look identical. `useTenants` stays for the single-account case.
+export interface AccountTreeNode {
+  id: string
+  name: string
+  deploymentType: string | null
+  deploymentModel: string | null
+  tenants: { id: string; name: string }[]
+}
+
+async function fetchAccountTree(): Promise<AccountTreeNode[]> {
+  const [{ data: orgs, error: orgErr }, { data: tenants, error: tenErr }] = await Promise.all([
+    supabase.from('organizations').select('id, name, deployment_type, deployment_model').neq('deployment_type', 'internal').order('name'),
+    supabase.from('tenants').select('id, org_id, name').order('name'),
+  ])
+  if (orgErr) throw new Error(orgErr.message)
+  if (tenErr) throw new Error(tenErr.message)
+
+  const byOrg = new Map<string, { id: string; name: string }[]>()
+  for (const t of tenants ?? []) {
+    const list = byOrg.get(t.org_id as string) ?? []
+    list.push({ id: t.id as string, name: t.name as string })
+    byOrg.set(t.org_id as string, list)
+  }
+  return (orgs ?? []).map((o) => ({
+    id: o.id as string,
+    name: o.name as string,
+    deploymentType: (o.deployment_type as string) ?? null,
+    deploymentModel: (o.deployment_model as string) ?? null,
+    tenants: byOrg.get(o.id as string) ?? [],
+  }))
+}
+
+export function useAccountTree() {
+  return useQuery({ queryKey: ['account-tree'], queryFn: fetchAccountTree })
+}

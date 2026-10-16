@@ -16,6 +16,33 @@ Template:
 
 ---
 
+## Session 50 — 2026-10-16 — Approvals as one list (production-readiness Stage 1)
+**Built:** Stage 1 of the approved production-readiness plan. The pinned
+resolution section and the separate held-records section are gone; both are
+now rows in one list. Unattributed records cluster under the identifier they
+share so a cluster is ONE decision, with a per-row override. Every row leads
+with what the record is and its evidence excerpt — the identifier is
+secondary, which was the owner's actual complaint ("i do not have context on
+what this org is"). New `AccountTenantPicker` (accounts as optgroup headings,
+tenants indented with ↳) replaces the flat selects in both Approvals modals
+and the Sync Status backfill picker, and can create an account OR a tenant
+inline. New `useAccountTree()` fetches accounts + tenants together. No
+backend change: `reassign_proposal` already did everything needed, including
+auto-closing a resolution when its last record leaves (D-146).
+**Deviations:** none to the plan. Two of my own slips, both caught: deleting
+the old resolve modal took `RejectModal` with it (restored from git), and the
+picker's account option was labelled "X — the account itself" only when X had
+tenants, so an e2e `selectOption({ label })` failed the moment data shape
+changed — labels are now stable either way.
+**Decisions:** D-146
+**Next:** Stage 2 — the real hierarchy (namespaces table, `tenants.namespace_id`,
+dedicated-cluster deployment type) and one merged page per account/namespace/
+tenant, replacing the mock-data admin panel.
+**Issues:** unchanged — kill switch on, 30 units queued, file-as-you-go still
+deferred by the owner's own sequencing.
+
+---
+
 ## Session 49 — 2026-10-15 — the nightly covers one day, not seven
 **Built:** The owner's rule: "daily sync should only sync per day not 7 days.
 7 days or more/less is for manual trigger." Daily mode now resolves to
