@@ -23,9 +23,13 @@ export interface AccountChoice {
   tenantId: string | null
 }
 
-// Only these shapes have sub-orgs worth modelling as tenants. A cloud
-// customer is a single org by definition, so offering it a tenant there
-// invites a hierarchy that does not exist.
+// On-prem and dedicated-cluster accounts are the ones that normally have
+// sub-orgs, so they get a prompt. It is only a HINT, never a gate: almost
+// every real account currently has no deployment model at all (they are
+// created from an approval, which does not ask), so filtering the parent
+// list by it left exactly one account selectable and the feature unusable.
+// Better to mark the likely ones and let a human decide than to hide the
+// capability behind a field nobody has filled in.
 const TENANTED_MODELS: string[] = ['onprem_managed', 'onprem_airgapped', 'dedicated_cluster']
 
 interface Props {
@@ -41,6 +45,9 @@ export function AccountTenantPicker({ value, onChange, label = 'Account', id = '
   const { profile } = useSupabaseAuth()
   const qc = useQueryClient()
   const [mode, setMode] = useState<'pick' | 'new-account' | 'new-tenant'>('pick')
+  // Set when the account form was opened FROM the tenant form, so creating
+  // one drops you back there with it already chosen as the parent.
+  const [returnToTenant, setReturnToTenant] = useState(false)
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState<string | null>(null)
 
@@ -54,7 +61,6 @@ export function AccountTenantPicker({ value, onChange, label = 'Account', id = '
 
   const selected = value ? (tree ?? []).find((a) => a.id === value.orgId) ?? null : null
   const canHaveTenants = (model: string | null) => !!model && TENANTED_MODELS.includes(model)
-  const tenantable = (tree ?? []).filter((a) => canHaveTenants(a.deploymentModel))
 
   // "orgId" picks the account itself; "orgId::tenantId" picks a tenant under
   // it — one control, unambiguous either way.
@@ -62,7 +68,7 @@ export function AccountTenantPicker({ value, onChange, label = 'Account', id = '
 
   function onSelect(raw: string) {
     setError(null)
-    if (raw === '__new_account__') { setMode('new-account'); setName(''); setSegmentId(''); setDeploymentType('cloud'); setDeploymentModel(''); return }
+    if (raw === '__new_account__') { setReturnToTenant(false); setMode('new-account'); setName(''); setSegmentId(''); setDeploymentType('cloud'); setDeploymentModel(''); return }
     if (raw === '__new_tenant__') { setMode('new-tenant'); setName(''); setParentOrgId(''); return }
     if (!raw) { onChange(null); return }
     const [orgId, tenantId] = raw.split('::')
@@ -83,6 +89,17 @@ export function AccountTenantPicker({ value, onChange, label = 'Account', id = '
         })
         await refetch()
         qc.invalidateQueries({ queryKey: ['accounts'] })
+        if (returnToTenant) {
+          // Came here from the tenant form — go back to it with the account
+          // just made already selected, rather than dumping the user back at
+          // the top having lost their place.
+          setParentOrgId(orgId)
+          setName('')
+          setReturnToTenant(false)
+          setMode('new-tenant')
+          setBusy(false)
+          return
+        }
         onChange({ orgId, tenantId: null })
       } else {
         if (!parentOrgId) throw new Error('Choose the account this sits under')
@@ -151,32 +168,39 @@ export function AccountTenantPicker({ value, onChange, label = 'Account', id = '
     return (
       <div className="space-y-3 rounded-md border border-border p-3">
         <p className="text-sm font-medium text-foreground">New tenant</p>
-        {tenantable.length === 0 ? (
-          <p className="text-sm text-muted-foreground">
-            No account is set up for tenants yet. Only on-premise and dedicated-cluster accounts have them — set an account&apos;s deployment model first.
-          </p>
-        ) : (
-          <>
-            <div>
-              <label htmlFor={`${id}-parent`} className="block text-xs font-medium text-muted-foreground mb-1">Which account does it sit under?</label>
-              <select id={`${id}-parent`} value={parentOrgId} onChange={(e) => setParentOrgId(e.target.value)} className="w-full rounded-md border border-border px-3 py-2 text-sm bg-white">
-                <option value="">Choose…</option>
-                {tenantable.map((a) => <option key={a.id} value={a.id}>{a.name}</option>)}
-              </select>
-            </div>
-            <div>
-              <label htmlFor={`${id}-tname`} className="block text-xs font-medium text-muted-foreground mb-1">Tenant name</label>
-              <input id={`${id}-tname`} value={name} onChange={(e) => setName(e.target.value)} placeholder="Kantata PS" className="w-full rounded-md border border-border px-3 py-2 text-sm" />
-            </div>
-          </>
-        )}
+        <div>
+          <label htmlFor={`${id}-parent`} className="block text-xs font-medium text-muted-foreground mb-1">Which account does it sit under?</label>
+          <select
+            id={`${id}-parent`}
+            value={parentOrgId}
+            onChange={(e) => {
+              if (e.target.value === '__new_account__') {
+                setReturnToTenant(true); setMode('new-account')
+                setName(''); setSegmentId(''); setDeploymentType('on_premise'); setDeploymentModel('')
+                return
+              }
+              setParentOrgId(e.target.value)
+            }}
+            className="w-full rounded-md border border-border px-3 py-2 text-sm bg-white"
+          >
+            <option value="">Choose…</option>
+            {(tree ?? []).map((a) => (
+              <option key={a.id} value={a.id}>
+                {a.name}{canHaveTenants(a.deploymentModel) ? ' · on-prem/dedicated' : ''}
+              </option>
+            ))}
+            <option value="__new_account__">+ Create a new account…</option>
+          </select>
+        </div>
+        <div>
+          <label htmlFor={`${id}-tname`} className="block text-xs font-medium text-muted-foreground mb-1">Tenant name</label>
+          <input id={`${id}-tname`} value={name} onChange={(e) => setName(e.target.value)} placeholder="Kantata PS" className="w-full rounded-md border border-border px-3 py-2 text-sm" />
+        </div>
         {error && <p className="text-sm text-red-600">{error}</p>}
         <div className="flex gap-2">
-          {tenantable.length > 0 && (
-            <button onClick={create} disabled={busy || !name.trim()} className="rounded-md bg-primary px-3 py-1.5 text-xs font-medium text-white hover:bg-primary/90 disabled:opacity-50">
-              {busy ? 'Creating…' : 'Create tenant'}
-            </button>
-          )}
+          <button onClick={create} disabled={busy || !name.trim() || !parentOrgId} className="rounded-md bg-primary px-3 py-1.5 text-xs font-medium text-white hover:bg-primary/90 disabled:opacity-50">
+            {busy ? 'Creating…' : 'Create tenant'}
+          </button>
           <button onClick={() => { setMode('pick'); setError(null) }} className="rounded-md border border-border px-3 py-1.5 text-xs font-medium text-muted-foreground">Cancel</button>
         </div>
       </div>
@@ -202,11 +226,13 @@ export function AccountTenantPicker({ value, onChange, label = 'Account', id = '
           )
         ))}
         <option value="__new_account__">+ Create a new account…</option>
-        {/* Tenants only exist under on-prem and dedicated-cluster accounts,
-            so the option appears only when one of those exists to hang it on. */}
-        {tenantable.length > 0 && <option value="__new_tenant__">+ Create a new tenant…</option>}
+        <option value="__new_tenant__">+ Create a new tenant…</option>
       </select>
-      {selected && canHaveTenants(selected.deploymentModel) && !value?.tenantId && (
+      {selected && !value?.tenantId && (
+        // Offered for any chosen account, not only ones marked on-prem or
+        // dedicated — the marking depends on a field that is usually blank,
+        // and refusing the shortcut on that basis just sends the user the
+        // long way round for no benefit.
         <button onClick={() => { setMode('new-tenant'); setName(''); setParentOrgId(selected.id) }} className="mt-1.5 text-xs font-medium text-primary hover:underline">
           + add a tenant under {selected.name}
         </button>

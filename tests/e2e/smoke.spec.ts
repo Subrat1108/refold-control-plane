@@ -138,6 +138,24 @@ test('super admin smoke: Home, Portfolio, Account 360, Approvals, Audit log, Sta
   await expect(page.getByLabel('Deployment model')).toBeVisible()
   await page.getByRole('button', { name: 'Cancel' }).first().click()
 
+  // Creating a TENANT must work too, and its parent list must contain every
+  // account — gating it on deployment_model left exactly one selectable,
+  // because accounts created from an approval have no model set.
+  await page.getByLabel('Account', { exact: true }).selectOption('__new_tenant__')
+  await expect(page.getByText('New tenant')).toBeVisible()
+  const parent = page.getByLabel('Which account does it sit under?')
+  await expect(parent).toBeVisible()
+  await expect(parent.getByRole('option', { name: /Prism Analytics/ })).toBeAttached()
+  await expect(parent.getByRole('option', { name: /Meridian Laboratories/ })).toBeAttached()
+  // ...and an account can be created from right here.
+  await expect(parent.getByRole('option', { name: '+ Create a new account…' })).toBeAttached()
+  await parent.selectOption({ label: 'Prism Analytics' })
+  await page.getByLabel('Tenant name').fill('E2E Tenant')
+  await page.getByRole('button', { name: 'Create tenant' }).click()
+  // Creating it selects it, shown as a tenant under its account.
+  await expect(page.getByRole('option', { name: /E2E Tenant \(tenant\)/ })).toBeAttached({ timeout: 15_000 })
+  await expectNoErrors(page, errors)
+
   // Then file it against an existing account.
   await page.getByLabel('Account', { exact: true }).selectOption({ label: 'Prism Analytics' })
   await page.getByRole('button', { name: /^File \d+ record|^File it$/ }).click()

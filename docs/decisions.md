@@ -2104,6 +2104,28 @@ and a useless instruction, since there was nowhere to create it from. The
 modal now recognises that refusal, offers *"Create project 'X' and file
 it"*, and retries. The guard stays; only the dead end goes.
 
+## D-148 — never gate a capability on a field nobody fills in (2026-10-16)
+D-147 offered the tenant option only for on-prem and dedicated-cluster
+accounts, which is correct in principle and broke the feature in practice.
+Checked against live data: of ten real accounts, **one** has a deployment
+model set. Everything created from an approval defaults to
+`deployment_type='cloud'` with `deployment_model` null, because the
+resolution flow never asks — so the parent dropdown offered exactly one
+account and creating a tenant was impossible. Kantata, described by the
+owner as a dedicated cluster with several orgs inside it, is recorded as
+plain cloud with no model at all.
+
+The rule is now a **hint, not a gate**: every account is a candidate parent,
+with on-prem/dedicated ones marked `· on-prem/dedicated` so the distinction
+is still visible, and the contextual "add a tenant under X" shortcut is
+offered for any chosen account. An account can also be created from inside
+the tenant form, returning to it with the new account already selected as
+the parent rather than dropping the user back at the start.
+
+Generalisable: a conditional affordance keyed on optional metadata will be
+wrong whenever that metadata is usually blank. Either make the field
+mandatory where it matters, or let the condition inform rather than forbid.
+
 # Parked
 
 Out-of-scope ideas land here instead of derailing the current prompt block.

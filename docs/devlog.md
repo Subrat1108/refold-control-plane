@@ -16,6 +16,31 @@ Template:
 
 ---
 
+## Session 52 — 2026-10-16 — tenant creation actually works
+**Built:** Owner hit two bugs in yesterday's picker: the tenant parent
+dropdown listed one account, and there was no way to create an account from
+the tenant form. Root cause measured against live data — only 1 of 10
+accounts has a `deployment_model`, since anything created from an approval
+defaults to cloud/null, so filtering parents by it hid almost everything
+(D-148). The on-prem/dedicated rule is now a hint rather than a gate: all
+accounts are candidate parents, the likely ones marked `· on-prem/dedicated`,
+and "+ Create a new account…" sits inside the tenant form, returning to it
+with the new account preselected. The top-level "+ Create a new tenant…" and
+the contextual "add a tenant under X" are both ungated.
+**Deviations:** none. Worth flagging for the owner rather than changing
+unilaterally: Kantata is stored as `cloud` with no deployment model despite
+being a dedicated cluster — Stage 2's hierarchy work will depend on that
+being right.
+**Verified:** e2e extended to actually create a tenant and assert its parent
+list contains multiple accounts plus the create-account option — the gap
+that let the original bug through, since the old test only opened the form;
+15 RLS blocks; typecheck/lint/build.
+**Decisions:** D-148
+**Next:** Stage 2 — the real hierarchy and one merged page per entity.
+**Issues:** unchanged — kill switch on, 30 units queued.
+
+---
+
 ## Session 51 — 2026-10-16 — one card, one form, no dead ends
 **Built:** Owner feedback on Stage 1: still two designs inside the one list,
 and a hard stop when filing a milestone. Both fixed (D-147). `RecordCard`
