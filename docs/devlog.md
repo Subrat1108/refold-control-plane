@@ -16,6 +16,47 @@ Template:
 
 ---
 
+## Session 54 — 2026-10-16 — Stage 2a: one page per account
+**Built:** `/accounts/:orgId` gains a **Deployment** tab carrying what
+`/cloud-customers/:id` and `/onprem-customers/:id` used to show: the account's
+shape in plain words, its tenants (grouped by cluster for on-prem, which is
+presentation over flat data per D-149, with namespace / org / linked-account
+ids shown), and an honest empty state where platform metrics would be. Those
+old pages were fed entirely by mock fixtures, so nothing was ported — a
+sparse true page beats a full fictional one, and Stage 2c's "Add details" is
+how the gaps get filled. New `CustomerDetailRedirect` folds the old
+super-admin links into the merged page while leaving customer-owner portals
+alone (they are frozen, and `/accounts` is super-admin only — redirecting an
+owner would hand them Access denied instead of their own view).
+Also set every account's deployment shape from the owner's own description:
+Naehas / zycus / octave / Movius (new) on-prem air-gapped, Kantata split into
+**Kantata Engg** and **Kantata PS** (both dedicated cluster) with Praecipio,
+TMP, Basware, Scivida, QBD and Cheil as Kantata PS tenants, six Naehas
+tenants across two clusters (cluster names deliberately left null and the
+split preserved in notes rather than invented), and the remaining four cloud
+accounts set explicitly rather than left null. 12/12 accounts now carry a
+shape, which is what Stage 2b's views read.
+**Deviations:** the owner asked me to work the 80-item Approvals backlog.
+I could not: `provisioning` requires a real signed-in session with AAL2 and
+I have no production login, and doing it in raw SQL would reimplement the
+dedupe tree outside the one write pipeline. Instead I pre-created the six
+accounts the sweep found (Bluecopa, Revinate, PayIt, Akkuro, Similarweb,
+Infinitecx) so each resolution is a pick rather than a create, and handed
+over an exact 9-to-do / 3-to-leave list. The three left are `zendesk-org:*`
+identifiers whose evidence names no company at all.
+**Verified:** 16 RLS blocks; smoke-login; e2e extended (Deployment joins the
+tab walk; an old customer link asserted to land on /accounts/:id);
+typecheck/lint/build.
+**Decisions:** none new — executes D-149.
+**Next:** Stage 2b (hierarchy on the Portfolio board + tenant pages), then 2d
+(retire useMockData), then 2c (Add details + upload).
+**Issues:** Naehas has a stray 7th tenant "Amex" with no namespace, created by
+an earlier resolution and probably overlapping `e1`; left rather than deleted
+since records may point at it. Kantata Engg holds ~14 records filed before the
+split that may belong to Kantata PS.
+
+---
+
 ## Session 53 — 2026-10-16 — the hierarchy, settled and encoded
 **Built:** The owner defined the domain properly and it collapsed three
 competing models into one (D-149). Account = an organisation using Refold;

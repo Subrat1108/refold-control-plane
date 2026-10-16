@@ -83,6 +83,7 @@ import type {
 
 const TABS: TabItem[] = [
   { id: 'overview', label: 'Overview' },
+  { id: 'deployment', label: 'Deployment' },
   { id: 'projects', label: 'Projects' },
   { id: 'escalations', label: 'Escalations' },
   { id: 'tickets', label: 'Tickets' },
@@ -226,6 +227,7 @@ export function AccountDetailPage() {
       {tab === 'overview' && (
         <OverviewTab account={account} onChangeHealth={() => setHealthModalOpen(true)} onMarkVerified={handleMarkVerified} />
       )}
+      {tab === 'deployment' && <DeploymentTab account={account} />}
       {tab === 'projects' && <ProjectsTab orgId={account.id} people={people ?? []} />}
       {tab === 'escalations' && <EscalationsTab orgId={account.id} />}
       {tab === 'tickets' && <TicketsTab orgId={account.id} />}
@@ -1214,6 +1216,100 @@ function MetricsTab({ orgId }: { orgId: string }) {
           Enter value
         </button>
       </div>
+    </div>
+  )
+}
+
+// Stage 2a — the delivery picture, on the SAME page as the CS record.
+//
+// This absorbs what /cloud-customers/:id and /onprem-customers/:id used to
+// show. Those pages were fed entirely by mock fixtures, so rather than port
+// invented numbers across, this shows what is genuinely known — the shape of
+// the deployment and the tenants under it — and says plainly where real
+// figures are still missing. A sparse honest page beats a full fictional one;
+// "Add details" (Stage 2c) is how the gaps get filled.
+function DeploymentTab({ account }: { account: Account }) {
+  const { data: tenants, isLoading } = useTenants(account.id)
+
+  const shape = account.deploymentModel ?? (account.deploymentType === 'on_premise' ? 'onprem_airgapped' : 'cloud')
+  const label: Record<string, string> = {
+    cloud: 'Cloud — shared Refold infrastructure',
+    dedicated_cluster: 'Dedicated cluster — a Refold-managed instance for this account alone',
+    onprem_managed: 'On-premise, Refold assisted — installed on the account\'s own infrastructure',
+    onprem_airgapped: 'On-premise, air-gapped — installed on the account\'s own infrastructure, no Refold access',
+  }
+  const hasTenants = shape !== 'cloud'
+
+  // On-prem signups live in a namespace inside one of the account's own
+  // clusters. Grouping here is presentation only — the tenants themselves
+  // are a flat list (D-149).
+  const groups = (() => {
+    if (!tenants?.length) return []
+    const by = new Map<string, typeof tenants>()
+    for (const t of tenants) {
+      const key = t.clusterName || t.notes || 'Unassigned'
+      by.set(key, [...(by.get(key) ?? []), t])
+    }
+    return [...by.entries()].sort((a, b) => a[0].localeCompare(b[0]))
+  })()
+
+  return (
+    <div className="space-y-6">
+      <section className="bg-white rounded-xl shadow-card p-6 space-y-2">
+        <h2 className="text-sm font-semibold text-foreground">Deployment</h2>
+        <p className="text-sm text-foreground">{label[shape] ?? shape}</p>
+        {!hasTenants && (
+          <p className="text-xs text-muted-foreground">
+            Cloud accounts are tracked at account level. Their own customers are Refold <em>linked accounts</em>, which the Hub deliberately does not
+            track individually.
+          </p>
+        )}
+      </section>
+
+      {hasTenants && (
+        <section className="bg-white rounded-xl shadow-card p-6">
+          <h2 className="text-sm font-semibold text-foreground mb-1">Tenants</h2>
+          <p className="text-xs text-muted-foreground mb-3">
+            One tenant is one signup on this account — a Refold org/workspace.
+            {account.deploymentType === 'on_premise' && ' Grouped by the cluster each installation runs in.'}
+          </p>
+          {isLoading ? <CardSkeleton /> : groups.length === 0 ? (
+            <EmptyState title="No tenants recorded yet" description="Add one from any Approvals row, or from the Sources panel on this account." />
+          ) : (
+            <div className="space-y-4">
+              {groups.map(([group, list]) => (
+                <div key={group}>
+                  <p className="text-xs font-semibold text-muted-foreground uppercase mb-1.5">{group}</p>
+                  <ul className="space-y-1.5">
+                    {list.map((t) => (
+                      <li key={t.id} className="flex items-start justify-between gap-3 border-b border-border pb-1.5 last:border-0">
+                        <div className="min-w-0">
+                          <p className="text-sm text-foreground">{t.name}</p>
+                          <p className="text-xs text-muted-foreground">
+                            {t.namespaceName ? <>namespace <code className="font-mono">{t.namespaceName}</code></> : 'namespace not recorded'}
+                            {t.refoldOrgId && <> · org <code className="font-mono">{t.refoldOrgId}</code></>}
+                            {t.linkedAccountId && <> · linked account <code className="font-mono">{t.linkedAccountId}</code></>}
+                          </p>
+                        </div>
+                      </li>
+                    ))}
+                  </ul>
+                </div>
+              ))}
+            </div>
+          )}
+        </section>
+      )}
+
+      <section className="bg-white rounded-xl shadow-card p-6">
+        <h2 className="text-sm font-semibold text-foreground mb-1">Platform metrics</h2>
+        <EmptyState
+          title="No metrics recorded"
+          description={account.deploymentType === 'on_premise'
+            ? 'Refold has no access to an air-gapped installation, so these arrive by manual entry or file upload rather than an API.'
+            : 'These will arrive from the metrics API or by upload. Nothing has been recorded for this account yet.'}
+        />
+      </section>
     </div>
   )
 }

@@ -1,6 +1,7 @@
 import { createBrowserRouter, Navigate } from 'react-router-dom'
 import { AppLayout } from '@/components/layout/AppLayout'
 import { RequireAuth } from '@/components/RequireAuth'
+import { CustomerDetailRedirect } from '@/components/CustomerDetailRedirect'
 import { RouteGuard } from '@/components/RouteGuard'
 import { RouteError } from '@/components/RouteError'
 import { OrgScopeGuard } from '@/components/OrgScopeGuard'
@@ -77,10 +78,13 @@ export const router = createBrowserRouter([
         element: <RouteGuard allowedRoles={['super_admin']}><CloudCustomersPage /></RouteGuard>,
       },
       {
+        // Stage 2a — an account has ONE page now. A customer owner still
+        // needs their own view (those portals are frozen), so only the
+        // super-admin path folds into /accounts/:orgId; owners keep theirs.
         path: 'cloud-customers/:orgId',
         element: (
           <RouteGuard allowedRoles={['super_admin', 'cloud_customer_admin']}>
-            <OrgScopeGuard><CloudOrgDetailPage /></OrgScopeGuard>
+            <OrgScopeGuard><CustomerDetailRedirect><CloudOrgDetailPage /></CustomerDetailRedirect></OrgScopeGuard>
           </RouteGuard>
         ),
       },
@@ -92,7 +96,7 @@ export const router = createBrowserRouter([
         path: 'onprem-customers/:orgId',
         element: (
           <RouteGuard allowedRoles={['super_admin', 'onprem_customer_admin']}>
-            <OrgScopeGuard><OnPremOrgDetailPage /></OrgScopeGuard>
+            <OrgScopeGuard><CustomerDetailRedirect><OnPremOrgDetailPage /></CustomerDetailRedirect></OrgScopeGuard>
           </RouteGuard>
         ),
       },

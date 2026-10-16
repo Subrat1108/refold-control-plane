@@ -67,11 +67,12 @@ test('super admin smoke: Home, Portfolio, Account 360, Approvals, Audit log, Sta
   const firstAccountLink = page.locator('table a[href^="/accounts/"]').first()
   await expect(firstAccountLink).toBeVisible()
   const accountName = (await firstAccountLink.textContent())?.trim()
+  const accountId = ((await firstAccountLink.getAttribute('href')) ?? '').replace('/accounts/', '')
   await firstAccountLink.click()
   if (accountName) await expect(page.getByRole('heading', { name: accountName })).toBeVisible()
   await expectNoErrors(page, errors)
 
-  for (const tabName of ['Overview', 'Projects', 'Escalations', 'Tickets', 'Engagements', 'Action items', 'Metrics']) {
+  for (const tabName of ['Overview', 'Deployment', 'Projects', 'Escalations', 'Tickets', 'Engagements', 'Action items', 'Metrics']) {
     await page.getByRole('tab', { name: tabName }).click()
     await expectNoErrors(page, errors)
   }
@@ -121,6 +122,21 @@ test('super admin smoke: Home, Portfolio, Account 360, Approvals, Audit log, Sta
     await page.waitForTimeout(500) // let the mutation + refetch settle
   }
   await expectNoErrors(page, errors)
+
+  // ── Stage 2a: the deployment picture lives on the account page now ──
+  await page.goto('/accounts/' + accountId)
+  await page.getByRole('tab', { name: 'Deployment' }).click()
+  await expect(page.getByRole('heading', { name: 'Deployment', exact: true })).toBeVisible()
+  await expect(page.getByRole('heading', { name: 'Platform metrics' })).toBeVisible()
+  await expectNoErrors(page, errors)
+
+  // An old customer-detail link folds into it rather than showing half the
+  // picture.
+  await page.goto('/cloud-customers/' + accountId)
+  await expect(page).toHaveURL(new RegExp('/accounts/' + accountId))
+  await expectNoErrors(page, errors)
+
+  await page.getByRole('link', { name: 'Approvals' }).click()
 
   // ── Approvals as ONE list, one card design ──
   // A record with no account is not a different species from one that has
