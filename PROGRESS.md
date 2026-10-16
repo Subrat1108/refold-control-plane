@@ -78,7 +78,13 @@ Points, streaks, badges, team leaderboards — computed from the audit log + pro
 (See docs/devlog.md for full session history — this is just the pointer.)
 
 Date: 2026-10-16
-Completed: Session 55 — made the documentation protocol enforceable (D-150).
+Completed: Session 56 — Stage 2b part 1 (D-151): accounts and tenants
+are editable at last (name, segment, lifecycle, deployment shape), and a
+tenant can be moved to a different account — which moves its records across
+all twelve tenant-bearing tables plus its account_sources identifiers in one
+transaction, since leaving those behind would file records under an account
+the tenant no longer belongs to.
+Session 55 — made the documentation protocol enforceable (D-150).
 The owner should not have to ask whether docs were updated; they had to
 twice. `npm run docs:check` now fails when devlog/CLAUDE.md/PROGRESS.md
 disagree about the latest session or the devlog cites a missing D- id, and

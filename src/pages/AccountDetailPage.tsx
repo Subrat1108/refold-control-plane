@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import { Link, useParams } from 'react-router-dom'
 import { useQueryClient } from '@tanstack/react-query'
 import { ChevronLeft, Plus, Trash2, UserPlus } from 'lucide-react'
@@ -52,6 +52,9 @@ import {
   deleteMetricValue,
   useTenants,
   createTenant,
+  updateTenant,
+  moveTenant,
+  useAccountTree,
   deleteTenant,
   useAccountSources,
   createAccountSource,
@@ -75,9 +78,13 @@ import type {
   Account,
   AccountSourceType,
   AssignmentRole,
+  DeploymentModel,
+  DeploymentType,
   EngagementType,
+  LifecycleStage,
   Project,
   RiskSeverity,
+  Tenant,
   TicketPriority,
 } from '@/types'
 
@@ -108,6 +115,8 @@ export function AccountDetailPage() {
   const { data: edlNamesByOrg } = useEdlNamesByOrg()
   const { data: coverage } = useCoverage()
   const [healthModalOpen, setHealthModalOpen] = useState(false)
+  const [editAccountOpen, setEditAccountOpen] = useState(false)
+  const [editTenant, setEditTenant] = useState<Tenant | null>(null)
   const [roleModalOpen, setRoleModalOpen] = useState(false)
   const { profile } = useSupabaseAuth()
   const { data: myRoles } = usePersonRoles(profile?.id ?? null)
@@ -172,7 +181,10 @@ export function AccountDetailPage() {
 
       <div className="flex items-start justify-between gap-4 flex-wrap">
         <div>
-          <h1 className="text-xl font-semibold text-foreground">{account.name}</h1>
+          <div className="flex items-center gap-2">
+            <h1 className="text-xl font-semibold text-foreground">{account.name}</h1>
+            <button onClick={() => setEditAccountOpen(true)} className="text-xs font-medium text-primary hover:underline">Edit</button>
+          </div>
           <p className="text-sm text-muted-foreground mt-0.5">
             {segmentName} · {(account.deploymentModel ?? '—').replace(/_/g, ' ')} · EDL: {edlNames}
           </p>
@@ -227,7 +239,7 @@ export function AccountDetailPage() {
       {tab === 'overview' && (
         <OverviewTab account={account} onChangeHealth={() => setHealthModalOpen(true)} onMarkVerified={handleMarkVerified} />
       )}
-      {tab === 'deployment' && <DeploymentTab account={account} />}
+      {tab === 'deployment' && <DeploymentTab account={account} onEditTenant={setEditTenant} />}
       {tab === 'projects' && <ProjectsTab orgId={account.id} people={people ?? []} />}
       {tab === 'escalations' && <EscalationsTab orgId={account.id} />}
       {tab === 'tickets' && <TicketsTab orgId={account.id} />}
@@ -236,6 +248,8 @@ export function AccountDetailPage() {
       {tab === 'metrics' && <MetricsTab orgId={account.id} />}
 
       <ChangeHealthModal account={account} open={healthModalOpen} onClose={() => setHealthModalOpen(false)} />
+      <EditAccountModal account={account} open={editAccountOpen} onClose={() => setEditAccountOpen(false)} />
+      <EditTenantModal tenant={editTenant} onClose={() => setEditTenant(null)} />
       <AddMyRoleModal
         orgId={account.id}
         profileId={profile?.id ?? null}
@@ -1228,7 +1242,7 @@ function MetricsTab({ orgId }: { orgId: string }) {
 // the deployment and the tenants under it — and says plainly where real
 // figures are still missing. A sparse honest page beats a full fictional one;
 // "Add details" (Stage 2c) is how the gaps get filled.
-function DeploymentTab({ account }: { account: Account }) {
+function DeploymentTab({ account, onEditTenant }: { account: Account; onEditTenant: (t: Tenant) => void }) {
   const { data: tenants, isLoading } = useTenants(account.id)
 
   const shape = account.deploymentModel ?? (account.deploymentType === 'on_premise' ? 'onprem_airgapped' : 'cloud')
@@ -1291,6 +1305,7 @@ function DeploymentTab({ account }: { account: Account }) {
                             {t.linkedAccountId && <> · linked account <code className="font-mono">{t.linkedAccountId}</code></>}
                           </p>
                         </div>
+                        <button onClick={() => onEditTenant(t)} className="text-xs font-medium text-primary hover:underline whitespace-nowrap">Edit</button>
                       </li>
                     ))}
                   </ul>
@@ -1311,5 +1326,218 @@ function DeploymentTab({ account }: { account: Account }) {
         />
       </section>
     </div>
+  )
+}
+
+// Stage 2b — an account's own details were write-once: you could create one
+// but never correct its name, segment, lifecycle or deployment shape. That
+// is untenable when half of them are created mid-approval from a company
+// name the agent guessed.
+function EditAccountModal({ account, open, onClose }: { account: Account; open: boolean; onClose: () => void }) {
+  const { profile } = useSupabaseAuth()
+  const qc = useQueryClient()
+  const { data: segments } = useSegments()
+  const [name, setName] = useState(account.name)
+  const [segmentId, setSegmentId] = useState(account.segmentId ?? '')
+  const [lifecycle, setLifecycle] = useState<LifecycleStage>(account.lifecycleStage)
+  const [deploymentType, setDeploymentType] = useState<DeploymentType>(account.deploymentType)
+  const [deploymentModel, setDeploymentModel] = useState<DeploymentModel | ''>(account.deploymentModel ?? '')
+  const [busy, setBusy] = useState(false)
+  const [error, setError] = useState<string | null>(null)
+
+  useEffect(() => {
+    if (!open) return
+    setName(account.name)
+    setSegmentId(account.segmentId ?? '')
+    setLifecycle(account.lifecycleStage)
+    setDeploymentType(account.deploymentType)
+    setDeploymentModel(account.deploymentModel ?? '')
+    setError(null)
+  }, [open, account])
+
+  async function save() {
+    if (!profile) return
+    setBusy(true); setError(null)
+    try {
+      if (!name.trim()) throw new Error('An account needs a name')
+      await updateAccount(account.id, {
+        name: name.trim(),
+        segmentId: segmentId || null,
+        lifecycleStage: lifecycle,
+        deploymentType,
+        deploymentModel: deploymentModel || null,
+      }, profile.id)
+      qc.invalidateQueries({ queryKey: ['account', account.id] })
+      qc.invalidateQueries({ queryKey: ['accounts'] })
+      qc.invalidateQueries({ queryKey: ['account-tree'] })
+      onClose()
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Could not save')
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  return (
+    <Modal open={open} onClose={onClose} title="Edit account">
+      <div className="space-y-4">
+        <div>
+          <label htmlFor="edit-acct-name" className="block text-xs font-medium text-muted-foreground mb-1">Account name</label>
+          <input id="edit-acct-name" value={name} onChange={(e) => setName(e.target.value)} className="w-full rounded-md border border-border px-3 py-2 text-sm" />
+        </div>
+        <div className="grid grid-cols-2 gap-3">
+          <div>
+            <label htmlFor="edit-acct-segment" className="block text-xs font-medium text-muted-foreground mb-1">Segment</label>
+            <select id="edit-acct-segment" value={segmentId} onChange={(e) => setSegmentId(e.target.value)} className="w-full rounded-md border border-border px-3 py-2 text-sm bg-white">
+              <option value="">—</option>
+              {(segments ?? []).map((sg) => <option key={sg.id} value={sg.id}>{sg.name}</option>)}
+            </select>
+          </div>
+          <div>
+            <label htmlFor="edit-acct-lifecycle" className="block text-xs font-medium text-muted-foreground mb-1">Lifecycle stage</label>
+            <select id="edit-acct-lifecycle" value={lifecycle} onChange={(e) => setLifecycle(e.target.value as LifecycleStage)} className="w-full rounded-md border border-border px-3 py-2 text-sm bg-white">
+              {['prospect', 'poc', 'onboarding', 'live', 'expansion', 'renewal', 'churned', 'dormant'].map((v) => (
+                <option key={v} value={v}>{v.replace(/_/g, ' ')}</option>
+              ))}
+            </select>
+          </div>
+          <div>
+            <label htmlFor="edit-acct-dtype" className="block text-xs font-medium text-muted-foreground mb-1">Deployment type</label>
+            <select id="edit-acct-dtype" value={deploymentType} onChange={(e) => setDeploymentType(e.target.value as DeploymentType)} className="w-full rounded-md border border-border px-3 py-2 text-sm bg-white">
+              <option value="cloud">Cloud</option>
+              <option value="on_premise">On-premise</option>
+            </select>
+          </div>
+          <div>
+            <label htmlFor="edit-acct-dmodel" className="block text-xs font-medium text-muted-foreground mb-1">Deployment model</label>
+            <select id="edit-acct-dmodel" value={deploymentModel} onChange={(e) => setDeploymentModel(e.target.value as DeploymentModel | '')} className="w-full rounded-md border border-border px-3 py-2 text-sm bg-white">
+              <option value="">—</option>
+              <option value="cloud">Cloud</option>
+              <option value="onprem_managed">On-prem (Refold assisted)</option>
+              <option value="onprem_airgapped">On-prem (air-gapped)</option>
+              <option value="dedicated_cluster">Dedicated cluster</option>
+            </select>
+          </div>
+        </div>
+        <p className="text-xs text-muted-foreground">
+          The deployment model decides whether this account has tenants at all — cloud accounts are tracked at account level only.
+        </p>
+        {error && <p className="text-sm text-red-600">{error}</p>}
+        <div className="flex justify-end gap-2">
+          <button onClick={onClose} className="rounded-md border border-border px-3 py-2 text-sm font-medium text-muted-foreground">Cancel</button>
+          <button onClick={save} disabled={busy} className="rounded-md bg-primary px-3 py-2 text-sm font-medium text-white hover:bg-primary/90 disabled:opacity-50">
+            {busy ? 'Saving…' : 'Save'}
+          </button>
+        </div>
+      </div>
+    </Modal>
+  )
+}
+
+// A tenant's details AND its parent account. Moving it is the interesting
+// case: twelve tables carry tenant_id beside org_id, so move_tenant() shifts
+// the tenant and every record of it together — otherwise those records would
+// quietly sit under an account the tenant no longer belongs to.
+function EditTenantModal({ tenant, onClose }: { tenant: Tenant | null; onClose: () => void }) {
+  const qc = useQueryClient()
+  const { data: tree } = useAccountTree()
+  const [name, setName] = useState('')
+  const [clusterName, setClusterName] = useState('')
+  const [namespaceName, setNamespaceName] = useState('')
+  const [refoldOrgId, setRefoldOrgId] = useState('')
+  const [linkedAccountId, setLinkedAccountId] = useState('')
+  const [parentOrgId, setParentOrgId] = useState('')
+  const [busy, setBusy] = useState(false)
+  const [error, setError] = useState<string | null>(null)
+  const [moved, setMoved] = useState<number | null>(null)
+
+  useEffect(() => {
+    if (!tenant) return
+    setName(tenant.name)
+    setClusterName(tenant.clusterName ?? '')
+    setNamespaceName(tenant.namespaceName ?? '')
+    setRefoldOrgId(tenant.refoldOrgId ?? '')
+    setLinkedAccountId(tenant.linkedAccountId ?? '')
+    setParentOrgId(tenant.orgId)
+    setError(null); setMoved(null)
+  }, [tenant])
+
+  if (!tenant) return null
+
+  async function save() {
+    if (!tenant) return
+    setBusy(true); setError(null)
+    try {
+      if (!name.trim()) throw new Error('A tenant needs a name')
+      await updateTenant(tenant.id, {
+        name: name.trim(),
+        clusterName: clusterName.trim() || null,
+        namespaceName: namespaceName.trim() || null,
+        refoldOrgId: refoldOrgId.trim() || null,
+        linkedAccountId: linkedAccountId.trim() || null,
+      })
+      if (parentOrgId && parentOrgId !== tenant.orgId) {
+        const n = await moveTenant(tenant.id, parentOrgId)
+        setMoved(n)
+      }
+      qc.invalidateQueries({ queryKey: ['tenants'] })
+      qc.invalidateQueries({ queryKey: ['account-tree'] })
+      qc.invalidateQueries({ queryKey: ['accounts'] })
+      onClose()
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Could not save')
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  const movingAway = parentOrgId && parentOrgId !== tenant.orgId
+
+  return (
+    <Modal open={!!tenant} onClose={onClose} title="Edit tenant">
+      <div className="space-y-4">
+        <div>
+          <label htmlFor="edit-ten-name" className="block text-xs font-medium text-muted-foreground mb-1">Tenant name <span className="font-normal">(the signup / Refold org)</span></label>
+          <input id="edit-ten-name" value={name} onChange={(e) => setName(e.target.value)} className="w-full rounded-md border border-border px-3 py-2 text-sm" />
+        </div>
+        <div>
+          <label htmlFor="edit-ten-parent" className="block text-xs font-medium text-muted-foreground mb-1">Belongs to account</label>
+          <select id="edit-ten-parent" value={parentOrgId} onChange={(e) => setParentOrgId(e.target.value)} className="w-full rounded-md border border-border px-3 py-2 text-sm bg-white">
+            {(tree ?? []).map((a) => <option key={a.id} value={a.id}>{a.name}</option>)}
+          </select>
+          {movingAway && (
+            <p className="text-xs text-amber-700 mt-1">
+              Every record of this tenant moves with it, so nothing ends up filed under the account it is leaving.
+            </p>
+          )}
+        </div>
+        <div className="grid grid-cols-2 gap-3">
+          <div>
+            <label htmlFor="edit-ten-cluster" className="block text-xs font-medium text-muted-foreground mb-1">Cluster</label>
+            <input id="edit-ten-cluster" value={clusterName} onChange={(e) => setClusterName(e.target.value)} placeholder="on-prem only" className="w-full rounded-md border border-border px-3 py-2 text-sm" />
+          </div>
+          <div>
+            <label htmlFor="edit-ten-namespace" className="block text-xs font-medium text-muted-foreground mb-1">Namespace</label>
+            <input id="edit-ten-namespace" value={namespaceName} onChange={(e) => setNamespaceName(e.target.value)} placeholder="on-prem only" className="w-full rounded-md border border-border px-3 py-2 text-sm" />
+          </div>
+          <div>
+            <label htmlFor="edit-ten-org" className="block text-xs font-medium text-muted-foreground mb-1">Refold org id</label>
+            <input id="edit-ten-org" value={refoldOrgId} onChange={(e) => setRefoldOrgId(e.target.value)} className="w-full rounded-md border border-border px-3 py-2 text-sm" />
+          </div>
+          <div>
+            <label htmlFor="edit-ten-linked" className="block text-xs font-medium text-muted-foreground mb-1">Linked account id</label>
+            <input id="edit-ten-linked" value={linkedAccountId} onChange={(e) => setLinkedAccountId(e.target.value)} className="w-full rounded-md border border-border px-3 py-2 text-sm" />
+          </div>
+        </div>
+        {error && <p className="text-sm text-red-600">{error}</p>}
+        {moved !== null && <p className="text-sm text-muted-foreground">{moved} record(s) moved with it.</p>}
+        <div className="flex justify-end gap-2">
+          <button onClick={onClose} className="rounded-md border border-border px-3 py-2 text-sm font-medium text-muted-foreground">Cancel</button>
+          <button onClick={save} disabled={busy} className="rounded-md bg-primary px-3 py-2 text-sm font-medium text-white hover:bg-primary/90 disabled:opacity-50">
+            {busy ? 'Saving…' : 'Save'}
+          </button>
+        </div>
+      </div>
+    </Modal>
   )
 }

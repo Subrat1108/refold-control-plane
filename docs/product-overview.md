@@ -266,6 +266,19 @@ Reports history and logged as an engagement.
 - Search + "Ask the Hub" answers over KB, docs, and account records (scoped by
   role).
 
+### 5.11b Editing an account or a tenant
+
+Both are editable after creation, which matters because many accounts are
+created mid-approval from a company name the agent guessed. **Edit** beside
+the account name opens name, segment, lifecycle stage, deployment type and
+deployment model — the last of which decides whether the account has tenants
+at all.
+
+A tenant's **Edit** covers its name, its cluster / namespace / Refold org id
+/ linked account id, and **which account it belongs to**. Moving it carries
+every record of that tenant with it, so nothing is left filed under the
+account it has left.
+
 ### 5.12 Approvals and Audit
 
 - **Approvals:** one inbox, one list, **one card design** for every pending

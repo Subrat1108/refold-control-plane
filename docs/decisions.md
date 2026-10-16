@@ -2191,6 +2191,35 @@ What the check cannot catch is whether the spec was updated when it should
 have been — there is no reliable textual signal for "the domain model
 changed" — so that stays a prompted note rather than a gate.
 
+## D-151 — accounts and tenants were write-once; moving a tenant is not an UPDATE (2026-10-16)
+Neither an account nor a tenant could be corrected after creation — no name,
+segment, lifecycle, deployment shape, and no way to change which account a
+tenant belonged to. That is untenable here specifically because so many are
+created mid-approval from a company name the agent guessed, and because the
+owner's own Kantata split happened *after* its tenants existed.
+
+Editing the simple fields is ordinary (`updateAccount` already took most of
+them and merely had no UI; `updateTenant` is new). **Re-parenting is not.**
+Twelve tables carry `tenant_id` beside `org_id`, so changing only the
+tenant's parent would leave every record of that tenant pointing at an
+account it no longer belongs to — silently, with no error, surfacing only as
+a record appearing under the wrong customer. `move_tenant()` does both halves
+in one SECURITY DEFINER transaction: the tenant, its records across all
+twelve tables, and the `account_sources` identifiers that resolve to it (left
+behind, those would make the next sync re-attribute the tenant's traffic to
+the account it just left).
+
+Two deliberate refusals rather than silent behaviour: moving onto an account
+that already has a tenant of that name raises a readable message instead of a
+raw 23505, and a move to the current parent is a 0-row no-op instead of an
+error. One explicit UPDATE per table, matching `apply_proposal()`'s fixed
+allow-list style — a dynamic loop over `information_schema` would silently
+pick up any future table, which is exactly the implicit behaviour this
+codebase avoids.
+
+The RLS block asserts the property that matters and cannot be eyeballed: after
+a move, no record disagrees with its tenant about which account it belongs to.
+
 # Parked
 
 Out-of-scope ideas land here instead of derailing the current prompt block.

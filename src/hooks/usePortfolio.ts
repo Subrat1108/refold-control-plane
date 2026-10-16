@@ -147,6 +147,7 @@ export interface UpdateAccountInput {
   name?: string
   segmentId?: string | null
   deploymentModel?: Account['deploymentModel']
+  deploymentType?: Account['deploymentType']
   lifecycleStage?: LifecycleStage
   health?: OrgHealth
   healthReason?: string | null
@@ -157,6 +158,7 @@ export async function updateAccount(orgId: string, patch: UpdateAccountInput, ac
   if (patch.name !== undefined) update.name = patch.name
   if (patch.segmentId !== undefined) update.segment_id = patch.segmentId
   if (patch.deploymentModel !== undefined) update.deployment_model = patch.deploymentModel
+  if (patch.deploymentType !== undefined) update.deployment_type = patch.deploymentType
   if (patch.lifecycleStage !== undefined) update.lifecycle_stage = patch.lifecycleStage
   if (patch.health !== undefined) update.health = patch.health
   if (patch.healthReason !== undefined) update.health_reason = patch.healthReason

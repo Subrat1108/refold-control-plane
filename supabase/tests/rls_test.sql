@@ -1208,3 +1208,72 @@ begin
 
   raise notice 'ALL TENANT IDENTIFICATION RLS TESTS PASSED';
 end $$;
+
+-- ── Moving a tenant between accounts (Stage 2b) ───────────────────────────
+do $$
+declare
+  n int;
+  v_a uuid; v_b uuid; v_tenant uuid; v_rec uuid; v_moved int;
+begin
+  select id into v_a from public.organizations where name = 'Prism Analytics';
+  select id into v_b from public.organizations where name = 'Meridian Laboratories';
+
+  set local role authenticated;
+  set local request.jwt.claims = '{"sub":"00000000-0000-0000-0000-000000001001","aal":"aal2"}'; -- super admin
+
+  insert into public.tenants (org_id, name) values (v_a, 'move-me') returning id into v_tenant;
+  -- A record of that tenant, filed under the SAME account.
+  insert into public.escalations (org_id, tenant_id, title, source)
+  values (v_a, v_tenant, 'escalation that must follow its tenant', 'manual') returning id into v_rec;
+  -- And an identifier that resolves to it, which must follow too or the next
+  -- sync re-attributes the tenant's traffic to the account it left.
+  insert into public.account_sources (org_id, tenant_id, source_type, value)
+  values (v_a, v_tenant, 'name_variant', 'move-me-identifier');
+
+  select public.move_tenant(v_tenant, v_b) into v_moved;
+  assert v_moved >= 2, format('the escalation and the identifier should both move, got %s rows', v_moved);
+
+  select count(*) into n from public.tenants where id = v_tenant and org_id = v_b;
+  assert n = 1, 'the tenant itself should now belong to the new account';
+  -- THE point of the function: a record must never be left pointing at an
+  -- account its tenant no longer belongs to.
+  select count(*) into n from public.escalations where id = v_rec and org_id = v_b;
+  assert n = 1, 'the escalation must have moved with its tenant';
+  select count(*) into n from public.account_sources where tenant_id = v_tenant and org_id = v_b;
+  assert n = 1, 'the identifier must have moved with its tenant';
+  select count(*) into n from public.escalations e join public.tenants t on t.id = e.tenant_id
+   where e.tenant_id = v_tenant and e.org_id <> t.org_id;
+  assert n = 0, 'no record may disagree with its tenant about which account it belongs to';
+
+  -- Moving to where it already is is a no-op, not an error.
+  select public.move_tenant(v_tenant, v_b) into v_moved;
+  assert v_moved = 0, format('moving a tenant to its current account should do nothing, got %s', v_moved);
+
+  -- A name collision is reported plainly rather than surfacing as a raw
+  -- unique-violation the UI cannot explain.
+  insert into public.tenants (org_id, name) values (v_a, 'move-me');
+  begin
+    perform public.move_tenant(v_tenant, v_a);
+    assert false, 'moving onto a duplicate tenant name should have been refused';
+  exception when others then
+    assert sqlerrm like '%already has a tenant called%', format('expected a readable collision message, got: %s', sqlerrm);
+  end;
+
+  delete from public.escalations where id = v_rec;
+  delete from public.account_sources where tenant_id = v_tenant;
+  delete from public.tenants where name = 'move-me';
+  reset role;
+
+  -- Only a super admin with AAL2 may move one.
+  set local role authenticated;
+  set local request.jwt.claims = '{"sub":"00000000-0000-0000-0000-000000001002","aal":"aal2"}'; -- Prism owner
+  begin
+    perform public.move_tenant(gen_random_uuid(), gen_random_uuid());
+    assert false, 'a customer owner must not be able to move a tenant';
+  exception when others then
+    null; -- expected
+  end;
+  reset role;
+
+  raise notice 'ALL MOVE TENANT RLS TESTS PASSED';
+end $$;

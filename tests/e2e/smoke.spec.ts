@@ -130,6 +130,17 @@ test('super admin smoke: Home, Portfolio, Account 360, Approvals, Audit log, Sta
   await expect(page.getByRole('heading', { name: 'Platform metrics' })).toBeVisible()
   await expectNoErrors(page, errors)
 
+  // Stage 2b: an account's own details are editable — they used to be
+  // write-once, which is untenable when half are created mid-approval from
+  // a name the agent guessed.
+  await page.getByRole('button', { name: 'Edit' }).first().click()
+  await expect(page.getByRole('dialog', { name: 'Edit account' })).toBeVisible()
+  await expect(page.getByLabel('Account name')).toBeVisible()
+  await expect(page.getByLabel('Lifecycle stage')).toBeVisible()
+  await expect(page.getByLabel('Deployment model')).toBeVisible()
+  await page.getByRole('button', { name: 'Cancel' }).click()
+  await expectNoErrors(page, errors)
+
   // An old customer-detail link folds into it rather than showing half the
   // picture.
   await page.goto('/cloud-customers/' + accountId)

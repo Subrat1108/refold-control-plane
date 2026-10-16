@@ -16,6 +16,35 @@ Template:
 
 ---
 
+## Session 56 — 2026-10-16 — Stage 2b (part 1): accounts and tenants are editable
+**Built:** The owner found that nothing about an account or tenant could be
+changed after creation — name, segment, lifecycle, deployment shape, or which
+account a tenant sits under (D-151). Added `EditAccountModal` (all of the
+above, reachable from the account header) and `EditTenantModal` (name,
+cluster, namespace, Refold org id, linked account id, AND parent account),
+plus `updateTenant` and a `move_tenant()` SQL function. `updateAccount`
+gained `deploymentType`; it already took the rest and simply had no UI.
+Re-parenting is the non-obvious part: twelve tables carry `tenant_id` beside
+`org_id`, so `move_tenant()` moves the tenant, its records across all twelve,
+and its `account_sources` identifiers in one transaction — leaving those
+behind would make the next sync re-attribute the tenant's traffic to the
+account it just left.
+**Deviations:** none. Scope added to Stage 2b at the owner's request; the
+Portfolio-board hierarchy and per-tenant pages are still to come in 2b.
+**Verified:** new RLS block asserting the property that cannot be eyeballed —
+after a move, no record disagrees with its tenant about which account it
+belongs to — plus a readable name-collision refusal, a no-op self-move, and
+that a customer owner cannot move anything; 17 blocks total; smoke-login;
+e2e extended for the edit-account modal; typecheck/lint/build; migration
+pushed.
+**Decisions:** D-151
+**Next:** Stage 2b part 2 — hierarchy on the Portfolio board + per-tenant
+pages. Then 2d (retire useMockData), 2c (Add details + upload).
+**Issues:** unchanged — kill switch on, 30 units queued; Naehas cluster names
+still unknown.
+
+---
+
 ## Session 55 — 2026-10-16 — make the doc protocol enforceable
 **Built:** The owner asked not to have to prompt for doc updates after every
 deployment, decision and spec change. The protocol already required most of

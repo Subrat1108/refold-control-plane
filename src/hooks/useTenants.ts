@@ -141,3 +141,38 @@ async function fetchAccountTree(): Promise<AccountTreeNode[]> {
 export function useAccountTree() {
   return useQuery({ queryKey: ['account-tree'], queryFn: fetchAccountTree })
 }
+
+// A tenant's own details. Everything except its parent, which needs the
+// atomic move below.
+export interface UpdateTenantInput {
+  name?: string
+  notes?: string | null
+  clusterName?: string | null
+  namespaceName?: string | null
+  refoldOrgId?: string | null
+  linkedAccountId?: string | null
+}
+
+export async function updateTenant(id: string, patch: UpdateTenantInput): Promise<void> {
+  const update: Record<string, unknown> = {}
+  if (patch.name !== undefined) update.name = patch.name
+  if (patch.notes !== undefined) update.notes = patch.notes
+  if (patch.clusterName !== undefined) update.cluster_name = patch.clusterName
+  if (patch.namespaceName !== undefined) update.namespace_name = patch.namespaceName
+  if (patch.refoldOrgId !== undefined) update.refold_org_id = patch.refoldOrgId
+  if (patch.linkedAccountId !== undefined) update.linked_account_id = patch.linkedAccountId
+  if (Object.keys(update).length === 0) return
+  const { error } = await supabase.from('tenants').update(update).eq('id', id)
+  if (error) throw new Error(error.message)
+}
+
+// Re-parent a tenant. NOT a plain update: twelve tables carry tenant_id
+// beside org_id, so the tenant and all of its records must move together or
+// the records end up filed under an account the tenant no longer belongs to.
+// move_tenant() does both halves in one transaction and returns how many
+// rows followed.
+export async function moveTenant(tenantId: string, newOrgId: string): Promise<number> {
+  const { data, error } = await supabase.rpc('move_tenant', { p_tenant_id: tenantId, p_new_org_id: newOrgId })
+  if (error) throw new Error(error.message)
+  return Number(data ?? 0)
+}
