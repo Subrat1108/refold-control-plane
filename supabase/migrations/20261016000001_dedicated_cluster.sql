@@ -1,0 +1,13 @@
+-- Production-readiness — a third deployment shape.
+--
+-- Cloud and on-prem were the only two. A "dedicated cluster" customer gets
+-- a Refold-managed cluster of their own (Kantata) with several orgs inside
+-- it — the same hierarchy as on-prem minus the namespace layer. It is not
+-- cloud (not shared) and not on-prem (not the customer's infrastructure),
+-- and treating it as either loses the distinction the CS team actually
+-- works with.
+--
+-- A brand-new enum value cannot be USED in the transaction that adds it,
+-- so nothing here may reference it; the UI reads it from the enum at
+-- runtime via get_enum_values(), and no backfill is needed.
+alter type public.deployment_model add value if not exists 'dedicated_cluster';

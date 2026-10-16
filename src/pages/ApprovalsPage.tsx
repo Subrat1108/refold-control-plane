@@ -8,11 +8,11 @@ import {
   rejectProposal,
   useScope,
   useScopedAccountIds,
-  useAccountResolutions,
   useHeldRecords,
 } from '@/hooks'
 import { resolveAccountProposal, reassignProposal } from '@/lib/provisioning'
 import { AccountTenantPicker, type AccountChoice } from '@/components/AccountTenantPicker'
+import { createProject } from '@/hooks/usePortfolio'
 import { SourceBadge } from '@/components/SourceBadge'
 import { Modal } from '@/components/Modal'
 import { ScopeSwitcher } from '@/components/ScopeSwitcher'
@@ -21,8 +21,7 @@ import { CardSkeleton } from '@/components/SkeletonLoader'
 import { ErrorState } from '@/components/ErrorState'
 import { EmptyState } from '@/components/EmptyState'
 import { formatDate } from '@/utils/formatDate'
-import type { ProposalRow, ResolutionCandidate, SavedView } from '@/types'
-import type { HeldRecordRow } from '@/hooks/useApprovals'
+import type { ProposalRow, SavedView } from '@/types'
 
 const PAGE = 'approvals'
 const TARGET_TABLES = ['milestones', 'accomplishments', 'risks', 'escalations', 'tickets', 'metric_values', 'organizations']
@@ -37,39 +36,51 @@ export function ApprovalsPage() {
   const [selected, setSelected] = useState<Set<string>>(new Set())
   const [editTarget, setEditTarget] = useState<ProposalRow | null>(null)
   const [rejectTarget, setRejectTarget] = useState<ProposalRow | null>(null)
-  const [moveTarget, setMoveTarget] = useState<HeldRecordRow | null>(null)
-  const [clusterTarget, setClusterTarget] = useState<Cluster | null>(null)
-  const [moveProposalTarget, setMoveProposalTarget] = useState<ProposalRow | null>(null)
+  const [accountTarget, setAccountTarget] = useState<ApprovalItem | null>(null)
 
   const { data: proposals, isLoading, isError, refetch } = useProposals({
     targetTable: targetTable || undefined,
     source: source || undefined,
     orgIds: scope === 'everyone' ? null : scopedIds,
   })
-  const { data: resolutions } = useAccountResolutions()
   const { data: heldRecords } = useHeldRecords()
 
-  // One list, but a decision is asked once per unrecognised identifier
-  // rather than once per record: 17 records behind one Zendesk org is one
-  // decision, not 17. Each row inside can still be sent somewhere else.
-  const clusters: Cluster[] = (() => {
-    const byKey = new Map<string, Cluster>()
+  // ONE shape for every pending item, attributed or not. The two used to
+  // look like different species — an amber grouped block for records with
+  // no account, a white card for the rest — which made the screen read as
+  // two jobs. It is one job: decide about a record. The only difference is
+  // that an unattributed one has to be told where it belongs first.
+  const items: ApprovalItem[] = (() => {
+    const out: ApprovalItem[] = []
+
     for (const h of heldRecords ?? []) {
-      const key = h.resolutionId ?? `orphan:${h.id}`
-      const found = byKey.get(key)
-      if (found) { found.records.push(h); continue }
-      const res = (resolutions ?? []).find((r) => r.id === h.resolutionId)
-      byKey.set(key, {
+      const siblings = (heldRecords ?? []).filter((o) => o.resolutionId && o.resolutionId === h.resolutionId)
+      out.push({
+        id: h.id, kind: 'held',
+        heading: `Add · ${h.recordType.replace(/_/g, ' ')}`,
+        title: h.summary,
+        evidenceExcerpt: h.evidenceExcerpt, evidenceUrl: h.evidenceUrl,
+        accountName: null, identifier: h.observedName,
         resolutionId: h.resolutionId,
-        identifier: h.observedName ?? 'an unrecognised name',
-        scope: res?.scope ?? 'account',
-        knownOrgName: res?.knownOrgName ?? null,
-        candidates: res?.candidates ?? [],
-        firstSeen: res?.createdAt ?? h.createdAt,
-        records: [h],
+        siblingIds: siblings.map((o) => o.id),
+        createdAt: h.createdAt, source: h.source, proposedBy: h.proposedBy,
       })
     }
-    return [...byKey.values()].sort((a, b) => b.firstSeen.localeCompare(a.firstSeen))
+
+    for (const pr of proposals ?? []) {
+      out.push({
+        id: pr.id, kind: 'proposal',
+        heading: `${pr.operation} · ${pr.targetTable.replace(/_/g, ' ')}`,
+        title: null,
+        evidenceExcerpt: pr.evidenceExcerpt, evidenceUrl: pr.evidenceUrl,
+        accountName: pr.accountName, identifier: null,
+        resolutionId: null, siblingIds: [],
+        createdAt: pr.createdAt, source: pr.source, proposedBy: pr.proposedBy,
+        proposal: pr,
+      })
+    }
+
+    return out.sort((x, y) => y.createdAt.localeCompare(x.createdAt))
   })()
 
   const refresh = () => {
@@ -147,37 +158,24 @@ export function ApprovalsPage() {
         </div>
       )}
 
-      {clusters.length > 0 && (
-        <div className="space-y-3">
-          {clusters.map((c) => (
-            <UnresolvedCluster
-              key={c.resolutionId ?? c.identifier}
-              cluster={c}
-              onDecide={() => setClusterTarget(c)}
-              onMoveOne={(rec) => setMoveTarget(rec)}
-            />
-          ))}
-        </div>
-      )}
-
       {isLoading ? (
         <CardSkeleton />
       ) : isError ? (
         <ErrorState onRetry={() => refetch()} />
-      ) : (proposals ?? []).length === 0 && clusters.length === 0 ? (
-        <EmptyState title="Nothing pending" description="All caught up — no proposals waiting for a decision in this scope." />
+      ) : items.length === 0 ? (
+        <EmptyState title="Nothing pending" description="All caught up — no records waiting for a decision in this scope." />
       ) : (
         <div className="space-y-3">
-          {(proposals ?? []).map((p) => (
-            <ProposalCard
-              key={p.id}
-              proposal={p}
-              checked={selected.has(p.id)}
-              onToggle={() => toggle(p.id)}
-              onApprove={() => handleApprove(p)}
-              onEdit={() => setEditTarget(p)}
-              onReject={() => setRejectTarget(p)}
-              onMoveAccount={() => setMoveProposalTarget(p)}
+          {items.map((item) => (
+            <RecordCard
+              key={item.id}
+              item={item}
+              checked={selected.has(item.id)}
+              onToggle={() => toggle(item.id)}
+              onApprove={() => item.proposal && handleApprove(item.proposal)}
+              onEdit={() => item.proposal && setEditTarget(item.proposal)}
+              onReject={() => item.proposal && setRejectTarget(item.proposal)}
+              onSetAccount={() => setAccountTarget(item)}
             />
           ))}
         </div>
@@ -185,67 +183,111 @@ export function ApprovalsPage() {
 
       <EditThenApproveModal proposal={editTarget} onClose={() => setEditTarget(null)} onDone={refresh} />
       <RejectModal proposal={rejectTarget} onClose={() => setRejectTarget(null)} onDone={refresh} />
-      <ResolveClusterModal cluster={clusterTarget} onClose={() => setClusterTarget(null)} onDone={refresh} />
-      <MoveAccountModal
-        held={moveTarget}
-        proposal={moveProposalTarget}
-        onClose={() => { setMoveTarget(null); setMoveProposalTarget(null) }}
-        onDone={refresh}
-      />
+      <SetAccountModal item={accountTarget} onClose={() => setAccountTarget(null)} onDone={refresh} />
     </div>
   )
 }
 
-function ProposalCard({ proposal, checked, onToggle, onApprove, onEdit, onReject, onMoveAccount }: {
-  proposal: ProposalRow; checked: boolean; onToggle: () => void; onApprove: () => void; onEdit: () => void; onReject: () => void; onMoveAccount: () => void
+// ONE card for every pending item. An unattributed record is not a
+// different kind of thing needing a different design — it is the same
+// record, missing one answer. So the frame, evidence and actions are
+// identical; only the account line differs, and where it is unknown it
+// carries the control that fixes it.
+export interface ApprovalItem {
+  id: string
+  kind: 'proposal' | 'held'
+  heading: string
+  title: string | null
+  evidenceExcerpt: string | null
+  evidenceUrl: string | null
+  accountName: string | null
+  identifier: string | null
+  resolutionId: string | null
+  siblingIds: string[]
+  createdAt: string
+  source: string
+  proposedBy: string
+  proposal?: ProposalRow
+}
+
+function RecordCard({ item, checked, onToggle, onApprove, onEdit, onReject, onSetAccount }: {
+  item: ApprovalItem; checked: boolean; onToggle: () => void
+  onApprove: () => void; onEdit: () => void; onReject: () => void; onSetAccount: () => void
 }) {
-  const { data: currentRow } = useCurrentRow(proposal.targetTable, proposal.operation === 'create' ? null : proposal.targetId)
-  const payloadKeys = Object.keys(proposal.payload)
+  const p = item.proposal
+  const { data: currentRow } = useCurrentRow(p?.targetTable ?? '', p && p.operation !== 'create' ? p.targetId : null)
+  const payloadKeys = p ? Object.keys(p.payload) : []
+  const needsAccount = !item.accountName
 
   return (
     <div className="bg-white rounded-xl shadow-card p-6 space-y-3">
       <div className="flex items-start justify-between gap-4 flex-wrap">
-        <div className="flex items-start gap-3">
-          <input type="checkbox" checked={checked} onChange={onToggle} className="mt-1" />
-          <div>
-            <p className="text-sm font-semibold text-foreground capitalize">{proposal.operation} · {proposal.targetTable.replace(/_/g, ' ')}</p>
+        <div className="flex items-start gap-3 min-w-0">
+          <input
+            type="checkbox" checked={checked} onChange={onToggle} disabled={needsAccount}
+            title={needsAccount ? 'Set an account before approving' : undefined}
+            className="mt-1 disabled:opacity-40"
+          />
+          <div className="min-w-0">
+            <p className="text-sm font-semibold text-foreground capitalize">{item.heading}</p>
             <p className="text-xs text-muted-foreground mt-0.5">
-              {proposal.accountName ?? 'Unknown account'}
-              {' '}
-              <button onClick={onMoveAccount} className="text-primary hover:underline font-medium">change</button>
-              {' '}· proposed by {proposal.proposedBy} · {formatDate(proposal.createdAt)}
+              {needsAccount ? (
+                <>
+                  <span className="font-medium text-amber-700">No account yet</span>
+                  {item.identifier && <> · seen as <code className="font-mono">{item.identifier}</code></>}
+                </>
+              ) : (
+                <>{item.accountName}{' '}<button onClick={onSetAccount} className="text-primary hover:underline font-medium">change</button></>
+              )}
+              {' '}· proposed by {item.proposedBy} · {formatDate(item.createdAt)}
             </p>
           </div>
         </div>
-        <SourceBadge source={proposal.source} verifiedAt={null} />
+        <SourceBadge source={item.source as ProposalRow['source']} verifiedAt={null} />
       </div>
 
-      {proposal.evidenceUrl && (
+      {item.title && <p className="text-sm text-foreground">{item.title}</p>}
+
+      {(item.evidenceUrl || item.evidenceExcerpt) && (
         <p className="text-xs text-muted-foreground">
-          Evidence: <a href={proposal.evidenceUrl} target="_blank" rel="noreferrer" className="text-primary hover:underline">{proposal.evidenceUrl}</a>
-          {proposal.evidenceExcerpt && <span> — "{proposal.evidenceExcerpt}"</span>}
+          {item.evidenceUrl && <>Evidence: <a href={item.evidenceUrl} target="_blank" rel="noreferrer" className="text-primary hover:underline">{item.evidenceUrl}</a>{item.evidenceExcerpt ? ' — ' : ''}</>}
+          {item.evidenceExcerpt && <span className="italic">&ldquo;{item.evidenceExcerpt}&rdquo;</span>}
         </p>
       )}
 
-      <div className="grid grid-cols-1 md:grid-cols-2 gap-3 text-sm">
-        {proposal.operation !== 'create' && (
-          <div>
-            <p className="text-xs font-semibold text-muted-foreground uppercase mb-1">Current</p>
-            {currentRow ? Object.entries(currentRow).map(([k, v]) => <p key={k} className="text-muted-foreground">{k}: {String(v ?? '—')}</p>) : <p className="text-muted-foreground">—</p>}
-          </div>
-        )}
-        <div>
-          <p className="text-xs font-semibold text-muted-foreground uppercase mb-1">{proposal.operation === 'delete' ? 'Will be deleted' : 'Proposed'}</p>
-          {proposal.operation === 'delete' ? <p className="text-muted-foreground">(entire record)</p> : payloadKeys.length === 0 ? <p className="text-muted-foreground">—</p> : (
-            payloadKeys.map((k) => <p key={k} className="text-foreground">{k}: {String(proposal.payload[k])}</p>)
+      {p && (
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-3 text-sm">
+          {p.operation !== 'create' && (
+            <div>
+              <p className="text-xs font-semibold text-muted-foreground uppercase mb-1">Current</p>
+              {currentRow ? Object.entries(currentRow).map(([k, v]) => <p key={k} className="text-muted-foreground">{k}: {String(v ?? '—')}</p>) : <p className="text-muted-foreground">—</p>}
+            </div>
           )}
+          <div>
+            <p className="text-xs font-semibold text-muted-foreground uppercase mb-1">{p.operation === 'delete' ? 'Will be deleted' : 'Proposed'}</p>
+            {p.operation === 'delete' ? <p className="text-muted-foreground">(entire record)</p> : payloadKeys.length === 0 ? <p className="text-muted-foreground">—</p> : (
+              payloadKeys.map((k) => <p key={k} className="text-foreground">{k}: {String(p.payload[k])}</p>)
+            )}
+          </div>
         </div>
-      </div>
+      )}
 
-      <div className="flex gap-2 pt-2 border-t border-border">
-        <button onClick={onApprove} className="rounded-md bg-primary px-3 py-1.5 text-xs font-medium text-white hover:bg-primary/90">Approve</button>
-        {proposal.operation !== 'delete' && <button onClick={onEdit} className="rounded-md border border-border px-3 py-1.5 text-xs font-medium text-foreground hover:bg-muted">Edit then approve</button>}
-        <button onClick={onReject} className="rounded-md border border-border px-3 py-1.5 text-xs font-medium text-red-600 hover:bg-red-50">Reject</button>
+      <div className="flex items-center gap-2 pt-2 border-t border-border flex-wrap">
+        {needsAccount ? (
+          <>
+            <button onClick={onSetAccount} className="rounded-md bg-primary px-3 py-1.5 text-xs font-medium text-white hover:bg-primary/90">Set account</button>
+            <span className="text-xs text-muted-foreground">
+              Needed before this can be approved
+              {item.siblingIds.length > 1 && <> · {item.siblingIds.length - 1} other record{item.siblingIds.length === 2 ? '' : 's'} share this name</>}
+            </span>
+          </>
+        ) : (
+          <>
+            <button onClick={onApprove} className="rounded-md bg-primary px-3 py-1.5 text-xs font-medium text-white hover:bg-primary/90">Approve</button>
+            {p && p.operation !== 'delete' && <button onClick={onEdit} className="rounded-md border border-border px-3 py-1.5 text-xs font-medium text-foreground hover:bg-muted">Edit then approve</button>}
+            <button onClick={onReject} className="rounded-md border border-border px-3 py-1.5 text-xs font-medium text-red-600 hover:bg-red-50">Reject</button>
+          </>
+        )}
       </div>
     </div>
   )
@@ -325,241 +367,153 @@ function RejectModal({ proposal, onClose, onDone }: { proposal: ProposalRow | nu
   )
 }
 
-// Deciding for a whole cluster at once.
+
+// Setting (or correcting) an item's account.
 //
-// The old modal offered four abstract choices over an opaque string and no
-// way to create what was missing — which is how "CFIHOS is an implementation
-// Octave runs" became unanswerable. Here the records are shown first, the
-// picker carries the real hierarchy, and anything absent can be created in
-// place.
-function ResolveClusterModal({ cluster, onClose, onDone }: {
-  cluster: Cluster | null; onClose: () => void; onDone: () => void
+// Two things this has to get right. First, the decision usually applies to
+// more than one record — several facts arrive from the same unrecognised
+// org — so it offers to apply to all of them rather than making you repeat
+// it; that is the efficiency the grouped layout used to buy, kept without
+// the separate design. Second, a record type that REQUIRES a project (a
+// milestone, an accomplishment) used to dead-end here: "matches no project
+// under Naehas. Create the project on that account first." That is a
+// correct check and a useless instruction, so the project can now be
+// created in place.
+function SetAccountModal({ item, onClose, onDone }: {
+  item: ApprovalItem | null; onClose: () => void; onDone: () => void
 }) {
+  const { profile } = useSupabaseAuth()
   const [choice, setChoice] = useState<AccountChoice | null>(null)
   const [remember, setRemember] = useState(true)
+  const [applyToAll, setApplyToAll] = useState(true)
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [progress, setProgress] = useState<string | null>(null)
+  // Set when the backend refuses for want of a project, so we can offer to
+  // make one instead of leaving the user stuck.
+  const [missingProject, setMissingProject] = useState<string | null>(null)
 
   useEffect(() => {
-    if (!cluster) return
-    setChoice(null); setRemember(true); setError(null); setProgress(null)
-  }, [cluster])
+    if (!item) return
+    setChoice(null); setError(null); setProgress(null); setMissingProject(null)
+    setRemember(!!item.identifier)
+    setApplyToAll(true)
+  }, [item])
 
-  if (!cluster) return null
+  if (!item) return null
 
-  async function apply(ignore = false) {
-    if (!cluster) return
+  const siblings = item.siblingIds.length > 1 ? item.siblingIds.length : 0
+  const targets = applyToAll && siblings ? item.siblingIds : [item.id]
+
+  async function createMissingProject() {
+    if (!choice || !profile || !missingProject) return
     setBusy(true); setError(null)
     try {
-      if (ignore) {
-        if (!cluster.resolutionId) throw new Error('Nothing to ignore here')
-        await resolveAccountProposal({ resolutionId: cluster.resolutionId, decision: 'ignore' })
-      } else {
-        if (!choice) throw new Error('Choose an account first')
-        // Move every record in the cluster. The last one closes the
-        // resolution automatically (reassign_proposal handles that), so
-        // there is no separate "resolve" step to forget.
-        let done = 0
-        for (const rec of cluster.records) {
-          setProgress(`Filing ${++done} of ${cluster.records.length}…`)
-          await reassignProposal({
-            proposalId: rec.id,
-            orgId: choice.orgId,
-            tenantId: choice.tenantId,
-            rememberIdentifier: remember,
-          })
-        }
+      await createProject(choice.orgId, { name: missingProject, health: 'on_schedule' } as never, profile.id)
+      setMissingProject(null)
+      await apply()
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Could not create the project')
+      setBusy(false)
+    }
+  }
+
+  async function apply() {
+    if (!item) return
+    setBusy(true); setError(null); setMissingProject(null)
+    try {
+      if (!choice) throw new Error('Choose an account first')
+      let done = 0
+      for (const id of targets) {
+        if (targets.length > 1) setProgress(`Filing ${++done} of ${targets.length}…`)
+        await reassignProposal({
+          proposalId: id,
+          orgId: choice.orgId,
+          tenantId: choice.tenantId,
+          rememberIdentifier: remember && !!item.identifier,
+        })
       }
       onDone(); onClose()
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Could not apply that')
+      const message = err instanceof Error ? err.message : 'Could not file it'
+      // "a milestone needs a project, and "X" matches no project under Y"
+      const named = /matches no project under/.test(message) ? message.match(/"([^"]+)"/)?.[1] ?? null : null
+      if (named) setMissingProject(named)
+      setError(message)
     } finally {
       setBusy(false); setProgress(null)
     }
   }
 
-  return (
-    <Modal open={!!cluster} onClose={onClose} title="Which account do these belong to?">
-      <div className="space-y-4">
-        <div className="rounded-md bg-muted/50 p-3 space-y-1.5 max-h-44 overflow-y-auto">
-          {cluster.records.map((r) => (
-            <div key={r.id}>
-              <p className="text-sm text-foreground">{r.summary}</p>
-              {r.evidenceExcerpt && <p className="text-xs text-muted-foreground italic">&ldquo;{r.evidenceExcerpt}&rdquo;</p>}
-            </div>
-          ))}
-        </div>
-        <p className="text-xs text-muted-foreground">
-          The Hub saw these as <code className="font-mono">{cluster.identifier}</code> and could not match it to anything it knows.
-        </p>
-
-        <AccountTenantPicker value={choice} onChange={setChoice} id="cluster-account" />
-
-        <label className="flex items-start gap-2 text-sm">
-          <input type="checkbox" checked={remember} onChange={(e) => setRemember(e.target.checked)} className="mt-0.5" />
-          <span>
-            Also remember that <span className="font-medium">&ldquo;{cluster.identifier}&rdquo;</span> means this
-            <span className="block text-xs text-muted-foreground">
-              Future mentions attach on their own. Leave it unticked when the name is a project or a one-off rather than another name for the company.
-            </span>
-          </span>
-        </label>
-
-        {error && <p className="text-sm text-red-600">{error}</p>}
-        {progress && <p className="text-sm text-muted-foreground">{progress}</p>}
-
-        <div className="flex justify-between gap-2">
-          <button onClick={() => apply(true)} disabled={busy} className="rounded-md border border-border px-3 py-2 text-sm font-medium text-muted-foreground hover:bg-muted disabled:opacity-50">
-            Not a customer — ignore
-          </button>
-          <div className="flex gap-2">
-            <button onClick={onClose} className="rounded-md border border-border px-3 py-2 text-sm font-medium text-muted-foreground">Cancel</button>
-            <button onClick={() => apply(false)} disabled={busy || !choice} className="rounded-md bg-primary px-3 py-2 text-sm font-medium text-white hover:bg-primary/90 disabled:opacity-50">
-              {busy ? 'Filing…' : `File ${cluster.records.length} record${cluster.records.length === 1 ? '' : 's'}`}
-            </button>
-          </div>
-        </div>
-      </div>
-    </Modal>
-  )
-}
-
-// A group of records the Hub could not attribute, all sharing one
-// unrecognised identifier.
-//
-// The identifier is deliberately NOT the headline. `zendesk-org:24623057340828`
-// tells a human nothing; the records behind it ("Calendly Auth Issue") tell
-// them everything — and that evidence was sitting in the database unshown
-// while the old modal asked for a decision on the opaque string alone.
-export interface Cluster {
-  resolutionId: string | null
-  identifier: string
-  scope: 'account' | 'tenant'
-  knownOrgName: string | null
-  candidates: ResolutionCandidate[]
-  firstSeen: string
-  records: HeldRecordRow[]
-}
-
-function UnresolvedCluster({ cluster, onDecide, onMoveOne }: {
-  cluster: Cluster; onDecide: () => void; onMoveOne: (r: HeldRecordRow) => void
-}) {
-  const [expanded, setExpanded] = useState(false)
-  const shown = expanded ? cluster.records : cluster.records.slice(0, 3)
-
-  return (
-    <div className="bg-white rounded-xl shadow-card p-6 space-y-3 border-l-4 border-amber-400">
-      <div className="flex items-start justify-between gap-4 flex-wrap">
-        <div className="min-w-0">
-          <p className="text-sm font-semibold text-foreground">
-            {cluster.records.length} record{cluster.records.length === 1 ? '' : 's'} with no account yet
-          </p>
-          <p className="text-xs text-muted-foreground mt-0.5">
-            Seen as <code className="font-mono">{cluster.identifier}</code>
-            {cluster.scope === 'tenant' && cluster.knownOrgName && <> · a possible tenant of <span className="font-medium">{cluster.knownOrgName}</span></>}
-            {' '}· first seen {formatDate(cluster.firstSeen)}
-            {cluster.candidates.length > 0 && <> · best guesses: {cluster.candidates.map((c) => `${c.name} (${Math.round(c.confidence * 100)}%)`).join(', ')}</>}
-          </p>
-        </div>
-        <button onClick={onDecide} className="rounded-md bg-primary px-3 py-1.5 text-xs font-medium text-white hover:bg-primary/90 whitespace-nowrap">
-          Set account
-        </button>
-      </div>
-
-      <ul className="space-y-2 pt-1 border-t border-border">
-        {shown.map((r) => (
-          <li key={r.id} className="pt-2 flex items-start justify-between gap-3">
-            <div className="min-w-0">
-              <p className="text-sm text-foreground">{r.summary}</p>
-              {r.evidenceExcerpt && <p className="text-xs text-muted-foreground mt-0.5 italic">&ldquo;{r.evidenceExcerpt}&rdquo;</p>}
-              <p className="text-xs text-muted-foreground mt-0.5 capitalize">{r.recordType.replace(/_/g, ' ')} · {formatDate(r.createdAt)}</p>
-            </div>
-            <button onClick={() => onMoveOne(r)} className="text-xs font-medium text-primary hover:underline whitespace-nowrap">
-              this one is different
-            </button>
-          </li>
-        ))}
-      </ul>
-
-      {cluster.records.length > 3 && (
-        <button onClick={() => setExpanded((v) => !v)} className="text-xs font-medium text-primary hover:underline">
-          {expanded ? 'Show fewer' : `Show all ${cluster.records.length}`}
-        </button>
-      )}
-    </div>
-  )
-}
-
-// One modal for both shapes: a held record being filed for the first time,
-// and a pending record whose account the agent got wrong.
-function MoveAccountModal({ held, proposal, onClose, onDone }: {
-  held: HeldRecordRow | null; proposal: ProposalRow | null; onClose: () => void; onDone: () => void
-}) {
-  const open = !!held || !!proposal
-  const proposalId = held?.id ?? proposal?.id ?? ''
-  const observed = held?.observedName ?? null
-
-  const [choice, setChoice] = useState<AccountChoice | null>(null)
-  // Default ON for a held record (it carries an identifier worth learning),
-  // OFF when correcting a record that already had an account.
-  const [remember, setRemember] = useState(true)
-  const [busy, setBusy] = useState(false)
-  const [error, setError] = useState<string | null>(null)
-
-  useEffect(() => {
-    if (!open) return
-    setChoice(null); setError(null); setRemember(!!held)
-  }, [open, held])
-
-  if (!open) return null
-
-  async function submit() {
+  async function ignore() {
+    if (!item?.resolutionId) { setError('Nothing to ignore here'); return }
     setBusy(true); setError(null)
     try {
-      if (!choice) throw new Error('Choose where it belongs')
-      await reassignProposal({
-        proposalId,
-        orgId: choice.orgId,
-        tenantId: choice.tenantId,
-        rememberIdentifier: remember && !!observed,
-      })
+      await resolveAccountProposal({ resolutionId: item.resolutionId, decision: 'ignore' })
       onDone(); onClose()
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Could not move the record')
+      setError(err instanceof Error ? err.message : 'Could not ignore it')
     } finally {
       setBusy(false)
     }
   }
 
   return (
-    <Modal open={open} onClose={onClose} title={held ? 'Where does this one belong?' : 'Change this record\'s account'}>
+    <Modal open={!!item} onClose={onClose} title={item.accountName ? "Change this record's account" : 'Which account does this belong to?'}>
       <div className="space-y-4">
-        <p className="text-sm text-muted-foreground">
-          {held
-            ? <>{held.summary}{held.evidenceExcerpt ? <span className="block text-xs italic mt-1">&ldquo;{held.evidenceExcerpt}&rdquo;</span> : null}</>
-            : <>Currently filed under <span className="font-medium text-foreground">{proposal?.accountName ?? 'an unknown account'}</span>.</>}
-        </p>
+        <div className="rounded-md bg-muted/50 p-3">
+          <p className="text-sm text-foreground">{item.title ?? item.heading}</p>
+          {item.evidenceExcerpt && <p className="text-xs text-muted-foreground italic mt-1">&ldquo;{item.evidenceExcerpt}&rdquo;</p>}
+        </div>
 
-        <AccountTenantPicker value={choice} onChange={setChoice} id="move-account" />
+        {item.identifier && (
+          <p className="text-xs text-muted-foreground">
+            The Hub saw this as <code className="font-mono">{item.identifier}</code> and could not match it to anything it knows.
+          </p>
+        )}
 
-        {observed && (
+        <AccountTenantPicker value={choice} onChange={setChoice} id="set-account" />
+
+        {siblings > 0 && (
+          <label className="flex items-start gap-2 text-sm">
+            <input type="checkbox" checked={applyToAll} onChange={(e) => setApplyToAll(e.target.checked)} className="mt-0.5" />
+            <span>
+              Apply to all {siblings} records seen as &ldquo;{item.identifier}&rdquo;
+              <span className="block text-xs text-muted-foreground">They all arrived under the same name, so they almost always belong together.</span>
+            </span>
+          </label>
+        )}
+
+        {item.identifier && (
           <label className="flex items-start gap-2 text-sm">
             <input type="checkbox" checked={remember} onChange={(e) => setRemember(e.target.checked)} className="mt-0.5" />
             <span>
-              Also remember that <span className="font-medium">&ldquo;{observed}&rdquo;</span> means this
-              <span className="block text-xs text-muted-foreground">Leave unticked if it is a project or a one-off rather than another name for the company.</span>
+              Also remember that &ldquo;{item.identifier}&rdquo; means this
+              <span className="block text-xs text-muted-foreground">Leave unticked when the name is a project or a one-off rather than another name for the company.</span>
             </span>
           </label>
         )}
 
         {error && <p className="text-sm text-red-600">{error}</p>}
-
-        <div className="flex justify-end gap-2">
-          <button onClick={onClose} className="rounded-md border border-border px-3 py-2 text-sm font-medium text-muted-foreground">Cancel</button>
-          <button onClick={submit} disabled={busy} className="rounded-md bg-primary px-3 py-2 text-sm font-medium text-white hover:bg-primary/90 disabled:opacity-50">
-            {busy ? 'Moving…' : held ? 'File it here' : 'Move it'}
+        {missingProject && choice && (
+          <button onClick={createMissingProject} disabled={busy} className="rounded-md border border-primary px-3 py-2 text-sm font-medium text-primary hover:bg-primary/5 disabled:opacity-50">
+            Create project &ldquo;{missingProject}&rdquo; and file it
           </button>
+        )}
+        {progress && <p className="text-sm text-muted-foreground">{progress}</p>}
+
+        <div className="flex justify-between gap-2">
+          {item.resolutionId ? (
+            <button onClick={ignore} disabled={busy} className="rounded-md border border-border px-3 py-2 text-sm font-medium text-muted-foreground hover:bg-muted disabled:opacity-50">
+              Not a customer — ignore
+            </button>
+          ) : <span />}
+          <div className="flex gap-2">
+            <button onClick={onClose} className="rounded-md border border-border px-3 py-2 text-sm font-medium text-muted-foreground">Cancel</button>
+            <button onClick={apply} disabled={busy || !choice} className="rounded-md bg-primary px-3 py-2 text-sm font-medium text-white hover:bg-primary/90 disabled:opacity-50">
+              {busy ? 'Filing…' : targets.length > 1 ? `File ${targets.length} records` : 'File it'}
+            </button>
+          </div>
         </div>
       </div>
     </Modal>

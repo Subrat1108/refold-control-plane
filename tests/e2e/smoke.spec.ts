@@ -122,34 +122,25 @@ test('super admin smoke: Home, Portfolio, Account 360, Approvals, Audit log, Sta
   }
   await expectNoErrors(page, errors)
 
-  // ── Approvals as ONE list (7.5-pre2 Stage 1) ──
-  // The pinned "match needed" section and the separate held-records section
-  // are gone: unattributed records now cluster under the identifier they
-  // share, and each cluster is one decision. The row leads with what the
-  // record IS, not the opaque identifier — that was the whole complaint.
-  const cluster = page.locator('div').filter({ hasText: /record[s]? with no account yet/ }).first()
-  await expect(cluster).toBeVisible()
-  // The evidence is on screen, not hidden behind a modal.
+  // ── Approvals as ONE list, one card design ──
+  // A record with no account is not a different species from one that has
+  // an account: same frame, same evidence, same actions — it just carries
+  // the control that supplies the missing answer.
+  await expect(page.getByText('No account yet').first()).toBeVisible()
   await expect(page.getByText('smoke test escalation (map existing)').first()).toBeVisible()
-  await expect(page.getByRole('button', { name: 'Set account' }).first()).toBeVisible()
 
-  // Decide for a whole cluster at once, choosing an existing account from
-  // the hierarchy-aware picker.
   await page.getByRole('button', { name: 'Set account' }).first().click()
   await expect(page.getByRole('dialog')).toBeVisible()
-  await expect(page.getByLabel('Account', { exact: true })).toBeVisible()
-  // The picker offers creating both an account and a tenant inline — the
-  // gap that made "CFIHOS belongs to Octave" unanswerable before.
-  await expect(page.getByRole('option', { name: '+ Create a new account…' })).toBeAttached()
-  await expect(page.getByRole('option', { name: '+ Create a new tenant…' })).toBeAttached()
-  await page.getByLabel('Account', { exact: true }).selectOption({ label: 'Prism Analytics' })
-  await page.getByRole('button', { name: /^File \d+ record/ }).click()
-  await expect(page.getByRole('dialog')).not.toBeVisible({ timeout: 30_000 })
-  await expectNoErrors(page, errors)
+  // Creating an account inline uses the real Add-account form, not a bare
+  // name field — a account made here is a complete one.
+  await page.getByLabel('Account', { exact: true }).selectOption('__new_account__')
+  await expect(page.getByLabel('Deployment type')).toBeVisible()
+  await expect(page.getByLabel('Deployment model')).toBeVisible()
+  await page.getByRole('button', { name: 'Cancel' }).first().click()
 
-  // Ignoring is still available, now alongside the records it would discard.
-  await page.getByRole('button', { name: 'Set account' }).first().click()
-  await page.getByRole('button', { name: 'Not a customer — ignore' }).click()
+  // Then file it against an existing account.
+  await page.getByLabel('Account', { exact: true }).selectOption({ label: 'Prism Analytics' })
+  await page.getByRole('button', { name: /^File \d+ record|^File it$/ }).click()
   await expect(page.getByRole('dialog')).not.toBeVisible({ timeout: 30_000 })
   await expectNoErrors(page, errors)
 

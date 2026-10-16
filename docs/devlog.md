@@ -16,6 +16,35 @@ Template:
 
 ---
 
+## Session 51 — 2026-10-16 — one card, one form, no dead ends
+**Built:** Owner feedback on Stage 1: still two designs inside the one list,
+and a hard stop when filing a milestone. Both fixed (D-147). `RecordCard`
+replaces `ProposalCard` + `UnresolvedCluster` — every pending item, attributed
+or not, renders the same way; only the account line differs, and where it is
+unknown it carries "Set account". Grouping dropped in favour of an "apply to
+all N records seen as X" checkbox in the modal, so uniformity in the list
+does not cost repeated decisions. `SetAccountModal` replaces both the cluster
+and move modals. The picker's inline account creation now uses the real
+Add-account fields (segment, deployment type, deployment model) rather than a
+name; tenants are offered only for on-prem and dedicated-cluster accounts,
+with an inline "add a tenant under X" once one is selected. New
+`dedicated_cluster` deployment model (own migration — new enum values cannot
+be used in the transaction that adds them). The milestone dead end now
+offers "Create project 'X' and file it" and retries.
+**Deviations:** my successive surgical edits left duplicate components in
+ApprovalsPage (two EditThenApproveModals, two RejectModals); I reset the file
+to the last commit and reapplied in one pass rather than keep patching.
+**Verified:** 15 RLS blocks; smoke-login; e2e extended for the unified card
+and the inline account form; typecheck/lint/build; migration pushed. e2e
+flaked twice on the People sheet's Escape while the dev server was warming
+after edits, then passed 4 consecutive times — the committed baseline passes
+too, so not from this change, but that assertion is cold-start sensitive.
+**Decisions:** D-147
+**Next:** Stage 2 — the real hierarchy and one merged page per entity.
+**Issues:** unchanged — kill switch on, 30 units queued.
+
+---
+
 ## Session 50 — 2026-10-16 — Approvals as one list (production-readiness Stage 1)
 **Built:** Stage 1 of the approved production-readiness plan. The pinned
 resolution section and the separate held-records section are gone; both are

@@ -2073,6 +2073,37 @@ resolution when its last record leaves, so filing a cluster is just that
 call per record — the last one closes the match automatically, with no
 separate "resolve" step to forget.
 
+## D-147 — one card for every pending item, and no dead ends (2026-10-16)
+Stage 1 landed a single list but kept two designs inside it: an amber
+grouped block for records with no account, a white card for the rest. The
+owner's read was fair — it still looked like two jobs. It is one job: decide
+about a record. An unattributed record is the same record missing one
+answer, so the frame, the evidence and the actions are now identical, and
+only the account line differs — where it is unknown it carries the control
+that supplies it.
+
+The grouping was dropped, but not the efficiency it bought: the Set-account
+modal offers *"apply to all N records seen as X"*, ticked by default. The
+uniformity is in the list, the batching is in the decision.
+
+**Creating an account inline now uses the real form** — name, segment,
+deployment type, deployment model — not a bare name field. An account made
+mid-approval is a complete one rather than something to go back and fix.
+
+**Tenants are offered only where they exist.** Cloud customers are a single
+org by definition, so the tenant option appears only for on-prem and
+dedicated-cluster accounts, plus an inline *"add a tenant under X"* once
+such an account is chosen. New `dedicated_cluster` value on
+`deployment_model` (its own migration — a new enum value cannot be used in
+the transaction that adds it).
+
+**And the dead end is gone.** A milestone requires a project; filing one
+against an account with no matching project returned *"matches no project
+under Naehas. Create the project on that account first"* — a correct check
+and a useless instruction, since there was nowhere to create it from. The
+modal now recognises that refusal, offers *"Create project 'X' and file
+it"*, and retries. The guard stays; only the dead end goes.
+
 # Parked
 
 Out-of-scope ideas land here instead of derailing the current prompt block.
