@@ -268,9 +268,16 @@ Reports history and logged as an engagement.
 
 ### 5.12 Approvals and Audit
 
-- **Approvals:** one inbox for every proposal kind (metrics, updates, risks,
-  escalations, tickets, health changes, deletes): diff, evidence, edit-then-approve,
-  reject with reason, bulk. Any logged-in super admin approves.
+- **Approvals:** one inbox, one list, **one card design** for every pending
+  item — whether or not the Hub managed to work out which account it belongs
+  to. A row leads with what the record IS and its evidence, not with the
+  identifier the source happened to use (`zendesk-org:24623057340828` reads
+  as "Calendly Auth Issue"). Where the account is unknown the row carries
+  **Set account**, which can pick an existing account or tenant, or create
+  either in place using the real Add-account form — and offers to apply the
+  same decision to every other record that arrived under the same name.
+  Otherwise: diff, evidence, edit-then-approve, reject with reason, bulk.
+  Any logged-in super admin approves.
 - **Audit log:** who / on behalf of what / action / record / before → after /
   when, with filters and CSV export — visible to every CS admin, read-only.
 

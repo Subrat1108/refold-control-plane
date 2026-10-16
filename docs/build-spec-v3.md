@@ -2,8 +2,8 @@
 
 > Supersedes the remaining Phase 6 blocks (6.5 live data, 6.6 QBR export, 6.7b
 > polish), which fold into Phase 7. Phases 5–6 stay as the base: React UI,
-> Supabase auth + MFA + RLS, provisioning, single login, cluster → namespace →
-> org → tenant, 4-scope feature flags, Netlify + cloud Supabase deploy.
+> Supabase auth + MFA + RLS, provisioning, single login, account → tenant,
+> 4-scope feature flags, Netlify + cloud Supabase deploy.
 
 ---
 
@@ -39,6 +39,31 @@ fixtures and examples use fictional companies. This rule goes into CLAUDE.md.
 
 ## 2. Domain model
 
+### 2.0 The hierarchy (settled 2026-10-16, D-149)
+
+Refold is an integration platform. An **account** is an organisation that
+uses it — the CS team's unit of ownership, assigned to an FDE / EDL / TA. A
+**tenant** is one signup on that account, which in Refold terms IS one
+org/workspace. Those are the only two levels.
+
+> Earlier drafts of this spec said `clusters → namespaces → orgs → tenants`.
+> That described the Refold platform, not the Hub, and collided on the word
+> "org": `organizations` here is the ACCOUNT, while a Refold org is the
+> workspace a signup creates. Three competing models were in play at once.
+
+| Deployment | Below the account | Metrics tracked |
+|---|---|---|
+| **cloud** | none — the account's own customers are Refold *linked accounts*, which the Hub deliberately does not track individually | account only |
+| **dedicated_cluster** | one tenant per signup (a Refold-managed instance for that account alone), one linked account each | account **and** per tenant |
+| **on_premise** | one tenant per signup; the account runs its own K8s clusters, each with namespaces, each namespace an installation of Refold, each installation one or more signups. Refold has no access to this infrastructure. | account **and** per tenant |
+
+**Cluster and namespace are identification, not hierarchy.** A tenant records
+`cluster_name`, `namespace_name`, `refold_org_id` and `linked_account_id`;
+there are no `clusters` or `namespaces` tables. Every query and RLS policy
+therefore stays two levels deep, while the UI groups on-prem tenants into
+cluster → namespace accordions — presentation over flat data.
+
+
 ```
 Account ── lifecycle stage: prospect → poc → onboarding → live → expansion/renewal → churned
   ├─ Contacts (customer people)                         [Phase 8: user onboarding]
@@ -51,7 +76,7 @@ Account ── lifecycle stage: prospect → poc → onboarding → live → exp
   ├─ Tickets (mirrored from the ticketing tool via MCP)
   ├─ Engagements (touchpoints: calls, check-ins, QBR/EBR meetings, notes)
   ├─ Metrics (EBR catalog, per period, with baselines)
-  └─ Deployment (existing): clusters → namespaces → orgs → tenants
+  └─ Tenants ── one signup = one Refold org/workspace (see 2.0)
 Portfolio ── monthly notes: key milestones, recommendations + impact
 ```
 
