@@ -78,7 +78,12 @@ Points, streaks, badges, team leaderboards — computed from the audit log + pro
 (See docs/devlog.md for full session history — this is just the pointer.)
 
 Date: 2026-10-16
-Completed: Session 58 — Stage 2d (D-153): the three fixture-backed
+Completed: Session 59 — Stage 3 (D-154): the nav the owner specified,
+built after they pushed on my deferring it. Admin group gone; Users & roles,
+People, Feature flags, Ingest tokens and Sync status are Settings sections.
+Nav is Home · Portfolio · Approvals · Standups · Audit Log · Settings, and
+Portfolio gains an Add details tab.
+Session 58 — Stage 2d (D-153): the three fixture-backed
 super-admin pages removed and redirected to Portfolio; global search made
 real (it searched fixtures, so real customers did not match); an honest
 banner on Feature Flags, which has no table behind it at all. useMockData

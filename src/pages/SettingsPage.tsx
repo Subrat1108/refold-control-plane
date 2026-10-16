@@ -1,15 +1,47 @@
+import { Link } from 'react-router-dom'
 import { useAuth, useCloudOrg, useOnPremOrg } from '@/hooks'
 import { ErrorState } from '@/components/ErrorState'
 import { StatusBadge } from '@/components/StatusBadge'
 import { formatDate } from '@/utils/formatDate'
 
+// Stage 3 — Settings is where configuration lives.
+//
+// Everything that used to sit behind a collapsed "Admin" disclosure in the
+// sidebar — feature flags, users & roles, the team directory, ingest tokens,
+// sync status — is a section here instead. An admin looking for
+// configuration opens Settings; they should not have to know it was filed
+// under a separate group.
+const ADMIN_SECTIONS: { to: string; label: string; description: string }[] = [
+  { to: '/admin-users', label: 'Users & roles', description: 'Invite super admins, assign sub-roles, disable accounts.' },
+  { to: '/people', label: 'People', description: 'The CS team directory — who is on which account, role history, activity.' },
+  { to: '/feature-flags', label: 'Feature flags', description: 'Global and per-account flags. Not connected to storage yet.' },
+  { to: '/ingest-tokens', label: 'Ingest tokens', description: 'Mint and revoke the tokens the sync runner posts with.' },
+  { to: '/sync-status', label: 'Sync status', description: 'Recent runs, the kill switch, day range, and accounts finding nothing.' },
+]
+
 export function SettingsPage() {
   const { user, role } = useAuth()
   const isCloud = role === 'cloud_customer_admin'
   const isOnPrem = role === 'onprem_customer_admin'
+  const isSuperAdmin = role === 'super_admin'
 
   return (
     <div className="space-y-6 max-w-2xl">
+      {isSuperAdmin && (
+        <div className="bg-white rounded-lg shadow-card p-6">
+          <h2 className="text-base font-semibold mb-1">Administration</h2>
+          <p className="text-sm text-muted-foreground mb-4">Everything that used to sit under the Admin group in the sidebar.</p>
+          <ul className="divide-y divide-border">
+            {ADMIN_SECTIONS.map((sec) => (
+              <li key={sec.to} className="py-3 first:pt-0 last:pb-0">
+                <Link to={sec.to} className="text-sm font-medium text-primary hover:underline">{sec.label}</Link>
+                <p className="text-xs text-muted-foreground mt-0.5">{sec.description}</p>
+              </li>
+            ))}
+          </ul>
+        </div>
+      )}
+
       {/* Account settings (all roles) */}
       <div className="bg-white rounded-lg shadow-card p-6">
         <h2 className="text-base font-semibold mb-4">Account Settings</h2>

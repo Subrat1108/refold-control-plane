@@ -16,6 +16,29 @@ Template:
 
 ---
 
+## Session 59 — 2026-10-16 — Stage 3: the nav the owner actually asked for
+**Built:** The owner pushed back — they had specified this IA several
+messages earlier and I kept deferring it behind my own staging (D-154). Done
+now: the collapsed "Admin" group is gone; Users & roles, People, Feature
+flags, Ingest tokens and Sync status are sections of Settings. Nav is Home ·
+Portfolio · Approvals · Standups · Audit Log · Settings. Portfolio gains the
+**Add details** tab, which says outright that file upload is not built yet
+and points at what does work rather than being a tab that does nothing.
+**Deviations:** two additions to the owner's list, both deliberate and
+flagged — Approvals is kept top-level (not in their list, but the screen
+they use most; reads as an oversight), and People sits under Settings beside
+Users & roles since both concern people. Old routes still resolve so
+bookmarks keep working.
+**Verified:** e2e rewritten for the new nav — the three moved items are now
+reached through Settings the way a user would — green twice; 17 RLS blocks;
+smoke-login all three roles; typecheck/lint/build.
+**Decisions:** D-154
+**Next:** Stage 2c — the actual file upload (csv/json/xlsx/doc), the only
+metrics route for air-gapped accounts.
+**Issues:** unchanged.
+
+---
+
 ## Session 58 — 2026-10-16 — Stage 2d: retire the fixture-backed screens
 **Built:** `/overview`, `/cloud-customers` and `/onprem-customers` removed
 from the internal nav and redirected to Portfolio — all fixture-backed and

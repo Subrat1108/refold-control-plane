@@ -2275,6 +2275,32 @@ nothing in any customer's deployment. A banner now says so. This is worse
 than a fake metric and worth naming: a fake number misinforms, but implied
 control invites someone to act on it.
 
+## D-154 — the nav the owner specified, built when they asked rather than when I had planned (2026-10-16)
+The owner described the information architecture they wanted several
+messages before this — Home, Portfolio (Board / Add details / Coverage),
+Settings holding feature flags, users & roles, ingest tokens and sync
+status, plus Audit log and Standups. I staged it as "Stage 3" and shipped
+four sessions of other work first, so from their seat the thing they had
+actually asked for kept not appearing. They were right to push. The staging
+was my judgement, not their instruction, and a deferral is only reasonable
+while the person waiting agrees with it.
+
+Built as specified: the collapsed **Admin** disclosure is gone, and
+everything inside it is a section of Settings — which is where an admin
+looks for configuration, rather than behind a separate group they have to
+know about. Audit Log is top-level. Portfolio gains the **Add details** tab.
+Old routes still resolve, so bookmarks and deep links keep working.
+
+Two judgement calls, both flagged rather than hidden: **Approvals** was not
+in the owner's list but is kept top-level — it is the screen they use most
+and its omission reads as an oversight, not a decision. **People** was not
+listed either; it sits under Settings beside Users & roles, since both are
+about people.
+
+The **Add details** tab states plainly that upload is not built yet and
+points at what does work, instead of presenting a tab that silently does
+nothing.
+
 # Parked
 
 Out-of-scope ideas land here instead of derailing the current prompt block.

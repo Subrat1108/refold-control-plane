@@ -1,4 +1,4 @@
-import { LayoutDashboard, Flag, Settings, Layers, ShieldCheck, UsersRound, UserCog, Briefcase, CheckSquare, ScrollText, Home, ClipboardList, KeyRound, RefreshCw } from 'lucide-react'
+import { LayoutDashboard, Settings, Layers, UsersRound, Briefcase, CheckSquare, ScrollText, Home, ClipboardList } from 'lucide-react'
 import type { UserRole } from '@/types'
 
 export interface NavItem {
@@ -14,24 +14,18 @@ export interface NavItem {
 // role's list is also that role's home route (see homeRoute).
 export const NAV_BY_ROLE: Record<UserRole, NavItem[]> = {
   super_admin: [
+    // Stage 3 — the nav the owner specified: Home, Portfolio, Approvals,
+    // Standups, Audit log, Settings. The collapsed "Admin" group is gone;
+    // everything that lived in it (feature flags, users & roles, people,
+    // ingest tokens, sync status) is now a section of Settings, which is
+    // where an admin expects to find configuration rather than behind a
+    // separate disclosure. Their routes still work for bookmarks.
     { to: '/home', label: 'Home', icon: <Home size={16} /> },
     { to: '/portfolio', label: 'Portfolio', icon: <Briefcase size={16} /> },
     { to: '/approvals', label: 'Approvals', icon: <CheckSquare size={16} />, badgeKey: 'pending-proposals' },
-    { to: '/people', label: 'People', icon: <UserCog size={16} /> },
     { to: '/standups', label: 'Standups', icon: <ClipboardList size={16} /> },
+    { to: '/audit-log', label: 'Audit Log', icon: <ScrollText size={16} /> },
     { to: '/settings', label: 'Settings', icon: <Settings size={16} /> },
-    // Admin — collapsed by default (Sidebar renders these inside a disclosure).
-    { to: '/audit-log', label: 'Audit Log', icon: <ScrollText size={16} />, group: 'admin' },
-    { to: '/admin-users', label: 'Users & Roles', icon: <ShieldCheck size={16} />, group: 'admin' },
-    { to: '/ingest-tokens', label: 'Ingest Tokens', icon: <KeyRound size={16} />, group: 'admin' },
-    { to: '/sync-status', label: 'Sync Status', icon: <RefreshCw size={16} />, group: 'admin' },
-    // Stage 2d — Overview, Cloud Customers and On-Prem Customers are gone
-    // from the internal nav. All three were fed entirely by mock fixtures
-    // and are superseded by Portfolio plus the merged account page; their
-    // routes redirect rather than 404. Feature Flags stays for now but is
-    // still fixture-backed — there is no `feature_flags` table (see the
-    // banner on that page).
-    { to: '/feature-flags', label: 'Feature Flags', icon: <Flag size={16} />, group: 'admin' },
   ],
   cloud_customer_admin: [
     { to: '/dashboard', label: 'Dashboard', icon: <LayoutDashboard size={16} /> },

@@ -207,6 +207,16 @@ test('super admin smoke: Home, Portfolio, Account 360, Approvals, Audit log, Sta
   await expect(page.getByRole('dialog')).not.toBeVisible({ timeout: 30_000 })
   await expectNoErrors(page, errors)
 
+  // ── Stage 3: the nav is Home · Portfolio · Approvals · Standups ·
+  // Audit Log · Settings. No collapsed Admin group — configuration lives
+  // in Settings, where an admin looks for it.
+  await page.getByRole('link', { name: 'Settings' }).click()
+  await expect(page.getByRole('heading', { name: 'Administration' })).toBeVisible()
+  for (const section of ['Users & roles', 'People', 'Feature flags', 'Ingest tokens', 'Sync status']) {
+    await expect(page.getByRole('link', { name: section })).toBeVisible()
+  }
+  await expectNoErrors(page, errors)
+
   // ── Stage 2d: the fixture-backed pages are gone from the internal app ──
   // Old links redirect rather than 404, and global search now finds real
   // accounts instead of fictional ones.
@@ -224,14 +234,14 @@ test('super admin smoke: Home, Portfolio, Account 360, Approvals, Audit log, Sta
     await expectNoErrors(page, errors)
   }
 
-  // ── Audit log (inside the collapsed-by-default "Admin" disclosure) ──
-  await page.getByRole('button', { name: 'Admin' }).click()
+  // ── Audit log (top-level in the nav since Stage 3) ──
   await page.getByRole('link', { name: 'Audit Log' }).click()
   await expect(page.getByRole('heading', { name: 'Audit Log' })).toBeVisible()
   await expectNoErrors(page, errors)
 
   // ── Ingest tokens (7.4): create one, see the plaintext once, revoke it ──
-  await page.getByRole('link', { name: 'Ingest Tokens' }).click()
+  await page.getByRole('link', { name: 'Settings' }).click()
+  await page.getByRole('link', { name: 'Ingest tokens' }).click()
   // exact: true — on a truly fresh DB (no tokens yet) the EmptyState's "No
   // ingest tokens" heading substring-matches "Ingest tokens" too, a latent
   // ambiguity this session's genuinely-empty-first-run exposed.
@@ -280,6 +290,7 @@ test('super admin smoke: Home, Portfolio, Account 360, Approvals, Audit log, Sta
   await expectNoErrors(page, errors)
 
   // ── People: open a person's detail slide-over ───────────────────────
+  await page.getByRole('link', { name: 'Settings' }).click()
   await page.getByRole('link', { name: 'People' }).click()
   // exact: true — PeoplePage's EmptyState "No people yet" heading would
   // otherwise substring-match "People" too.
@@ -296,11 +307,10 @@ test('super admin smoke: Home, Portfolio, Account 360, Approvals, Audit log, Sta
   await expect(page.getByText('Recent activity')).not.toBeVisible()
 
   // ── Sync Status (7.5-pre2 Session 5): the scoped Refresh above already
-  // produced at least one sync_runs row. The "Admin" disclosure is a
-  // toggle, not idempotent — it's already open from the Audit Log step
-  // earlier and stays open (Sidebar persists across navigation), so it
-  // must NOT be clicked again here or it would close.
-  await page.getByRole('link', { name: 'Sync Status' }).click()
+  // produced at least one sync_runs row. Sync status lives under
+  // Settings since Stage 3.
+  await page.getByRole('link', { name: 'Settings' }).click()
+  await page.getByRole('link', { name: 'Sync status' }).click()
   await expect(page.getByRole('heading', { name: 'Sync status' })).toBeVisible()
   await expect(page.getByText('No sync runs yet')).not.toBeVisible()
   await expectNoErrors(page, errors)

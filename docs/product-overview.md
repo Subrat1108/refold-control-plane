@@ -266,6 +266,15 @@ Reports history and logged as an engagement.
 - Search + "Ask the Hub" answers over KB, docs, and account records (scoped by
   role).
 
+### 5.10a Navigation
+
+**Home · Portfolio · Approvals · Standups · Audit Log · Settings.**
+
+There is no separate Admin group. Configuration — users & roles, the people
+directory, feature flags, ingest tokens, sync status — lives in **Settings**,
+where an admin looks for it rather than behind a disclosure they have to know
+about. Portfolio has three tabs: **Board**, **Add details**, **Coverage**.
+
 ### 5.10b What was removed, and what is still a mock-up
 
 The internal app no longer has **Overview**, **Cloud Customers** or **On-Prem

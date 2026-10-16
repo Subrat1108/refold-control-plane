@@ -39,6 +39,7 @@ export function PortfolioPage() {
   const [tab, setTab] = useState('board')
   const tabs: TabItem[] = [
     { id: 'board', label: 'Board' },
+    { id: 'add_details', label: 'Add details' },
     { id: 'coverage', label: 'Coverage' },
   ]
   return (
@@ -48,7 +49,9 @@ export function PortfolioPage() {
         <p className="text-sm text-muted-foreground mt-0.5">Every account, grouped by segment — health, EDL, coverage.</p>
       </div>
       <Tabs tabs={tabs} active={tab} onChange={setTab} />
-      {tab === 'board' ? <BoardTab /> : <CoverageTab />}
+      {tab === 'board' && <BoardTab />}
+      {tab === 'add_details' && <AddDetailsTab />}
+      {tab === 'coverage' && <CoverageTab />}
     </div>
   )
 }
@@ -487,6 +490,47 @@ function AccountTenants({ account, tenants }: { account: PortfolioAccountRow; te
           </ul>
         </div>
       ))}
+    </div>
+  )
+}
+
+// Stage 3 — the "Add details" tab the owner asked for. The upload half
+// (csv / json / xlsx / doc for the agent to read) is Stage 2c and not built
+// yet; rather than show a tab that silently does nothing, this says what it
+// will take and points at the routes that already work today.
+function AddDetailsTab() {
+  return (
+    <div className="bg-white rounded-xl shadow-card p-6 space-y-4">
+      <div>
+        <h2 className="text-sm font-semibold text-foreground">Add details</h2>
+        <p className="text-sm text-muted-foreground mt-0.5">
+          For anything the agent or a metrics API cannot supply — which is everything for an air-gapped account, since Refold has no access to those
+          installations.
+        </p>
+      </div>
+
+      <div className="rounded-md border border-amber-300 bg-amber-50 px-4 py-3">
+        <p className="text-sm font-medium text-amber-900">File upload is not built yet</p>
+        <p className="text-xs text-amber-800 mt-0.5">
+          Uploading a csv, json, xlsx or doc for the agent to read is the next piece of work. Until it lands, the routes below are how details get in.
+        </p>
+      </div>
+
+      <ul className="space-y-3 text-sm">
+        <li>
+          <span className="font-medium text-foreground">Per account or tenant</span>
+          <p className="text-xs text-muted-foreground">
+            Open an account from the Board, then its Deployment tab for the shape and its tenants, or any record tab to add escalations, tickets,
+            engagements and milestones by hand.
+          </p>
+        </li>
+        <li>
+          <span className="font-medium text-foreground">From a sync</span>
+          <p className="text-xs text-muted-foreground">
+            Whatever the agent finds arrives in Approvals for review rather than being written directly.
+          </p>
+        </li>
+      </ul>
     </div>
   )
 }
