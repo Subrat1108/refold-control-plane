@@ -9,10 +9,7 @@ import { OrgScopeGuard } from '@/components/OrgScopeGuard'
 import { IndexRedirect } from '@/components/IndexRedirect'
 import { LoginPage } from '@/pages/LoginPage'
 import { AcceptInvitePage } from '@/pages/AcceptInvitePage'
-import { OverviewPage } from '@/pages/OverviewPage'
-import { CloudCustomersPage } from '@/pages/CloudCustomersPage'
 import { CloudOrgDetailPage } from '@/pages/CloudOrgDetailPage'
-import { OnPremCustomersPage } from '@/pages/OnPremCustomersPage'
 import { OnPremOrgDetailPage } from '@/pages/OnPremOrgDetailPage'
 import { NamespacesPage } from '@/pages/NamespacesPage'
 import { NamespaceDetailPage } from '@/pages/NamespaceDetailPage'
@@ -61,8 +58,11 @@ export const router = createBrowserRouter([
     children: [
       { index: true, element: <IndexRedirect /> },
       {
+        // Stage 2d — fixture-backed and superseded by Portfolio. Redirects
+        // rather than 404s, so existing links and bookmarks still land
+        // somewhere useful.
         path: 'overview',
-        element: <RouteGuard allowedRoles={['super_admin']}><OverviewPage /></RouteGuard>,
+        element: <Navigate to="/portfolio" replace />,
       },
       {
         // 7.2b — Portfolio board + coverage tab, the account list.
@@ -81,8 +81,11 @@ export const router = createBrowserRouter([
         element: <RouteGuard allowedRoles={['super_admin']}><TenantDetailPage /></RouteGuard>,
       },
       {
+        // Stage 2d — fixture-backed and superseded by Portfolio. Redirects
+        // rather than 404s, so existing links and bookmarks still land
+        // somewhere useful.
         path: 'cloud-customers',
-        element: <RouteGuard allowedRoles={['super_admin']}><CloudCustomersPage /></RouteGuard>,
+        element: <Navigate to="/portfolio" replace />,
       },
       {
         // Stage 2a — an account has ONE page now. A customer owner still
@@ -96,8 +99,11 @@ export const router = createBrowserRouter([
         ),
       },
       {
+        // Stage 2d — fixture-backed and superseded by Portfolio. Redirects
+        // rather than 404s, so existing links and bookmarks still land
+        // somewhere useful.
         path: 'onprem-customers',
-        element: <RouteGuard allowedRoles={['super_admin']}><OnPremCustomersPage /></RouteGuard>,
+        element: <Navigate to="/portfolio" replace />,
       },
       {
         path: 'onprem-customers/:orgId',

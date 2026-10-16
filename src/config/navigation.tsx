@@ -1,4 +1,4 @@
-import { LayoutDashboard, Users, Server, Flag, Settings, Layers, ShieldCheck, UsersRound, UserCog, Briefcase, CheckSquare, ScrollText, Home, ClipboardList, KeyRound, RefreshCw } from 'lucide-react'
+import { LayoutDashboard, Flag, Settings, Layers, ShieldCheck, UsersRound, UserCog, Briefcase, CheckSquare, ScrollText, Home, ClipboardList, KeyRound, RefreshCw } from 'lucide-react'
 import type { UserRole } from '@/types'
 
 export interface NavItem {
@@ -25,10 +25,13 @@ export const NAV_BY_ROLE: Record<UserRole, NavItem[]> = {
     { to: '/admin-users', label: 'Users & Roles', icon: <ShieldCheck size={16} />, group: 'admin' },
     { to: '/ingest-tokens', label: 'Ingest Tokens', icon: <KeyRound size={16} />, group: 'admin' },
     { to: '/sync-status', label: 'Sync Status', icon: <RefreshCw size={16} />, group: 'admin' },
+    // Stage 2d — Overview, Cloud Customers and On-Prem Customers are gone
+    // from the internal nav. All three were fed entirely by mock fixtures
+    // and are superseded by Portfolio plus the merged account page; their
+    // routes redirect rather than 404. Feature Flags stays for now but is
+    // still fixture-backed — there is no `feature_flags` table (see the
+    // banner on that page).
     { to: '/feature-flags', label: 'Feature Flags', icon: <Flag size={16} />, group: 'admin' },
-    { to: '/overview', label: 'Overview', icon: <LayoutDashboard size={16} />, group: 'admin' },
-    { to: '/cloud-customers', label: 'Cloud Customers', icon: <Users size={16} />, group: 'admin' },
-    { to: '/onprem-customers', label: 'On-Prem Customers', icon: <Server size={16} />, group: 'admin' },
   ],
   cloud_customer_admin: [
     { to: '/dashboard', label: 'Dashboard', icon: <LayoutDashboard size={16} /> },

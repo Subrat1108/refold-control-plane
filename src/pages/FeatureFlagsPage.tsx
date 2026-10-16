@@ -12,6 +12,20 @@ export function FeatureFlagsPage() {
         <p className="text-sm text-muted-foreground mt-0.5">Global feature flags across all customers</p>
       </div>
 
+      {/* Stage 2d — said plainly rather than left to be discovered. There is
+          no `feature_flags` table: this screen reads and writes in-memory
+          fixtures, so a toggle here changes nothing in any customer's
+          deployment. Implying control that does not exist is worse than
+          showing none, and worse than a fake metric, because someone may act
+          on it. */}
+      <div className="rounded-md border border-amber-300 bg-amber-50 px-4 py-3">
+        <p className="text-sm font-medium text-amber-900">These flags are not connected to anything yet</p>
+        <p className="text-xs text-amber-800 mt-0.5">
+          There is no feature-flag storage behind this screen — toggles are kept in memory for the session and change nothing in any customer&apos;s
+          deployment. Treat it as a design preview until the flag service is built.
+        </p>
+      </div>
+
       <div className="bg-white rounded-lg shadow-card p-6 flex items-center justify-between">
         <div>
           <div className="text-sm font-medium text-foreground">Global flag configuration</div>

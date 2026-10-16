@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { Search, Building2, Layers, Plug } from 'lucide-react'
-import { useSearch } from '@/hooks'
+import { useGlobalSearch } from '@/hooks'
 import { cn } from '@/lib/utils'
 import type { SearchResultItem, SearchResultType } from '@/types'
 
@@ -55,7 +55,8 @@ function GlobalSearch({ placeholder }: { placeholder: string }) {
     return () => clearTimeout(t)
   }, [query])
 
-  const { data } = useSearch(debounced)
+  // Real accounts and tenants, not fixtures — see searchAccountsAndTenants.
+  const { data } = useGlobalSearch(debounced)
 
   const flat = useMemo<SearchResultItem[]>(
     () => (data ? [...data.organizations, ...data.namespaces, ...data.connectors] : []),

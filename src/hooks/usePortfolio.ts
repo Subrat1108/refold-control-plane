@@ -36,6 +36,7 @@ import type {
   Ticket,
   TicketPriority,
   TicketStatus,
+  SearchResults,
 } from '@/types'
 
 const INTERNAL_ORG_ID = '00000000-0000-0000-0000-000000000001'
@@ -848,4 +849,61 @@ export async function updatePortfolioNote(id: string, patch: Partial<{ body: str
 export async function deletePortfolioNote(id: string): Promise<void> {
   const { error } = await supabase.from('portfolio_notes').delete().eq('id', id)
   if (error) throw new Error(error.message)
+}
+
+// Stage 2d — global search over REAL accounts and tenants.
+//
+// The shell's search box was wired to mock fixtures, so typing a real
+// customer's name returned nothing while fictional companies matched. That
+// is worse than having no search: it answers confidently and wrongly.
+//
+// RLS scopes this for free — a customer owner sees only their own
+// organisation, which the fixture-backed version could not guarantee.
+export async function searchAccountsAndTenants(query: string): Promise<SearchResults> {
+  const q = query.trim()
+  if (!q) return { organizations: [], namespaces: [], connectors: [] }
+  const like = `%${q.replace(/[%_]/g, (m) => `\\${m}`)}%`
+
+  const [{ data: orgs }, { data: tenants }] = await Promise.all([
+    supabase.from('organizations').select('id, name, lifecycle_stage').neq('deployment_type', 'internal').ilike('name', like).order('name').limit(8),
+    supabase.from('tenants').select('id, name, org_id, namespace_name').ilike('name', like).order('name').limit(8),
+  ])
+
+  const orgNames = new Map((orgs ?? []).map((o) => [o.id as string, o.name as string]))
+  // A tenant's breadcrumb needs its account's name, which the tenant row
+  // does not carry; fetch only the ones not already matched above.
+  const missing = [...new Set((tenants ?? []).map((t) => t.org_id as string))].filter((id) => !orgNames.has(id))
+  if (missing.length) {
+    const { data: parents } = await supabase.from('organizations').select('id, name').in('id', missing)
+    for (const p of parents ?? []) orgNames.set(p.id as string, p.name as string)
+  }
+
+  return {
+    organizations: (orgs ?? []).map((o) => ({
+      type: 'org' as const,
+      id: o.id as string,
+      name: o.name as string,
+      breadcrumb: String(o.lifecycle_stage ?? 'account').replace(/_/g, ' '),
+      href: `/accounts/${o.id}`,
+    })),
+    // Tenants reuse the "namespaces" bucket so the dropdown's existing
+    // grouping still works; they are the second level of the hierarchy.
+    namespaces: (tenants ?? []).map((t) => ({
+      type: 'namespace' as const,
+      id: t.id as string,
+      name: t.name as string,
+      breadcrumb: `${orgNames.get(t.org_id as string) ?? 'account'}${t.namespace_name ? ` · ${t.namespace_name}` : ''}`,
+      href: `/accounts/${t.org_id}/tenants/${t.id}`,
+    })),
+    connectors: [],
+  }
+}
+
+export function useGlobalSearch(query: string) {
+  return useQuery({
+    queryKey: ['global-search', query],
+    queryFn: () => searchAccountsAndTenants(query),
+    enabled: query.trim().length >= 1,
+    staleTime: 0,
+  })
 }

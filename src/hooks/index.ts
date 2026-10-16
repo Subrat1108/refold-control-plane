@@ -67,6 +67,7 @@ export {
   useAccountsRaw,
   useAccount,
   createAccount,
+  useGlobalSearch,
   updateAccount,
   useOpenEscalationCounts,
   useNextMilestones,

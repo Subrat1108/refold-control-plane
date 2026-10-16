@@ -2247,6 +2247,34 @@ entity. It shows where the signup runs and says plainly that metrics are
 absent — for air-gapped accounts, that Refold has no access and figures
 arrive by entry or upload.
 
+## D-153 — retire the fixture-backed screens, and say so where they remain (2026-10-16)
+Stage 2d was planned as "delete `useMockData.ts`". It cannot be, and finding
+out why mattered more than the deletion.
+
+**Removed from the internal app:** `/overview`, `/cloud-customers` and
+`/onprem-customers` — all three entirely fixture-backed and superseded by
+Portfolio plus the merged account page. They redirect rather than 404, so
+existing links still land somewhere useful. `homeRoute()` was unaffected
+(`/home` was already first in the nav).
+
+**Made real:** global search. It was wired to fixtures, so typing a real
+customer's name returned nothing while fictional companies matched — worse
+than no search, because it answers confidently and wrongly. It now queries
+`organizations` and `tenants`, with RLS scoping it for free (a customer owner
+sees only their own, which the fixture version could not guarantee).
+
+**Kept, deliberately:** `useMockData.ts` still backs the cloud/on-prem owner
+detail pages, namespaces and the owner dashboard. Those portals are FROZEN —
+"kept working, no new work" — and deleting their data source would break
+them. They are no longer reachable by a super admin, so the internal
+experience is clean; the fixtures now serve only the frozen surfaces.
+
+**Flagged rather than silently left:** there is no `feature_flags` table at
+all. That screen reads and writes in-memory fixtures, so a toggle changes
+nothing in any customer's deployment. A banner now says so. This is worse
+than a fake metric and worth naming: a fake number misinforms, but implied
+control invites someone to act on it.
+
 # Parked
 
 Out-of-scope ideas land here instead of derailing the current prompt block.

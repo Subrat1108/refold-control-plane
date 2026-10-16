@@ -207,6 +207,23 @@ test('super admin smoke: Home, Portfolio, Account 360, Approvals, Audit log, Sta
   await expect(page.getByRole('dialog')).not.toBeVisible({ timeout: 30_000 })
   await expectNoErrors(page, errors)
 
+  // ── Stage 2d: the fixture-backed pages are gone from the internal app ──
+  // Old links redirect rather than 404, and global search now finds real
+  // accounts instead of fictional ones.
+  await page.goto('/overview')
+  await expect(page).toHaveURL(/\/portfolio/)
+  await page.goto('/cloud-customers')
+  await expect(page).toHaveURL(/\/portfolio/)
+  await expectNoErrors(page, errors)
+
+  if (accountName) {
+    await page.getByRole('combobox').first().fill(accountName.slice(0, 5))
+    await expect(page.getByRole('listbox')).toBeVisible()
+    await expect(page.getByRole('listbox').getByText(accountName, { exact: false }).first()).toBeVisible()
+    await page.keyboard.press('Escape')
+    await expectNoErrors(page, errors)
+  }
+
   // ── Audit log (inside the collapsed-by-default "Admin" disclosure) ──
   await page.getByRole('button', { name: 'Admin' }).click()
   await page.getByRole('link', { name: 'Audit Log' }).click()

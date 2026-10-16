@@ -78,7 +78,12 @@ Points, streaks, badges, team leaderboards — computed from the audit log + pro
 (See docs/devlog.md for full session history — this is just the pointer.)
 
 Date: 2026-10-16
-Completed: Session 57 — Stage 2b part 2 (D-152): the Portfolio board
+Completed: Session 58 — Stage 2d (D-153): the three fixture-backed
+super-admin pages removed and redirected to Portfolio; global search made
+real (it searched fixtures, so real customers did not match); an honest
+banner on Feature Flags, which has no table behind it at all. useMockData
+could NOT be deleted — it still backs the frozen customer portals.
+Session 57 — Stage 2b part 2 (D-152): the Portfolio board
 expands an account in place to show its tenants, via one DataTable rather
 than a second layout; on-prem tenants group by cluster (presentation only).
 New per-tenant page at /accounts/:orgId/tenants/:tenantId.

@@ -16,6 +16,33 @@ Template:
 
 ---
 
+## Session 58 — 2026-10-16 — Stage 2d: retire the fixture-backed screens
+**Built:** `/overview`, `/cloud-customers` and `/onprem-customers` removed
+from the internal nav and redirected to Portfolio — all fixture-backed and
+superseded. Global search rewritten against real `organizations` and
+`tenants` (it previously searched fixtures, so a real customer's name
+returned nothing). A banner on Feature Flags states outright that there is
+no `feature_flags` table and a toggle changes nothing (D-153).
+**Deviations:** the plan said "delete useMockData.ts". It cannot be deleted:
+it still backs the cloud/on-prem owner detail pages, namespaces and the
+owner dashboard, and those portals are frozen — "kept working, no new work".
+Deleting their data source would break them. They are now unreachable by a
+super admin, so the internal app is clean while the fixtures serve only the
+frozen surfaces. Reported rather than forced.
+**Verified:** 17 RLS blocks; smoke-login (all three roles, including the two
+customer owners whose pages still use fixtures); e2e extended for both
+redirects and for global search finding a real account by name;
+typecheck/lint/build.
+**Decisions:** D-153
+**Next:** Stage 2c — "Add details" + file upload (csv/json/xlsx/doc), the
+only metrics route for air-gapped accounts. Then Stage 3 (nav).
+**Issues:** feature flags remain non-functional behind an honest banner;
+building real flag storage is separate work. Customer portals still render
+fixtures to their owners — fine while no customer is live, but it must be
+settled before one is.
+
+---
+
 ## Session 57 — 2026-10-16 — Stage 2b (part 2): the hierarchy on the board
 **Built:** `DataTable` gained an optional `renderExpanded`, so an account
 with tenants opens in place on the Portfolio board while a cloud account

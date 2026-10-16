@@ -266,6 +266,25 @@ Reports history and logged as an engagement.
 - Search + "Ask the Hub" answers over KB, docs, and account records (scoped by
   role).
 
+### 5.10b What was removed, and what is still a mock-up
+
+The internal app no longer has **Overview**, **Cloud Customers** or **On-Prem
+Customers**. All three were fixture-backed and are superseded by Portfolio
+and the merged account page; their URLs redirect.
+
+**Global search** now finds real accounts and tenants. It previously searched
+fixtures, so a real customer's name matched nothing.
+
+Two things remain fixture-backed and are labelled as such rather than left to
+be discovered:
+
+- **Feature flags** have no storage behind them at all — a toggle changes
+  nothing in any customer's deployment. The page says so.
+- The **customer-owner portals** (cloud/on-prem detail, namespaces, the owner
+  dashboard) still render fixtures. They are frozen — kept working, no new
+  work — and are unreachable from the internal app. This has to be settled
+  before any customer goes live.
+
 ### 5.11a The board shows the hierarchy
 
 An account with tenants expands in place on the Portfolio board — same
