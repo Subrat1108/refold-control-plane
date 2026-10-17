@@ -355,6 +355,87 @@ async function processRecord(svc: SupabaseClient, record: Record<string, unknown
   return await decideAndFile(svc, { recordType, targetTable, orgId: org.id, operation: operation as 'create' | 'update' | 'delete', data, sourceRef, evidenceUrl, evidenceExcerpt, confidence }, ctxForDedupe, stripped.length ? stripped : undefined)
 }
 
+// ── Metrics (stage 3) ─────────────────────────────────────────────────────
+//
+// The on-prem path. Those installations sit behind IP whitelisting, so we
+// cannot call in — their agent pushes to us instead, with an ingest token
+// scoped to its own account. No new authentication was needed: the token
+// mechanism below already does exactly this.
+//
+// Metrics are written DIRECTLY, not proposed. Measurements from Refold's own
+// API or our own agent are facts rather than judgements, and routing
+// thousands of daily numbers through a human inbox would bury the handful of
+// records that genuinely need a decision. A deliberate exception to the
+// one-write-pipeline rule, and the reason every row carries its source.
+//
+// An unresolvable account is REJECTED here rather than held for resolution.
+// A held record is a fact waiting for a human to say who it belongs to; a
+// metric from an automated agent with no account is a misconfiguration, and
+// filing resolutions for it every five minutes would be noise.
+const GRANULARITIES = ['day', 'week', 'month']
+
+async function processMetric(
+  svc: SupabaseClient,
+  raw: Record<string, unknown>,
+  tokenRow: { id: string; allowed_org_ids: string[] | null },
+): Promise<{ status: string; reason?: string; metric_key?: string }> {
+  const metricKey = String(raw.metric_key ?? '')
+  const reject = (reason: string) => ({ status: 'rejected_invalid', reason, metric_key: metricKey })
+
+  if (!metricKey) return reject('metric_key is required')
+
+  const org = await resolveAccount(svc, raw.account as string | undefined)
+  if (!org) return reject('unknown account — map it before pushing metrics for it')
+  if (tokenRow.allowed_org_ids && !tokenRow.allowed_org_ids.includes(org.id)) {
+    return reject("account outside this token's scope")
+  }
+
+  let tenantId: string | null = null
+  if (raw.tenant) {
+    const tenant = await resolveTenant(svc, org.id, String(raw.tenant))
+    if (!tenant) return reject('unknown tenant for this account')
+    tenantId = tenant.id
+  }
+
+  // A derived metric is computed from the others; accepting one would let a
+  // pushed figure contradict its own inputs.
+  const { data: def } = await svc.from('metric_definitions').select('key, kind').eq('key', metricKey).maybeSingle()
+  if (!def) return reject('unknown metric_key')
+  if (def.kind === 'derived') return reject('this metric is calculated from others and cannot be pushed')
+
+  const granularity = String(raw.granularity ?? 'month')
+  if (!GRANULARITIES.includes(granularity)) return reject(`granularity must be one of ${GRANULARITIES.join(', ')}`)
+
+  const period = String(raw.period ?? '')
+  if (Number.isNaN(new Date(period).getTime())) return reject('period is not a date')
+  // Month figures keep the long-standing first-of-month convention, so a
+  // monthly push on the 17th still lands on the 1st and stays comparable.
+  const storedPeriod = granularity === 'month' ? `${period.slice(0, 7)}-01` : period.slice(0, 10)
+
+  const value = Number(raw.value)
+  if (!Number.isFinite(value)) return reject('value is not a number')
+  const baseline = raw.baseline_value == null ? null : Number(raw.baseline_value)
+
+  const { error } = await svc.from('metric_values').upsert({
+    org_id: org.id,
+    tenant_id: tenantId,
+    metric_key: metricKey,
+    dimension: raw.dimension == null ? null : String(raw.dimension),
+    period: storedPeriod,
+    granularity,
+    value,
+    baseline_value: Number.isFinite(baseline as number) ? baseline : null,
+    source: 'agent',
+    source_ref: raw.source_ref == null ? null : String(raw.source_ref),
+    ingest_token_id: tokenRow.id,
+  }, { onConflict: 'org_id,tenant_id,metric_key,dimension,period,granularity,project_id' })
+
+  if (error) return reject(error.message)
+  // Re-pushing a period replaces it, which is what makes an agent safe to
+  // re-run after a failure.
+  return { status: 'recorded', metric_key: metricKey }
+}
+
 Deno.serve(async (req: Request) => {
   if (req.method !== 'POST') return json({ error: 'Method not allowed' }, 405)
 
@@ -379,7 +460,12 @@ Deno.serve(async (req: Request) => {
 
   const run = payload.run ?? {}
   const records = Array.isArray(payload.records) ? payload.records : []
+  // A push may carry records, metrics, or both. An on-prem agent sends only
+  // metrics; the sync runner sends only records.
+  const metrics = Array.isArray(payload.metrics) ? payload.metrics : []
   if (records.length > MAX_RECORDS) return json({ error: `Too many records (max ${MAX_RECORDS})` }, 413)
+  if (metrics.length > MAX_RECORDS) return json({ error: `Too many metrics (max ${MAX_RECORDS})` }, 413)
+  if (!records.length && !metrics.length) return json({ error: 'Nothing to ingest: send records, metrics, or both' }, 400)
 
   if (!['scoped', 'backfill', 'daily'].includes(run.mode)) return json({ error: 'run.mode must be scoped|backfill|daily' }, 400)
   const source = run.source ?? 'agent'
@@ -413,6 +499,11 @@ Deno.serve(async (req: Request) => {
   const results = []
   for (const record of records) {
     results.push(await processRecord(svc, record, tokenRow, ctx))
+  }
+  // Metrics are written straight through rather than proposed — see
+  // processMetric for why.
+  for (const metric of metrics) {
+    results.push(await processMetric(svc, metric, tokenRow))
   }
 
   const finalStatus = results.some((r) => r.status === 'rejected_invalid') ? 'partial' : 'success'

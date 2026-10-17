@@ -414,6 +414,10 @@ export type OrgHealth = 'active' | 'caution' | 'risk'
 export type LifecycleStage = 'prospect' | 'poc' | 'onboarding' | 'live' | 'expansion' | 'renewal' | 'churned' | 'dormant'
 export type DeploymentModel = 'cloud' | 'onprem_managed' | 'onprem_airgapped'
 export type DataAccessMode = 'api' | 'manual' | 'mixed'
+export type MetricGranularity = 'day' | 'week' | 'month'
+// observed = measured by Refold and ingested; derived = computed from
+// observed, never entered; judgement = a person's assessment.
+export type MetricKind = 'observed' | 'derived' | 'judgement'
 
 export type ProjectHealth = 'completed' | 'on_schedule' | 'caution' | 'at_risk'
 export type MilestoneStatus = 'not_started' | 'in_progress' | 'done' | 'at_risk'
@@ -450,6 +454,9 @@ export interface Account {
   externalRef: string | null
   segmentId: string | null
   deploymentModel: DeploymentModel | null
+  // The Refold organisation this account corresponds to. Without it the
+  // metrics pull cannot identify the account in the source system.
+  refoldOrgId: string | null
   health: OrgHealth
   lifecycleStage: LifecycleStage
   dataAccessMode: DataAccessMode | null
@@ -609,6 +616,10 @@ export interface MetricDefinition {
   category: string
   hasBaseline: boolean
   sort: number
+  kind: MetricKind
+  // Set for derived metrics only — shown in the UI so it is obvious why the
+  // figure cannot be typed in.
+  formula: string | null
 }
 
 export interface MetricValue extends Provenance {
@@ -618,6 +629,10 @@ export interface MetricValue extends Provenance {
   // uniqueness constraint includes it, so the two never collide.
   tenantId: string | null
   projectId: string | null
+  // A breakdown within the metric (an app slug for app_usage); null when the
+  // metric has none.
+  dimension: string | null
+  granularity: MetricGranularity
   metricKey: string
   period: string
   value: number

@@ -16,6 +16,45 @@ Template:
 
 ---
 
+## Session 61 — 2026-10-17 — platform metrics: stages 1-3
+**Built:** The vocabulary the CS team actually uses. `metric_definitions`
+gains `kind` — observed / derived / judgement — so outcomes like *workflow
+success rate* are calculated rather than typed (D-157); existing keys were
+reclassified, not duplicated, since `execution_volume` already meant workflow
+executions. `metric_values` gains `dimension` (app breakdowns) and
+`granularity` (day/week/month), both joining a uniqueness key that has now
+been too narrow twice (D-158). `organizations` gains `refold_org_id` — the
+mapping without which a metrics pull cannot identify an account at all.
+UI: the Deployment tab is replaced by **Tenants**, where tenants are finally
+LINKS (they were listed with only a delete icon, so you could delete one but
+not open it); the tenant page can now be edited, which was a dead end; and
+entry is one bulk form per period with an app-usage breakdown, blanks skipped
+rather than written as zero.
+Push ingestion for on-prem needed **no new authentication** (D-159) — the
+Ingest API's `cshub_` tokens are already scoped by `allowed_org_ids`, which
+is exactly a per-customer agent credential. Metrics write directly rather
+than proposing, by the owner's decision, with `source` and `ingest_token_id`
+recorded so a wrong figure is still traceable.
+**Deviations:** none to the plan. Stage 4 (API pull) waits on the docs.
+**Verified:** 19 RLS blocks including a new one proving a per-app breakdown,
+daily-vs-monthly, and account-vs-tenant rows all coexist and that a re-push
+replaces rather than duplicates; live push test through the real ingest
+function — five refusals each with a readable reason, idempotent re-push, and
+a scoped token **refused** when writing outside its account with nothing
+leaking; e2e; smoke-login; typecheck/lint/build; migration pushed, `ingest`
+redeployed.
+**One correction worth recording (D-160):** the People slide-over assertion I
+twice dismissed as a flake was a real defect — Escape was going to the
+focused trigger behind the sheet's overlay rather than to the dialog. Fixed
+and now stable across three runs. A separate failure the same day was a dirty
+database from a prior run, hidden because `db reset` output was suppressed.
+**Decisions:** D-157, D-158, D-159, D-160
+**Next:** stage 4 (pull, on the API docs) and stage 5 (visual redesign,
+needs the palette).
+**Issues:** unchanged.
+
+---
+
 ## Session 60 — 2026-10-17 — Stage 2c: getting figures in by hand or from a file
 **Built:** `MetricEntry` — manual entry plus csv/json upload — on both the
 account's Metrics tab and the new per-tenant page, which previously had no

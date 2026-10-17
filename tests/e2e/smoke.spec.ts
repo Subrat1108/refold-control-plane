@@ -90,7 +90,7 @@ test('super admin smoke: Home, Portfolio, Account 360, Approvals, Audit log, Sta
   if (accountName) await expect(page.getByRole('heading', { name: accountName })).toBeVisible()
   await expectNoErrors(page, errors)
 
-  for (const tabName of ['Overview', 'Deployment', 'Projects', 'Escalations', 'Tickets', 'Engagements', 'Action items', 'Metrics']) {
+  for (const tabName of ['Overview', 'Tenants', 'Projects', 'Escalations', 'Tickets', 'Engagements', 'Action items', 'Metrics']) {
     await page.getByRole('tab', { name: tabName }).click()
     await expectNoErrors(page, errors)
   }
@@ -141,12 +141,30 @@ test('super admin smoke: Home, Portfolio, Account 360, Approvals, Audit log, Sta
   }
   await expectNoErrors(page, errors)
 
-  // ── Stage 2a: the deployment picture lives on the account page now ──
+  // ── Tenants are reachable FROM the account, which they were not: the old
+  // Deployment tab listed them with only a delete icon. ──
   await page.goto('/accounts/' + accountId)
-  await page.getByRole('tab', { name: 'Deployment' }).click()
-  await expect(page.getByRole('heading', { name: 'Deployment', exact: true })).toBeVisible()
-  await expect(page.getByRole('heading', { name: 'Platform metrics' })).toBeVisible()
+  await page.getByRole('tab', { name: 'Tenants' }).click()
+  await expect(page.getByRole('heading', { name: 'Tenants', exact: true })).toBeVisible()
+  const tenantFromAccount = page.locator('a[href*="/tenants/"]').first()
+  await expect(tenantFromAccount).toBeVisible()
+  await tenantFromAccount.click()
+  // ...and a tenant can be edited from its own page, which was a dead end.
+  await expect(page.getByRole('heading', { name: 'Where it runs' })).toBeVisible()
+  await page.getByRole('button', { name: 'Edit' }).first().click()
+  await expect(page.getByRole('dialog', { name: 'Edit tenant' })).toBeVisible()
+  await expect(page.getByLabel('Belongs to account')).toBeVisible()
+  await page.getByRole('button', { name: 'Cancel' }).click()
+
+  // Bulk entry: one period, many metrics — and derived metrics are absent
+  // because they are calculated, not typed.
+  await expect(page.getByRole('heading', { name: 'Add details' })).toBeVisible()
+  await expect(page.getByLabel('Covers a')).toBeVisible()
+  await expect(page.getByText(/Calculated for you from the above/)).toBeVisible()
   await expectNoErrors(page, errors)
+
+  // Back to the account for the steps below, which assume that context.
+  await page.goto('/accounts/' + accountId)
 
   // Stage 2b: an account's own details are editable — they used to be
   // write-once, which is untenable when half are created mid-approval from
@@ -309,7 +327,12 @@ test('super admin smoke: Home, Portfolio, Account 360, Approvals, Audit log, Sta
   // The slide-over (a Radix Sheet) marks the rest of the page aria-hidden
   // while open — leaving it open made the sidebar's nav links unreachable
   // for the next step. Close it before navigating anywhere else.
-  await page.keyboard.press('Escape')
+  //
+  // Sent to the dialog rather than via page.keyboard: a bare keypress goes
+  // to whatever currently holds focus, which after the opening click is the
+  // trigger button now sitting behind the sheet's aria-hidden overlay. That
+  // made this assertion intermittently fail all session.
+  await page.getByRole('dialog').press('Escape')
   await expect(page.getByText('Recent activity')).not.toBeVisible()
 
   // ── Sync Status (7.5-pre2 Session 5): the scoped Refresh above already

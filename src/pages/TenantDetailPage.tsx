@@ -8,10 +8,12 @@
 //
 // Where the old mock admin panel showed invented charts here, this shows
 // what is genuinely known and says plainly where real figures are missing.
+import { useState } from 'react'
 import { Link, useParams } from 'react-router-dom'
 import { ChevronLeft } from 'lucide-react'
 import { useAccount, useTenants, useMetricValues, useMetricDefinitions } from '@/hooks'
 import { MetricEntry } from '@/components/MetricEntry'
+import { EditTenantPanel } from '@/components/EditTenantPanel'
 import { CardSkeleton } from '@/components/SkeletonLoader'
 import { EmptyState } from '@/components/EmptyState'
 import { ErrorState } from '@/components/ErrorState'
@@ -19,6 +21,7 @@ import { formatDate } from '@/utils/formatDate'
 
 export function TenantDetailPage() {
   const { orgId, tenantId } = useParams<{ orgId: string; tenantId: string }>()
+  const [editing, setEditing] = useState(false)
   const { data: account, isLoading: accountLoading, isError, refetch } = useAccount(orgId ?? null)
   const { data: tenants, isLoading: tenantsLoading } = useTenants(orgId ?? null)
 
@@ -40,7 +43,10 @@ export function TenantDetailPage() {
         <Link to={`/accounts/${account.id}`} className="inline-flex items-center gap-1 text-sm text-muted-foreground hover:text-foreground">
           <ChevronLeft size={16} /> {account.name}
         </Link>
-        <h1 className="text-xl font-semibold text-foreground mt-1">{tenant.name}</h1>
+        <div className="flex items-center gap-2 mt-1">
+          <h1 className="text-xl font-semibold text-foreground">{tenant.name}</h1>
+          <button onClick={() => setEditing(true)} className="text-xs font-medium text-primary hover:underline">Edit</button>
+        </div>
         <p className="text-sm text-muted-foreground mt-0.5">
           One signup on {account.name} — a Refold org/workspace. Added {formatDate(tenant.createdAt)}.
         </p>
@@ -65,7 +71,8 @@ export function TenantDetailPage() {
         </dl>
         {tenant.notes && <p className="text-xs text-muted-foreground pt-1 border-t border-border">{tenant.notes}</p>}
         <p className="text-xs text-muted-foreground">
-          Edit these from the account&apos;s Deployment tab — including which account this tenant belongs to.
+          <button onClick={() => setEditing(true)} className="font-medium text-primary hover:underline">Edit</button> these — including which account this
+          tenant belongs to. Moving it carries its records with it.
         </p>
       </section>
 
@@ -77,6 +84,8 @@ export function TenantDetailPage() {
         <h2 className="text-sm font-semibold text-foreground mb-1">Recorded metrics</h2>
         <TenantMetrics orgId={account.id} tenantId={tenant.id} />
       </section>
+
+      <EditTenantPanel tenant={tenant} open={editing} onClose={() => setEditing(false)} />
     </div>
   )
 }

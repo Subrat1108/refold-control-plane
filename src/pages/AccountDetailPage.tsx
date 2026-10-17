@@ -51,9 +51,6 @@ import {
   deleteMetricValue,
   useTenants,
   createTenant,
-  updateTenant,
-  moveTenant,
-  useAccountTree,
   deleteTenant,
   useAccountSources,
   createAccountSource,
@@ -63,6 +60,7 @@ import {
 import { DataTable, type Column } from '@/components/DataTable'
 import { StatusBadge } from '@/components/StatusBadge'
 import { MetricEntry } from '@/components/MetricEntry'
+import { EditTenantPanel } from '@/components/EditTenantPanel'
 import { SourceBadge } from '@/components/SourceBadge'
 import { Modal } from '@/components/Modal'
 import { SlideOver } from '@/components/SlideOver'
@@ -90,7 +88,7 @@ import type {
 
 const TABS: TabItem[] = [
   { id: 'overview', label: 'Overview' },
-  { id: 'deployment', label: 'Deployment' },
+  { id: 'tenants', label: 'Tenants' },
   { id: 'projects', label: 'Projects' },
   { id: 'escalations', label: 'Escalations' },
   { id: 'tickets', label: 'Tickets' },
@@ -239,7 +237,7 @@ export function AccountDetailPage() {
       {tab === 'overview' && (
         <OverviewTab account={account} onChangeHealth={() => setHealthModalOpen(true)} onMarkVerified={handleMarkVerified} />
       )}
-      {tab === 'deployment' && <DeploymentTab account={account} onEditTenant={setEditTenant} />}
+      {tab === 'tenants' && <TenantsTab account={account} onEditTenant={setEditTenant} />}
       {tab === 'projects' && <ProjectsTab orgId={account.id} people={people ?? []} />}
       {tab === 'escalations' && <EscalationsTab orgId={account.id} />}
       {tab === 'tickets' && <TicketsTab orgId={account.id} />}
@@ -249,7 +247,7 @@ export function AccountDetailPage() {
 
       <ChangeHealthModal account={account} open={healthModalOpen} onClose={() => setHealthModalOpen(false)} />
       <EditAccountModal account={account} open={editAccountOpen} onClose={() => setEditAccountOpen(false)} />
-      <EditTenantModal tenant={editTenant} onClose={() => setEditTenant(null)} />
+      <EditTenantPanel tenant={editTenant} open={!!editTenant} onClose={() => setEditTenant(null)} />
       <AddMyRoleModal
         orgId={account.id}
         profileId={profile?.id ?? null}
@@ -1216,97 +1214,70 @@ function MetricsTab({ orgId, accountName }: { orgId: string; accountName: string
   )
 }
 
-// Stage 2a — the delivery picture, on the SAME page as the CS record.
+// Tenants — one signup each, and every one is a link.
 //
-// This absorbs what /cloud-customers/:id and /onprem-customers/:id used to
-// show. Those pages were fed entirely by mock fixtures, so rather than port
-// invented numbers across, this shows what is genuinely known — the shape of
-// the deployment and the tenants under it — and says plainly where real
-// figures are still missing. A sparse honest page beats a full fictional one;
-// "Add details" (Stage 2c) is how the gaps get filled.
-function DeploymentTab({ account, onEditTenant }: { account: Account; onEditTenant: (t: Tenant) => void }) {
+// This replaces the Deployment tab. The owner did not want a section about
+// deployment shape, and the tenants listed there were not links at all: you
+// could delete a tenant from this page but not open it, which is the wrong
+// way round. Cloud accounts have no tenants by definition, so the tab is
+// hidden for them rather than shown empty.
+function TenantsTab({ account, onEditTenant }: { account: Account; onEditTenant: (t: Tenant) => void }) {
   const { data: tenants, isLoading } = useTenants(account.id)
+  if (isLoading) return <CardSkeleton />
 
-  const shape = account.deploymentModel ?? (account.deploymentType === 'on_premise' ? 'onprem_airgapped' : 'cloud')
-  const label: Record<string, string> = {
-    cloud: 'Cloud — shared Refold infrastructure',
-    dedicated_cluster: 'Dedicated cluster — a Refold-managed instance for this account alone',
-    onprem_managed: 'On-premise, Refold assisted — installed on the account\'s own infrastructure',
-    onprem_airgapped: 'On-premise, air-gapped — installed on the account\'s own infrastructure, no Refold access',
-  }
-  const hasTenants = shape !== 'cloud'
+  const list = tenants ?? []
+  const onPrem = account.deploymentType === 'on_premise'
 
   // On-prem signups live in a namespace inside one of the account's own
-  // clusters. Grouping here is presentation only — the tenants themselves
-  // are a flat list (D-149).
+  // clusters. Grouping is presentation only — the data stays flat (D-149).
   const groups = (() => {
-    if (!tenants?.length) return []
-    const by = new Map<string, typeof tenants>()
-    for (const t of tenants) {
-      const key = t.clusterName || t.notes || 'Unassigned'
+    if (!onPrem) return [['', list] as const]
+    const by = new Map<string, typeof list>()
+    for (const t of list) {
+      const key = t.clusterName || t.notes || 'Cluster not recorded'
       by.set(key, [...(by.get(key) ?? []), t])
     }
     return [...by.entries()].sort((a, b) => a[0].localeCompare(b[0]))
   })()
 
   return (
-    <div className="space-y-6">
-      <section className="bg-white rounded-xl shadow-card p-6 space-y-2">
-        <h2 className="text-sm font-semibold text-foreground">Deployment</h2>
-        <p className="text-sm text-foreground">{label[shape] ?? shape}</p>
-        {!hasTenants && (
-          <p className="text-xs text-muted-foreground">
-            Cloud accounts are tracked at account level. Their own customers are Refold <em>linked accounts</em>, which the Hub deliberately does not
-            track individually.
-          </p>
-        )}
-      </section>
+    <div className="bg-white rounded-xl shadow-card p-6 space-y-4">
+      <div>
+        <h2 className="text-sm font-semibold text-foreground">Tenants</h2>
+        <p className="text-xs text-muted-foreground mt-0.5">
+          One tenant is one signup on this account — a Refold org/workspace. Each keeps its own metrics.
+        </p>
+      </div>
 
-      {hasTenants && (
-        <section className="bg-white rounded-xl shadow-card p-6">
-          <h2 className="text-sm font-semibold text-foreground mb-1">Tenants</h2>
-          <p className="text-xs text-muted-foreground mb-3">
-            One tenant is one signup on this account — a Refold org/workspace.
-            {account.deploymentType === 'on_premise' && ' Grouped by the cluster each installation runs in.'}
-          </p>
-          {isLoading ? <CardSkeleton /> : groups.length === 0 ? (
-            <EmptyState title="No tenants recorded yet" description="Add one from any Approvals row, or from the Sources panel on this account." />
-          ) : (
-            <div className="space-y-4">
-              {groups.map(([group, list]) => (
-                <div key={group}>
-                  <p className="text-xs font-semibold text-muted-foreground uppercase mb-1.5">{group}</p>
-                  <ul className="space-y-1.5">
-                    {list.map((t) => (
-                      <li key={t.id} className="flex items-start justify-between gap-3 border-b border-border pb-1.5 last:border-0">
-                        <div className="min-w-0">
-                          <p className="text-sm text-foreground">{t.name}</p>
-                          <p className="text-xs text-muted-foreground">
-                            {t.namespaceName ? <>namespace <code className="font-mono">{t.namespaceName}</code></> : 'namespace not recorded'}
-                            {t.refoldOrgId && <> · org <code className="font-mono">{t.refoldOrgId}</code></>}
-                            {t.linkedAccountId && <> · linked account <code className="font-mono">{t.linkedAccountId}</code></>}
-                          </p>
-                        </div>
-                        <button onClick={() => onEditTenant(t)} className="text-xs font-medium text-primary hover:underline whitespace-nowrap">Edit</button>
-                      </li>
-                    ))}
-                  </ul>
-                </div>
-              ))}
+      {list.length === 0 ? (
+        <EmptyState title="No tenants recorded yet" description="Add one from any Approvals row, or from the account picker when filing a record." />
+      ) : (
+        <div className="space-y-4">
+          {groups.map(([group, rows]) => (
+            <div key={group || 'all'}>
+              {group && <p className="text-xs font-semibold text-muted-foreground uppercase mb-1.5">{group}</p>}
+              <ul className="divide-y divide-border">
+                {rows.map((t) => (
+                  <li key={t.id} className="py-2 flex items-start justify-between gap-3">
+                    <div className="min-w-0">
+                      <Link to={`/accounts/${account.id}/tenants/${t.id}`} className="text-sm font-medium text-primary hover:underline">
+                        {t.name}
+                      </Link>
+                      <p className="text-xs text-muted-foreground mt-0.5">
+                        {t.namespaceName ? <>namespace <code className="font-mono">{t.namespaceName}</code></> : 'namespace not recorded'}
+                        {t.refoldOrgId
+                          ? <> · Refold org <code className="font-mono">{t.refoldOrgId}</code></>
+                          : <> · <span className="text-amber-700">not mapped to Refold</span></>}
+                      </p>
+                    </div>
+                    <button onClick={() => onEditTenant(t)} className="text-xs font-medium text-primary hover:underline whitespace-nowrap">Edit</button>
+                  </li>
+                ))}
+              </ul>
             </div>
-          )}
-        </section>
+          ))}
+        </div>
       )}
-
-      <section className="bg-white rounded-xl shadow-card p-6">
-        <h2 className="text-sm font-semibold text-foreground mb-1">Platform metrics</h2>
-        <EmptyState
-          title="No metrics recorded"
-          description={account.deploymentType === 'on_premise'
-            ? 'Refold has no access to an air-gapped installation, so these arrive by manual entry or file upload rather than an API.'
-            : 'These will arrive from the metrics API or by upload. Nothing has been recorded for this account yet.'}
-        />
-      </section>
     </div>
   )
 }
@@ -1324,6 +1295,7 @@ function EditAccountModal({ account, open, onClose }: { account: Account; open: 
   const [lifecycle, setLifecycle] = useState<LifecycleStage>(account.lifecycleStage)
   const [deploymentType, setDeploymentType] = useState<DeploymentType>(account.deploymentType)
   const [deploymentModel, setDeploymentModel] = useState<DeploymentModel | ''>(account.deploymentModel ?? '')
+  const [refoldOrgId, setRefoldOrgId] = useState(account.refoldOrgId ?? '')
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState<string | null>(null)
 
@@ -1334,6 +1306,7 @@ function EditAccountModal({ account, open, onClose }: { account: Account; open: 
     setLifecycle(account.lifecycleStage)
     setDeploymentType(account.deploymentType)
     setDeploymentModel(account.deploymentModel ?? '')
+    setRefoldOrgId(account.refoldOrgId ?? '')
     setError(null)
   }, [open, account])
 
@@ -1348,6 +1321,7 @@ function EditAccountModal({ account, open, onClose }: { account: Account; open: 
         lifecycleStage: lifecycle,
         deploymentType,
         deploymentModel: deploymentModel || null,
+        refoldOrgId: refoldOrgId.trim() || null,
       }, profile.id)
       qc.invalidateQueries({ queryKey: ['account', account.id] })
       qc.invalidateQueries({ queryKey: ['accounts'] })
@@ -1401,8 +1375,15 @@ function EditAccountModal({ account, open, onClose }: { account: Account; open: 
             </select>
           </div>
         </div>
+        <div>
+          <label htmlFor="edit-acct-refold" className="block text-xs font-medium text-muted-foreground mb-1">
+            Refold org id <span className="font-normal">(how the metrics pull finds this account)</span>
+          </label>
+          <input id="edit-acct-refold" value={refoldOrgId} onChange={(e) => setRefoldOrgId(e.target.value)} placeholder="org_…" className="w-full rounded-md border border-border px-3 py-2 text-sm" />
+        </div>
         <p className="text-xs text-muted-foreground">
-          The deployment model decides whether this account has tenants at all — cloud accounts are tracked at account level only.
+          The deployment model decides whether this account has tenants at all — cloud accounts are tracked at account level only. Without a Refold org id
+          the metrics pull cannot identify this account in the source system.
         </p>
         {error && <p className="text-sm text-red-600">{error}</p>}
         <div className="flex justify-end gap-2">
@@ -1416,110 +1397,3 @@ function EditAccountModal({ account, open, onClose }: { account: Account; open: 
   )
 }
 
-// A tenant's details AND its parent account. Moving it is the interesting
-// case: twelve tables carry tenant_id beside org_id, so move_tenant() shifts
-// the tenant and every record of it together — otherwise those records would
-// quietly sit under an account the tenant no longer belongs to.
-function EditTenantModal({ tenant, onClose }: { tenant: Tenant | null; onClose: () => void }) {
-  const qc = useQueryClient()
-  const { data: tree } = useAccountTree()
-  const [name, setName] = useState('')
-  const [clusterName, setClusterName] = useState('')
-  const [namespaceName, setNamespaceName] = useState('')
-  const [refoldOrgId, setRefoldOrgId] = useState('')
-  const [linkedAccountId, setLinkedAccountId] = useState('')
-  const [parentOrgId, setParentOrgId] = useState('')
-  const [busy, setBusy] = useState(false)
-  const [error, setError] = useState<string | null>(null)
-  const [moved, setMoved] = useState<number | null>(null)
-
-  useEffect(() => {
-    if (!tenant) return
-    setName(tenant.name)
-    setClusterName(tenant.clusterName ?? '')
-    setNamespaceName(tenant.namespaceName ?? '')
-    setRefoldOrgId(tenant.refoldOrgId ?? '')
-    setLinkedAccountId(tenant.linkedAccountId ?? '')
-    setParentOrgId(tenant.orgId)
-    setError(null); setMoved(null)
-  }, [tenant])
-
-  if (!tenant) return null
-
-  async function save() {
-    if (!tenant) return
-    setBusy(true); setError(null)
-    try {
-      if (!name.trim()) throw new Error('A tenant needs a name')
-      await updateTenant(tenant.id, {
-        name: name.trim(),
-        clusterName: clusterName.trim() || null,
-        namespaceName: namespaceName.trim() || null,
-        refoldOrgId: refoldOrgId.trim() || null,
-        linkedAccountId: linkedAccountId.trim() || null,
-      })
-      if (parentOrgId && parentOrgId !== tenant.orgId) {
-        const n = await moveTenant(tenant.id, parentOrgId)
-        setMoved(n)
-      }
-      qc.invalidateQueries({ queryKey: ['tenants'] })
-      qc.invalidateQueries({ queryKey: ['account-tree'] })
-      qc.invalidateQueries({ queryKey: ['accounts'] })
-      onClose()
-    } catch (err) {
-      setError(err instanceof Error ? err.message : 'Could not save')
-    } finally {
-      setBusy(false)
-    }
-  }
-
-  const movingAway = parentOrgId && parentOrgId !== tenant.orgId
-
-  return (
-    <Modal open={!!tenant} onClose={onClose} title="Edit tenant">
-      <div className="space-y-4">
-        <div>
-          <label htmlFor="edit-ten-name" className="block text-xs font-medium text-muted-foreground mb-1">Tenant name <span className="font-normal">(the signup / Refold org)</span></label>
-          <input id="edit-ten-name" value={name} onChange={(e) => setName(e.target.value)} className="w-full rounded-md border border-border px-3 py-2 text-sm" />
-        </div>
-        <div>
-          <label htmlFor="edit-ten-parent" className="block text-xs font-medium text-muted-foreground mb-1">Belongs to account</label>
-          <select id="edit-ten-parent" value={parentOrgId} onChange={(e) => setParentOrgId(e.target.value)} className="w-full rounded-md border border-border px-3 py-2 text-sm bg-white">
-            {(tree ?? []).map((a) => <option key={a.id} value={a.id}>{a.name}</option>)}
-          </select>
-          {movingAway && (
-            <p className="text-xs text-amber-700 mt-1">
-              Every record of this tenant moves with it, so nothing ends up filed under the account it is leaving.
-            </p>
-          )}
-        </div>
-        <div className="grid grid-cols-2 gap-3">
-          <div>
-            <label htmlFor="edit-ten-cluster" className="block text-xs font-medium text-muted-foreground mb-1">Cluster</label>
-            <input id="edit-ten-cluster" value={clusterName} onChange={(e) => setClusterName(e.target.value)} placeholder="on-prem only" className="w-full rounded-md border border-border px-3 py-2 text-sm" />
-          </div>
-          <div>
-            <label htmlFor="edit-ten-namespace" className="block text-xs font-medium text-muted-foreground mb-1">Namespace</label>
-            <input id="edit-ten-namespace" value={namespaceName} onChange={(e) => setNamespaceName(e.target.value)} placeholder="on-prem only" className="w-full rounded-md border border-border px-3 py-2 text-sm" />
-          </div>
-          <div>
-            <label htmlFor="edit-ten-org" className="block text-xs font-medium text-muted-foreground mb-1">Refold org id</label>
-            <input id="edit-ten-org" value={refoldOrgId} onChange={(e) => setRefoldOrgId(e.target.value)} className="w-full rounded-md border border-border px-3 py-2 text-sm" />
-          </div>
-          <div>
-            <label htmlFor="edit-ten-linked" className="block text-xs font-medium text-muted-foreground mb-1">Linked account id</label>
-            <input id="edit-ten-linked" value={linkedAccountId} onChange={(e) => setLinkedAccountId(e.target.value)} className="w-full rounded-md border border-border px-3 py-2 text-sm" />
-          </div>
-        </div>
-        {error && <p className="text-sm text-red-600">{error}</p>}
-        {moved !== null && <p className="text-sm text-muted-foreground">{moved} record(s) moved with it.</p>}
-        <div className="flex justify-end gap-2">
-          <button onClick={onClose} className="rounded-md border border-border px-3 py-2 text-sm font-medium text-muted-foreground">Cancel</button>
-          <button onClick={save} disabled={busy} className="rounded-md bg-primary px-3 py-2 text-sm font-medium text-white hover:bg-primary/90 disabled:opacity-50">
-            {busy ? 'Saving…' : 'Save'}
-          </button>
-        </div>
-      </div>
-    </Modal>
-  )
-}

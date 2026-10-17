@@ -2337,6 +2337,76 @@ foreign key, and a preview lists what will be recorded. The parsers live in
 `src/lib/metricParse.ts` rather than beside the component precisely so they
 can be tested directly — 12 cases, including each refusal.
 
+## D-157 — a metric knows whether it is measured, computed, or judged (2026-10-17)
+The catalogue offered all 15 of its metrics as things to type in, including
+*workflow success rate* — an outcome that should fall out of executions and
+failures. Hand-entering it invites a figure that contradicts its own inputs.
+
+`metric_definitions` now carries `kind`: **observed** (measured by Refold,
+ingested), **derived** (computed, never entered, carries its `formula`), and
+**judgement** (a person's assessment — engineering hours saved, SI savings,
+deal acceleration, which no API will ever produce). The entry form offers
+observed and judgement only; the file importer rejects derived rows with a
+reason rather than writing a contradiction.
+
+Existing keys were **reclassified, not duplicated**: `execution_volume`
+already means workflow executions and `active_connectors` already counts
+apps in production. Adding parallel keys would have split one measure in two
+and made every chart ambiguous. New: `tenant_count`, `active_workflows`,
+`workflow_failures`, `token_usage`, `app_usage`, plus derived `error_rate`
+and `executions_per_tenant`.
+
+## D-158 — breakdowns and granularity, and a key that must widen with them (2026-10-17)
+"Which apps are they using most" is a **breakdown**, not a number, and
+"daily, weekly or monthly" cannot be expressed by one `period` date. Added
+`dimension` (nullable — an app slug for `app_usage`) and `granularity`
+(day/week/month).
+
+Both had to join the uniqueness key, which has now been too narrow twice
+(D-155 omitted `tenant_id`). Without `dimension` every app would overwrite
+the last and the "most used" ranking could only ever name one app; without
+`granularity` a daily figure would overwrite the monthly total whenever the
+period fell on the first. The RLS block asserts all three dimensions of this
+coexist, because the failure is silent and unobservable in the UI.
+
+## D-159 — on-prem metrics push in; nothing new was needed to let them (2026-10-17)
+On-prem installations sit behind IP whitelisting, so Refold cannot call in —
+their agent pushes to us. **This required no new authentication.** The Ingest
+API already authenticates `cshub_` bearer tokens scoped by `allowed_org_ids`,
+which is exactly a per-customer agent credential; the only addition is a
+`metrics` array alongside `records`.
+
+Metrics are written **directly, not proposed** — a deliberate exception to
+the one-write-pipeline rule, taken with the owner. Measurements from Refold's
+own API or our own agent are facts, not judgements, and routing thousands of
+daily numbers through a human inbox would bury the handful that need a
+decision. Every row records its `source` and `ingest_token_id`, so a wrong
+figure can still be traced to the agent that sent it.
+
+Refusals are explicit rather than silent: an unknown account, a tenant that
+is not the account's, an unknown or derived metric key, a bad granularity or
+a non-numeric value each come back with a readable reason. An unresolvable
+account is **rejected, not held** — a held record is a fact awaiting a human
+decision, whereas a metric from an automated agent with no account is a
+misconfiguration, and filing resolutions for it every five minutes would be
+noise. Verified live, including that a scoped token **cannot** write outside
+its `allowed_org_ids`.
+
+## D-160 — the e2e Escape was being sent to the wrong element (2026-10-17)
+The People slide-over's close assertion had failed intermittently all
+session and was repeatedly written off as a flake — including by me, twice.
+It was not. `page.keyboard.press('Escape')` goes to whatever holds focus,
+which after the opening click is the trigger button now sitting behind the
+sheet's own aria-hidden overlay; whether the key reached the dialog depended
+on timing. Sending it to the dialog (`getByRole('dialog').press('Escape')`)
+makes it deterministic — three consecutive passes after a session of
+intermittent failures.
+
+Worth recording the other half: a run earlier the same day failed at an
+unrelated line because a PREVIOUS run had already set a sync watermark.
+`db reset` output was being suppressed, so a dirty database looked like a
+code regression. Reset visibly when a failure does not reproduce.
+
 # Parked
 
 Out-of-scope ideas land here instead of derailing the current prompt block.

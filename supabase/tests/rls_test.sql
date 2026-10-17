@@ -1314,7 +1314,7 @@ begin
   -- replaces its own value rather than duplicating.
   insert into public.metric_values (org_id, tenant_id, metric_key, period, value, source)
   select v_org, v_t1, key, '2026-10-01', 99, 'file' from public.metric_definitions limit 1
-  on conflict (org_id, tenant_id, metric_key, period, project_id) do update set value = excluded.value, source = excluded.source;
+  on conflict (org_id, tenant_id, metric_key, dimension, period, granularity, project_id) do update set value = excluded.value, source = excluded.source;
   select count(*) into n from public.metric_values where tenant_id = v_t1;
   assert n = 1, 'a tenant should have one value per metric per period, not two';
   select count(*) into n from public.metric_values where tenant_id = v_t1 and value = 99 and source = 'file';
@@ -1325,4 +1325,66 @@ begin
   reset role;
 
   raise notice 'ALL TENANT METRIC SCOPE RLS TESTS PASSED';
+end $$;
+
+-- ── Platform metrics: breakdowns and granularity (stage 1) ────────────────
+do $$
+declare
+  n int;
+  v_org uuid; v_t uuid;
+begin
+  select id into v_org from public.organizations where name = 'Meridian Laboratories';
+
+  set local role authenticated;
+  set local request.jwt.claims = '{"sub":"00000000-0000-0000-0000-000000001001","aal":"aal2"}'; -- super admin
+  insert into public.tenants (org_id, name) values (v_org, 'metric-dim-tenant') returning id into v_t;
+
+  -- A breakdown: one row per app. Without `dimension` in the key each app
+  -- would overwrite the last and "which apps are they using most" could only
+  -- ever name one.
+  insert into public.metric_values (org_id, metric_key, dimension, period, granularity, value, source)
+  values (v_org, 'app_usage', 'slack',    '2026-10-01', 'month', 120, 'api'),
+         (v_org, 'app_usage', 'zendesk',  '2026-10-01', 'month',  80, 'api'),
+         (v_org, 'app_usage', 'gmail',    '2026-10-01', 'month',  40, 'api');
+  select count(*) into n from public.metric_values where org_id = v_org and metric_key = 'app_usage';
+  assert n = 3, format('each app should keep its own row, got %s', n);
+
+  -- Granularity: the daily figure for 1 October and October's monthly total
+  -- share a period date and must not collide.
+  insert into public.metric_values (org_id, metric_key, period, granularity, value, source)
+  values (v_org, 'execution_volume', '2026-10-01', 'day',   500,   'api'),
+         (v_org, 'execution_volume', '2026-10-01', 'month', 14000, 'api');
+  select count(*) into n from public.metric_values where org_id = v_org and metric_key = 'execution_volume';
+  assert n = 2, format('daily and monthly figures must coexist, got %s', n);
+
+  -- Account-level and tenant-level stay distinct (D-155 still holds).
+  insert into public.metric_values (org_id, tenant_id, metric_key, period, granularity, value, source)
+  values (v_org, v_t, 'execution_volume', '2026-10-01', 'month', 300, 'agent');
+  select count(*) into n from public.metric_values where org_id = v_org and metric_key = 'execution_volume';
+  assert n = 3, format('a tenant figure is its own row, got %s', n);
+
+  -- Re-pushing the same scope REPLACES rather than duplicating, which is what
+  -- makes an agent safe to re-run.
+  insert into public.metric_values (org_id, metric_key, dimension, period, granularity, value, source)
+  values (v_org, 'app_usage', 'slack', '2026-10-01', 'month', 999, 'agent')
+  on conflict (org_id, tenant_id, metric_key, dimension, period, granularity, project_id)
+  do update set value = excluded.value, source = excluded.source;
+  select count(*) into n from public.metric_values where org_id = v_org and metric_key = 'app_usage' and dimension = 'slack';
+  assert n = 1, 'a re-push should replace its own row, not add one';
+  select count(*) into n from public.metric_values where dimension = 'slack' and value = 999;
+  assert n = 1, 'the replaced value should be the new one';
+
+  -- The catalogue distinguishes what can be entered from what is computed.
+  select count(*) into n from public.metric_definitions where kind = 'derived' and formula is null;
+  assert n = 0, 'every derived metric must say how it is computed';
+  select count(*) into n from public.metric_definitions where key = 'error_rate' and kind = 'derived';
+  assert n = 1, 'error_rate must be derived, never hand-entered';
+  select count(*) into n from public.metric_definitions where key = 'execution_volume' and kind = 'observed';
+  assert n = 1, 'execution_volume is measured, not a judgement';
+
+  delete from public.metric_values where org_id = v_org and period = '2026-10-01';
+  delete from public.tenants where id = v_t;
+  reset role;
+
+  raise notice 'ALL PLATFORM METRIC RLS TESTS PASSED';
 end $$;

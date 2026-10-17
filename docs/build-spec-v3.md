@@ -84,6 +84,35 @@ Naming: **project** = a delivery workstream (what the status deck calls a
 project). **Engagement** = a customer touchpoint. (Phase 6 used "engagement"
 loosely; v3 uses these meanings.)
 
+### 2.0b Metrics: observed, derived, judgement (D-157 — D-159)
+
+A metric declares where it comes from, because that decides who may supply
+it:
+
+- **observed** — measured by Refold and ingested: `execution_volume`,
+  `workflow_failures`, `token_usage`, `app_usage`, `tenant_count`,
+  `active_workflows`, `active_connectors`, `mttr`, `agent_mcp_usage`.
+- **derived** — computed from observed and **never entered**: `error_rate`,
+  `workflow_success_rate`, `executions_per_tenant`. Each carries its
+  `formula`.
+- **judgement** — a person's assessment with no automatic source:
+  engineering hours saved, SI savings, deal acceleration, the governance
+  checks.
+
+A value carries an optional **`dimension`** (a breakdown — an app slug for
+`app_usage`) and a **`granularity`** (`day` | `week` | `month`). Both join
+the uniqueness key alongside `tenant_id`, or a breakdown collapses to one
+row and a daily figure overwrites the monthly total.
+
+**Two ingestion paths.** Cloud and dedicated-cluster accounts are **pulled**
+from the Refold API, matched by `organizations.refold_org_id` /
+`tenants.refold_org_id`. On-premise installations sit behind IP whitelisting
+and cannot be called, so their agent **pushes** to the Ingest API using a
+`cshub_` token scoped by `allowed_org_ids` — a `metrics` array alongside
+`records`. Both write **directly** rather than proposing: a measurement is a
+fact, not a judgement, and thousands of daily rows would bury the records
+that need a human decision. `source` and `ingest_token_id` keep provenance.
+
 ### 2.1 What the monthly status report needs
 
 - Portfolio: accounts grouped by segment with health (Active / Caution / Risk),

@@ -37,6 +37,7 @@ import type {
   TicketPriority,
   TicketStatus,
   SearchResults,
+  MetricGranularity,
 } from '@/types'
 
 const INTERNAL_ORG_ID = '00000000-0000-0000-0000-000000000001'
@@ -83,6 +84,7 @@ function mapAccount(row: any): Account {
     externalRef: row.external_ref,
     segmentId: row.segment_id,
     deploymentModel: row.deployment_model,
+    refoldOrgId: row.refold_org_id ?? null,
     health: row.health,
     lifecycleStage: row.lifecycle_stage,
     dataAccessMode: row.data_access_mode,
@@ -95,7 +97,7 @@ function mapAccount(row: any): Account {
 }
 
 const ACCOUNT_COLUMNS =
-  'id, name, deployment_type, plan, status, external_ref, segment_id, deployment_model, health, lifecycle_stage, data_access_mode, aliases, health_reason, verified_at, updated_by, created_at'
+  'id, name, deployment_type, plan, status, external_ref, segment_id, deployment_model, refold_org_id, health, lifecycle_stage, data_access_mode, aliases, health_reason, verified_at, updated_by, created_at'
 
 async function fetchAccounts(): Promise<Account[]> {
   const { data, error } = await supabase.from('organizations').select(ACCOUNT_COLUMNS).neq('id', INTERNAL_ORG_ID).order('name', { ascending: true })
@@ -149,6 +151,7 @@ export interface UpdateAccountInput {
   segmentId?: string | null
   deploymentModel?: Account['deploymentModel']
   deploymentType?: Account['deploymentType']
+  refoldOrgId?: string | null
   lifecycleStage?: LifecycleStage
   health?: OrgHealth
   healthReason?: string | null
@@ -160,6 +163,7 @@ export async function updateAccount(orgId: string, patch: UpdateAccountInput, ac
   if (patch.segmentId !== undefined) update.segment_id = patch.segmentId
   if (patch.deploymentModel !== undefined) update.deployment_model = patch.deploymentModel
   if (patch.deploymentType !== undefined) update.deployment_type = patch.deploymentType
+  if (patch.refoldOrgId !== undefined) update.refold_org_id = patch.refoldOrgId
   if (patch.lifecycleStage !== undefined) update.lifecycle_stage = patch.lifecycleStage
   if (patch.health !== undefined) update.health = patch.health
   if (patch.healthReason !== undefined) update.health_reason = patch.healthReason
@@ -774,10 +778,10 @@ export async function deleteEngagement(id: string): Promise<void> {
 // ── Metrics ──────────────────────────────────────────────────────────────
 
 async function fetchMetricDefinitions(): Promise<MetricDefinition[]> {
-  const { data, error } = await supabase.from('metric_definitions').select('key, label, unit, category, has_baseline, sort').order('sort', { ascending: true })
+  const { data, error } = await supabase.from('metric_definitions').select('key, label, unit, category, has_baseline, sort, kind, formula').order('sort', { ascending: true })
   if (error) throw new Error(error.message)
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  return (data ?? []).map((r: any) => ({ key: r.key, label: r.label, unit: r.unit, category: r.category, hasBaseline: r.has_baseline, sort: r.sort }))
+  return (data ?? []).map((r: any) => ({ key: r.key, label: r.label, unit: r.unit, category: r.category, hasBaseline: r.has_baseline, sort: r.sort, kind: r.kind, formula: r.formula ?? null }))
 }
 
 export function useMetricDefinitions() {
@@ -787,13 +791,13 @@ export function useMetricDefinitions() {
 async function fetchMetricValues(orgId: string): Promise<MetricValue[]> {
   const { data, error } = await supabase
     .from('metric_values')
-    .select('id, org_id, tenant_id, project_id, metric_key, period, value, baseline_value, source, source_ref, created_by, updated_by, verified_at, proposal_id, created_at')
+    .select('id, org_id, tenant_id, project_id, metric_key, dimension, granularity, period, value, baseline_value, source, source_ref, created_by, updated_by, verified_at, proposal_id, created_at')
     .eq('org_id', orgId)
     .order('period', { ascending: false })
   if (error) throw new Error(error.message)
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   return (data ?? []).map((r: any) => ({
-    id: r.id, orgId: r.org_id, tenantId: r.tenant_id ?? null, projectId: r.project_id, metricKey: r.metric_key, period: r.period, value: Number(r.value), baselineValue: r.baseline_value === null ? null : Number(r.baseline_value),
+    id: r.id, orgId: r.org_id, tenantId: r.tenant_id ?? null, projectId: r.project_id, metricKey: r.metric_key, dimension: r.dimension ?? null, granularity: r.granularity ?? 'month', period: r.period, value: Number(r.value), baselineValue: r.baseline_value === null ? null : Number(r.baseline_value),
     source: r.source, sourceRef: r.source_ref, createdBy: r.created_by, updatedBy: r.updated_by, verifiedAt: r.verified_at, proposalId: r.proposal_id, createdAt: r.created_at,
   }))
 }
@@ -812,6 +816,8 @@ export interface MetricValueInput {
   // (20261017000001) — without it, two tenants of one account overwrite each
   // other for the same metric and period.
   tenantId?: string | null
+  dimension?: string | null
+  granularity?: MetricGranularity
   source?: 'manual' | 'file'
 }
 
@@ -824,6 +830,8 @@ export async function upsertMetricValue(orgId: string, input: MetricValueInput, 
         tenant_id: input.tenantId ?? null,
         project_id: input.projectId ?? null,
         metric_key: input.metricKey,
+        dimension: input.dimension ?? null,
+        granularity: input.granularity ?? 'month',
         period: input.period,
         value: input.value,
         baseline_value: input.baselineValue ?? null,
@@ -831,7 +839,7 @@ export async function upsertMetricValue(orgId: string, input: MetricValueInput, 
         created_by: actorId,
         updated_by: actorId,
       },
-      { onConflict: 'org_id,tenant_id,metric_key,period,project_id' },
+      { onConflict: 'org_id,tenant_id,metric_key,dimension,period,granularity,project_id' },
     )
   if (error) throw new Error(error.message)
 }

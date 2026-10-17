@@ -78,7 +78,17 @@ Points, streaks, badges, team leaderboards — computed from the audit log + pro
 (See docs/devlog.md for full session history — this is just the pointer.)
 
 Date: 2026-10-17
-Completed: Session 60 — Stage 2c (D-155, D-156): manual metric entry
+Completed: Session 61 — platform metrics stages 1-3 (D-157 to D-160):
+metrics are now classified observed / derived / judgement so outcomes are
+calculated rather than typed; `dimension` and `granularity` added so app
+breakdowns and daily/weekly/monthly figures are expressible, both joining a
+uniqueness key that had been too narrow twice; `organizations.refold_org_id`
+added for the pull mapping. Deployment tab replaced by Tenants (tenants are
+finally links; the tenant page can be edited); entry is one bulk form per
+period. On-prem push ingestion needed NO new auth — the Ingest API's scoped
+tokens already are a per-customer agent credential.
+
+Earlier: Session 60 — Stage 2c (D-155, D-156): manual metric entry
 plus csv/json upload, on the account AND on each tenant. The file is parsed
 in the browser and never stored — only the figures are kept. xlsx/doc are
 refused with a reason rather than accepted into a queue nothing reads.

@@ -178,7 +178,9 @@ begin
     ('00000000-0000-0000-0000-000000000003', '10000000-0000-0000-0000-000000000002', 'mttr', '2026-09-01', 46, 'manual', v_admin_id)
   -- Scope now includes tenant_id (20261017000001): a tenant's figures must
   -- not overwrite its siblings'.
-  on conflict (org_id, tenant_id, metric_key, period, project_id) do nothing;
+  -- Scope now also includes dimension and granularity (20261017000002):
+  -- a per-app breakdown and a daily figure must not overwrite the monthly.
+  on conflict (org_id, tenant_id, metric_key, dimension, period, granularity, project_id) do nothing;
 
   -- Proposals (2 pending — exercises the Approvals inbox, 7.3). proposed_by/
   -- triggered_by are free text per the schema (D-057), not profile FKs, so
