@@ -787,13 +787,13 @@ export function useMetricDefinitions() {
 async function fetchMetricValues(orgId: string): Promise<MetricValue[]> {
   const { data, error } = await supabase
     .from('metric_values')
-    .select('id, org_id, project_id, metric_key, period, value, baseline_value, source, source_ref, created_by, updated_by, verified_at, proposal_id, created_at')
+    .select('id, org_id, tenant_id, project_id, metric_key, period, value, baseline_value, source, source_ref, created_by, updated_by, verified_at, proposal_id, created_at')
     .eq('org_id', orgId)
     .order('period', { ascending: false })
   if (error) throw new Error(error.message)
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   return (data ?? []).map((r: any) => ({
-    id: r.id, orgId: r.org_id, projectId: r.project_id, metricKey: r.metric_key, period: r.period, value: Number(r.value), baselineValue: r.baseline_value === null ? null : Number(r.baseline_value),
+    id: r.id, orgId: r.org_id, tenantId: r.tenant_id ?? null, projectId: r.project_id, metricKey: r.metric_key, period: r.period, value: Number(r.value), baselineValue: r.baseline_value === null ? null : Number(r.baseline_value),
     source: r.source, sourceRef: r.source_ref, createdBy: r.created_by, updatedBy: r.updated_by, verifiedAt: r.verified_at, proposalId: r.proposal_id, createdAt: r.created_at,
   }))
 }
@@ -802,12 +802,36 @@ export function useMetricValues(orgId: string | null) {
   return useQuery({ queryKey: ['metric-values', orgId], queryFn: () => fetchMetricValues(orgId!), enabled: !!orgId })
 }
 
-export async function upsertMetricValue(orgId: string, input: { metricKey: string; period: string; value: number; baselineValue?: number | null; projectId?: string | null }, actorId: string): Promise<void> {
+export interface MetricValueInput {
+  metricKey: string
+  period: string
+  value: number
+  baselineValue?: number | null
+  projectId?: string | null
+  // A tenant's figures are its own. The conflict target includes tenant_id
+  // (20261017000001) — without it, two tenants of one account overwrite each
+  // other for the same metric and period.
+  tenantId?: string | null
+  source?: 'manual' | 'file'
+}
+
+export async function upsertMetricValue(orgId: string, input: MetricValueInput, actorId: string): Promise<void> {
   const { error } = await supabase
     .from('metric_values')
     .upsert(
-      { org_id: orgId, project_id: input.projectId ?? null, metric_key: input.metricKey, period: input.period, value: input.value, baseline_value: input.baselineValue ?? null, created_by: actorId, updated_by: actorId },
-      { onConflict: 'org_id,metric_key,period,project_id' },
+      {
+        org_id: orgId,
+        tenant_id: input.tenantId ?? null,
+        project_id: input.projectId ?? null,
+        metric_key: input.metricKey,
+        period: input.period,
+        value: input.value,
+        baseline_value: input.baselineValue ?? null,
+        source: input.source ?? 'manual',
+        created_by: actorId,
+        updated_by: actorId,
+      },
+      { onConflict: 'org_id,tenant_id,metric_key,period,project_id' },
     )
   if (error) throw new Error(error.message)
 }

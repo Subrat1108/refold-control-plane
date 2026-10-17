@@ -1277,3 +1277,52 @@ begin
 
   raise notice 'ALL MOVE TENANT RLS TESTS PASSED';
 end $$;
+
+-- ── Metrics are scoped per tenant (Stage 2c) ──────────────────────────────
+do $$
+declare
+  n int;
+  v_org uuid; v_t1 uuid; v_t2 uuid;
+begin
+  select id into v_org from public.organizations where name = 'Meridian Laboratories';
+
+  set local role authenticated;
+  set local request.jwt.claims = '{"sub":"00000000-0000-0000-0000-000000001001","aal":"aal2"}'; -- super admin
+  insert into public.tenants (org_id, name) values (v_org, 'metric-tenant-a') returning id into v_t1;
+  insert into public.tenants (org_id, name) values (v_org, 'metric-tenant-b') returning id into v_t2;
+
+  -- The whole point of widening the constraint: two tenants of one account
+  -- reporting the SAME metric for the SAME period must both survive. Under
+  -- the old key (org, metric, period, project) the second silently replaced
+  -- the first, which is how an on-prem customer's per-namespace figures
+  -- would have been quietly lost.
+  insert into public.metric_values (org_id, tenant_id, metric_key, period, value, source)
+  select v_org, v_t1, key, '2026-10-01', 10, 'manual' from public.metric_definitions limit 1;
+  insert into public.metric_values (org_id, tenant_id, metric_key, period, value, source)
+  select v_org, v_t2, key, '2026-10-01', 20, 'manual' from public.metric_definitions limit 1;
+  -- ...and the account-level figure is a third, distinct row.
+  insert into public.metric_values (org_id, tenant_id, metric_key, period, value, source)
+  select v_org, null, key, '2026-10-01', 30, 'manual' from public.metric_definitions limit 1;
+
+  select count(*) into n from public.metric_values where org_id = v_org and period = '2026-10-01';
+  assert n = 3, format('account-level and both tenants should coexist, got %s rows', n);
+
+  select count(*) into n from public.metric_values where tenant_id = v_t1 and value = 10;
+  assert n = 1, 'tenant A''s value must not have been overwritten by tenant B''s';
+
+  -- The same tenant reporting the same metric and period again still
+  -- replaces its own value rather than duplicating.
+  insert into public.metric_values (org_id, tenant_id, metric_key, period, value, source)
+  select v_org, v_t1, key, '2026-10-01', 99, 'file' from public.metric_definitions limit 1
+  on conflict (org_id, tenant_id, metric_key, period, project_id) do update set value = excluded.value, source = excluded.source;
+  select count(*) into n from public.metric_values where tenant_id = v_t1;
+  assert n = 1, 'a tenant should have one value per metric per period, not two';
+  select count(*) into n from public.metric_values where tenant_id = v_t1 and value = 99 and source = 'file';
+  assert n = 1, 'the re-reported value should have replaced the old one, carrying its source';
+
+  delete from public.metric_values where org_id = v_org and period = '2026-10-01';
+  delete from public.tenants where id in (v_t1, v_t2);
+  reset role;
+
+  raise notice 'ALL TENANT METRIC SCOPE RLS TESTS PASSED';
+end $$;

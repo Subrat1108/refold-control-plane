@@ -176,7 +176,9 @@ begin
     ('00000000-0000-0000-0000-000000000002', '10000000-0000-0000-0000-000000000001', 'execution_volume', '2026-09-01', 24718, 'manual', v_admin_id),
     ('00000000-0000-0000-0000-000000000003', '10000000-0000-0000-0000-000000000002', 'workflow_success_rate', '2026-09-01', 94.3, 'manual', v_admin_id),
     ('00000000-0000-0000-0000-000000000003', '10000000-0000-0000-0000-000000000002', 'mttr', '2026-09-01', 46, 'manual', v_admin_id)
-  on conflict (org_id, metric_key, period, project_id) do nothing;
+  -- Scope now includes tenant_id (20261017000001): a tenant's figures must
+  -- not overwrite its siblings'.
+  on conflict (org_id, tenant_id, metric_key, period, project_id) do nothing;
 
   -- Proposals (2 pending — exercises the Approvals inbox, 7.3). proposed_by/
   -- triggered_by are free text per the schema (D-057), not profile FKs, so

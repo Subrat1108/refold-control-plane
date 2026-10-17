@@ -16,6 +16,42 @@ Template:
 
 ---
 
+## Session 60 — 2026-10-17 — Stage 2c: getting figures in by hand or from a file
+**Built:** `MetricEntry` — manual entry plus csv/json upload — on both the
+account's Metrics tab and the new per-tenant page, which previously had no
+way to record anything. The file is parsed in the browser and written as
+ordinary metric rows with `source = 'file'`; it is never stored (D-156), so
+there is no bucket, no storage policy and no second copy of customer data.
+Unknown metric keys are caught and reported before any write rather than
+failing against the foreign key, and a preview shows what will be recorded.
+Parsers extracted to `src/lib/metricParse.ts` so they could be tested
+directly.
+**Deviations:** xlsx and doc were asked for and are refused with a reason
+("export the sheet as CSV"). Reading them needs a dependency this app does
+not carry, and accepting a file into a queue nothing reads would be the same
+silent no-op as the feature-flag toggles. Said on screen, not hidden.
+**Found while building (D-155):** `metric_values`'s uniqueness constraint
+excluded `tenant_id` even though `apply_proposal()` has been writing that
+column for weeks — so two tenants of one account reporting the same metric
+for the same period would silently overwrite each other. Zero rows exist in
+production, so nothing was lost, but it would have bitten the first
+per-namespace figures an on-prem customer gave us. Constraint widened; the
+account-level view now excludes tenant rows so a tenant's figure cannot show
+as the account's.
+**Verified:** 12-case parser unit test (happy paths, column order, baseline,
+missing headers, bad rows kept separate from good, both json shapes, and
+every refusal); new RLS block proving account-level and two tenants coexist
+for the same metric and period, and that a tenant re-reporting replaces only
+its own row; 18 blocks total; smoke-login; e2e; typecheck/lint/build;
+migration pushed.
+**Decisions:** D-155, D-156
+**Next:** real feature-flag storage, and settling what the frozen customer
+portals show before any customer goes live. Still deferred by the owner:
+file-records-as-found, token rework.
+**Issues:** unchanged.
+
+---
+
 ## Session 59 — 2026-10-16 — Stage 3: the nav the owner actually asked for
 **Built:** The owner pushed back — they had specified this IA several
 messages earlier and I kept deferring it behind my own staging (D-154). Done

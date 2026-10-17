@@ -294,6 +294,22 @@ be discovered:
   work — and are unreachable from the internal app. This has to be settled
   before any customer goes live.
 
+### 5.10c Adding details by hand or from a file
+
+Figures can be entered on an account's **Metrics** tab and on each tenant's
+page. For an air-gapped on-prem installation this is the only route there
+is — Refold has no access to the customer's infrastructure, so nothing
+arrives by API.
+
+A **csv or json** file can be uploaded instead of typing: columns
+`metric_key, period, value` and optionally `baseline`. It is parsed in the
+browser, previewed, and written as ordinary metric rows marked as coming
+from a file. **The file itself is not stored** — only the figures are kept.
+Unknown metric names are reported and skipped rather than failing silently.
+
+xlsx and doc are not readable yet and are refused with that reason; export
+the sheet as CSV.
+
 ### 5.11a The board shows the hierarchy
 
 An account with tenants expands in place on the Portfolio board — same

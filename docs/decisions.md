@@ -2301,6 +2301,42 @@ The **Add details** tab states plainly that upload is not built yet and
 points at what does work, instead of presenting a tab that silently does
 nothing.
 
+## D-155 — a tenant's metrics were going to overwrite its siblings' (2026-10-17)
+Found while building Stage 2c, not by a report. `metric_values` has carried
+`tenant_id` since the tenants work and `apply_proposal()` has been inserting
+it ever since — but the uniqueness constraint was never widened:
+
+    unique nulls not distinct (org_id, metric_key, period, project_id)
+
+Two tenants of one account reporting the same metric for the same period
+therefore collide, and the second silently replaces the first. Nothing had
+hit it only because no metric rows exist anywhere (verified against
+production: 0 rows). It would have bitten the first time an on-prem customer
+reported per-namespace figures — which is precisely what this stage exists
+to enable. Constraint now includes `tenant_id`; the demo seed's ON CONFLICT
+had to follow, which is how the gap surfaced at all.
+
+The account-level Metrics view also had to start excluding tenant-scoped
+rows, or a tenant's figure would show as the account's.
+
+## D-156 — the uploaded file is not kept; only its contents (2026-10-17)
+Stage 2c asked for csv/json/xlsx/doc upload "that the agent can read". Built
+as: parse in the browser, write ordinary `metric_values` rows with
+`source = 'file'`, never store the file. No bucket, no storage policies, no
+Edge Function, and no second copy of customer data to look after — the value
+of an upload is its contents, and keeping the file as well buys nothing.
+
+Only **csv and json** are accepted. xlsx and doc need a parsing dependency
+this app does not carry, so they are refused with a reason ("export the
+sheet as CSV") rather than accepted into a queue nothing reads. That would
+have been the same silent no-op as the feature-flag toggles (D-153).
+
+Rows are validated before anything is written: unknown `metric_key`s are
+reported and skipped rather than failing one row at a time against the
+foreign key, and a preview lists what will be recorded. The parsers live in
+`src/lib/metricParse.ts` rather than beside the component precisely so they
+can be tested directly — 12 cases, including each refusal.
+
 # Parked
 
 Out-of-scope ideas land here instead of derailing the current prompt block.

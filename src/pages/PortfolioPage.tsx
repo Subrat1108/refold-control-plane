@@ -505,23 +505,29 @@ function AddDetailsTab() {
         <h2 className="text-sm font-semibold text-foreground">Add details</h2>
         <p className="text-sm text-muted-foreground mt-0.5">
           For anything the agent or a metrics API cannot supply — which is everything for an air-gapped account, since Refold has no access to those
-          installations.
-        </p>
-      </div>
-
-      <div className="rounded-md border border-amber-300 bg-amber-50 px-4 py-3">
-        <p className="text-sm font-medium text-amber-900">File upload is not built yet</p>
-        <p className="text-xs text-amber-800 mt-0.5">
-          Uploading a csv, json, xlsx or doc for the agent to read is the next piece of work. Until it lands, the routes below are how details get in.
+          installations. <span className="font-medium">xlsx and doc are not readable yet</span>; export the sheet as CSV.
         </p>
       </div>
 
       <ul className="space-y-3 text-sm">
         <li>
-          <span className="font-medium text-foreground">Per account or tenant</span>
+          <span className="font-medium text-foreground">Per account</span>
           <p className="text-xs text-muted-foreground">
-            Open an account from the Board, then its Deployment tab for the shape and its tenants, or any record tab to add escalations, tickets,
-            engagements and milestones by hand.
+            Open an account from the Board and use its <span className="font-medium">Metrics</span> tab — enter a figure by hand, or upload a csv/json
+            with <code className="font-mono">metric_key, period, value</code>.
+          </p>
+        </li>
+        <li>
+          <span className="font-medium text-foreground">Per tenant</span>
+          <p className="text-xs text-muted-foreground">
+            Expand an account on the Board and open a tenant. For an air-gapped installation this is the only route there is — Refold has no access to
+            the customer&apos;s infrastructure, so nothing arrives by API.
+          </p>
+        </li>
+        <li>
+          <span className="font-medium text-foreground">Everything else</span>
+          <p className="text-xs text-muted-foreground">
+            Escalations, tickets, engagements and milestones are added by hand from the account&apos;s own tabs.
           </p>
         </li>
         <li>

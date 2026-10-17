@@ -207,6 +207,12 @@ test('super admin smoke: Home, Portfolio, Account 360, Approvals, Audit log, Sta
   await expect(page.getByRole('dialog')).not.toBeVisible({ timeout: 30_000 })
   await expectNoErrors(page, errors)
 
+  // ── Stage 2c: Add details is reachable and real ──
+  await page.getByRole('link', { name: 'Portfolio' }).click()
+  await page.getByRole('tab', { name: 'Add details' }).click()
+  await expect(page.getByRole('heading', { name: 'Add details' })).toBeVisible()
+  await expectNoErrors(page, errors)
+
   // ── Stage 3: the nav is Home · Portfolio · Approvals · Standups ·
   // Audit Log · Settings. No collapsed Admin group — configuration lives
   // in Settings, where an admin looks for it.

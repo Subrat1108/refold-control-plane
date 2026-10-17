@@ -10,7 +10,8 @@
 // what is genuinely known and says plainly where real figures are missing.
 import { Link, useParams } from 'react-router-dom'
 import { ChevronLeft } from 'lucide-react'
-import { useAccount, useTenants } from '@/hooks'
+import { useAccount, useTenants, useMetricValues, useMetricDefinitions } from '@/hooks'
+import { MetricEntry } from '@/components/MetricEntry'
 import { CardSkeleton } from '@/components/SkeletonLoader'
 import { EmptyState } from '@/components/EmptyState'
 import { ErrorState } from '@/components/ErrorState'
@@ -68,15 +69,40 @@ export function TenantDetailPage() {
         </p>
       </section>
 
+      {/* Stage 2c — a tenant's figures are its own, and for an air-gapped
+          installation this is the only way they can arrive at all. */}
+      <MetricEntry orgId={account.id} tenantId={tenant.id} scopeLabel={`${tenant.name} (tenant of ${account.name})`} />
+
       <section className="bg-white rounded-xl shadow-card p-6">
-        <h2 className="text-sm font-semibold text-foreground mb-1">Metrics</h2>
-        <EmptyState
-          title="No metrics recorded for this tenant"
-          description={account.deploymentType === 'on_premise'
-            ? 'Refold has no access to this installation, so figures arrive by manual entry or file upload rather than an API.'
-            : 'Nothing has been recorded against this tenant yet.'}
-        />
+        <h2 className="text-sm font-semibold text-foreground mb-1">Recorded metrics</h2>
+        <TenantMetrics orgId={account.id} tenantId={tenant.id} />
       </section>
     </div>
+  )
+}
+
+function TenantMetrics({ orgId, tenantId }: { orgId: string; tenantId: string }) {
+  const { data: values, isLoading } = useMetricValues(orgId)
+  const { data: definitions } = useMetricDefinitions()
+  if (isLoading) return <CardSkeleton />
+
+  const mine = (values ?? []).filter((v) => v.tenantId === tenantId)
+  if (!mine.length) {
+    return <EmptyState title="Nothing recorded yet" description="Use Add details above — by hand, or from a csv or json file." />
+  }
+  const label = new Map((definitions ?? []).map((d) => [d.key, d.label]))
+  return (
+    <ul className="text-sm divide-y divide-border">
+      {mine.sort((a, b) => b.period.localeCompare(a.period)).map((v) => (
+        <li key={v.id} className="flex items-center justify-between py-2">
+          <span>{label.get(v.metricKey) ?? v.metricKey}</span>
+          <span className="tabular-nums">
+            {v.value}
+            {v.baselineValue != null && <span className="text-muted-foreground"> (baseline {v.baselineValue})</span>}
+            <span className="text-muted-foreground ml-2">{v.period.slice(0, 7)}</span>
+          </span>
+        </li>
+      ))}
+    </ul>
   )
 }

@@ -614,6 +614,9 @@ export interface MetricDefinition {
 export interface MetricValue extends Provenance {
   id: string
   orgId: string
+  // A metric can belong to the account as a whole or to one tenant; the
+  // uniqueness constraint includes it, so the two never collide.
+  tenantId: string | null
   projectId: string | null
   metricKey: string
   period: string

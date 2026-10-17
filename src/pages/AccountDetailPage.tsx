@@ -48,7 +48,6 @@ import {
   deleteEngagement,
   useMetricDefinitions,
   useMetricValues,
-  upsertMetricValue,
   deleteMetricValue,
   useTenants,
   createTenant,
@@ -63,6 +62,7 @@ import {
 } from '@/hooks'
 import { DataTable, type Column } from '@/components/DataTable'
 import { StatusBadge } from '@/components/StatusBadge'
+import { MetricEntry } from '@/components/MetricEntry'
 import { SourceBadge } from '@/components/SourceBadge'
 import { Modal } from '@/components/Modal'
 import { SlideOver } from '@/components/SlideOver'
@@ -245,7 +245,7 @@ export function AccountDetailPage() {
       {tab === 'tickets' && <TicketsTab orgId={account.id} />}
       {tab === 'engagements' && <EngagementsTab orgId={account.id} />}
       {tab === 'action_items' && <ActionItemsTab orgId={account.id} people={people ?? []} />}
-      {tab === 'metrics' && <MetricsTab orgId={account.id} />}
+      {tab === 'metrics' && <MetricsTab orgId={account.id} accountName={account.name} />}
 
       <ChangeHealthModal account={account} open={healthModalOpen} onClose={() => setHealthModalOpen(false)} />
       <EditAccountModal account={account} open={editAccountOpen} onClose={() => setEditAccountOpen(false)} />
@@ -1172,14 +1172,10 @@ function ActionItemsTab({ orgId, people }: { orgId: string; people: { id: string
 
 // ── Metrics ──────────────────────────────────────────────────────────────
 
-function MetricsTab({ orgId }: { orgId: string }) {
-  const { profile } = useSupabaseAuth()
+function MetricsTab({ orgId, accountName }: { orgId: string; accountName: string }) {
   const qc = useQueryClient()
   const { data: definitions } = useMetricDefinitions()
   const { data: values, isLoading, isError, refetch } = useMetricValues(orgId)
-  const [metricKey, setMetricKey] = useState('')
-  const [period, setPeriod] = useState(() => new Date().toISOString().slice(0, 7) + '-01')
-  const [value, setValue] = useState('')
   const refresh = () => qc.invalidateQueries({ queryKey: ['metric-values', orgId] })
 
   if (isLoading) return <CardSkeleton />
@@ -1198,7 +1194,9 @@ function MetricsTab({ orgId }: { orgId: string }) {
         <section key={category} className="bg-white rounded-xl shadow-card p-6 space-y-2">
           <h2 className="text-sm font-semibold text-foreground">{category}</h2>
           {(defs ?? []).map((d) => {
-            const latest = (values ?? []).filter((v) => v.metricKey === d.key).sort((a, b) => b.period.localeCompare(a.period))[0]
+            // Account-level only: a tenant's figure is its own and shows on
+            // that tenant's page, not here masquerading as the account's.
+            const latest = (values ?? []).filter((v) => v.metricKey === d.key && !v.tenantId).sort((a, b) => b.period.localeCompare(a.period))[0]
             return (
               <div key={d.key} className="flex items-center justify-between text-sm py-1.5 border-b border-border last:border-0">
                 <span>{d.label} {d.unit && <span className="text-muted-foreground">({d.unit})</span>}</span>
@@ -1213,23 +1211,7 @@ function MetricsTab({ orgId }: { orgId: string }) {
           })}
         </section>
       ))}
-      <div className="bg-white rounded-xl shadow-card p-6 flex gap-2 items-end flex-wrap">
-        <div>
-          <label className="block text-xs font-medium text-muted-foreground mb-1">Metric</label>
-          <select value={metricKey} onChange={(e) => setMetricKey(e.target.value)} className="rounded-md border border-border px-2 py-1.5 text-sm">
-            <option value="">Select…</option>
-            {(definitions ?? []).map((d) => <option key={d.key} value={d.key}>{d.label}</option>)}
-          </select>
-        </div>
-        <div><label className="block text-xs font-medium text-muted-foreground mb-1">Period</label><input type="month" value={period.slice(0, 7)} onChange={(e) => setPeriod(e.target.value + '-01')} className="rounded-md border border-border px-2 py-1.5 text-sm" /></div>
-        <div><label className="block text-xs font-medium text-muted-foreground mb-1">Value</label><input type="number" step="any" value={value} onChange={(e) => setValue(e.target.value)} className="w-28 rounded-md border border-border px-2 py-1.5 text-sm" /></div>
-        <button
-          onClick={async () => { if (!profile || !metricKey || value === '') return; await upsertMetricValue(orgId, { metricKey, period, value: Number(value) }, profile.id); setValue(''); refresh() }}
-          className="rounded-md bg-primary px-3 py-2 text-sm font-medium text-white hover:bg-primary/90"
-        >
-          Enter value
-        </button>
-      </div>
+      <MetricEntry orgId={orgId} scopeLabel={accountName} />
     </div>
   )
 }

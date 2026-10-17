@@ -77,8 +77,16 @@ Points, streaks, badges, team leaderboards — computed from the audit log + pro
 ## Last session
 (See docs/devlog.md for full session history — this is just the pointer.)
 
-Date: 2026-10-16
-Completed: Session 59 — Stage 3 (D-154): the nav the owner specified,
+Date: 2026-10-17
+Completed: Session 60 — Stage 2c (D-155, D-156): manual metric entry
+plus csv/json upload, on the account AND on each tenant. The file is parsed
+in the browser and never stored — only the figures are kept. xlsx/doc are
+refused with a reason rather than accepted into a queue nothing reads.
+Found and fixed a latent data-loss bug: metric_values' uniqueness constraint
+excluded tenant_id, so two tenants reporting the same metric for the same
+period would silently overwrite each other.
+
+Earlier: Session 59 — Stage 3 (D-154): the nav the owner specified,
 built after they pushed on my deferring it. Admin group gone; Users & roles,
 People, Feature flags, Ingest tokens and Sync status are Settings sections.
 Nav is Home · Portfolio · Approvals · Standups · Audit Log · Settings, and
